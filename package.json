@@ -1,0 +1,24 @@
+{
+  "name": "nexusora-books",
+  "version": "1.0.0",
+  "description": "Nexusora Books — Multi-Tenant SaaS Accounting Management System",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "electron:start": "electron .",
+    "electron:dev": "concurrently \"npm run dev:server\" \"npm run dev:client\" \"wait-on http://localhost:5173 && npm run electron:start\"",
+    "electron:build": "electron-builder",
+    "install:all": "cd server && npm install && cd ../client && npm install && cd .. && npm install"
+  },
+  "author": "Prof. JNK Mensah — Nexusora Technologies",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3",
+    "wait-on": "^7.2.0"
+  }
+}

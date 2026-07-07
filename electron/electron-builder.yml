@@ -1,0 +1,21 @@
+appId: com.nexusora.books
+productName: Nexusora Books
+copyright: Copyright © 2026 Nexusora Technologies
+
+directories:
+  output: dist
+  buildResources: electron/resources
+
+files:
+  - electron/**/*
+  - client/dist/**/*
+  - package.json
+
+# win:
+ win:
+  target:
+    - target: nsis
+      arch: [x64]
+
+extraMetadata:
+  main: electron/main.js
