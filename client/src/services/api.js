@@ -23,15 +23,18 @@ const getSubdomain = () => {
     }
   }
 
-  // Production: kgr.nexusorabooks.com
-  const parts = hostname.split('.');
-  if (parts.length >= 3 && parts[0] !== 'www') {
-    return parts[0];
+ // Skip if hostname is an IP address
+  const isIP = /^\d+\.\d+\.\d+\.\d+$/.test(hostname);
+  if (!isIP) {
+    // Production: kgr.nexusorabooks.com
+    const parts = hostname.split('.');
+    if (parts.length >= 3 && parts[0] !== 'www') {
+      return parts[0];
+    }
   }
 
-  // Final fallback for plain localhost
+  // Final fallback for plain localhost or IP access
   return 'kgr';
-};
 
 const api = axios.create({
   baseURL: '/api',
