@@ -34,7 +34,8 @@ const getSubdomain = () => {
   }
 
   // Final fallback for plain localhost or IP access
-  return 'kgr';
+   return 'kgr';
+};
 
 const api = axios.create({
   baseURL: '/api',
