@@ -11,7 +11,6 @@ export function TenantProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   const extractSubdomain = () => {
-    // Check URL query param first (?tenant=kgr)
     const urlParams = new URLSearchParams(window.location.search);
     const tenantParam = urlParams.get('tenant');
     if (tenantParam) {
@@ -19,19 +18,20 @@ export function TenantProvider({ children }) {
       return tenantParam;
     }
 
-    // Check sessionStorage (persists across navigations in dev)
     const stored = sessionStorage.getItem('dev_tenant');
     if (stored) return stored;
 
-    // Production subdomain routing
     const hostname = window.location.hostname;
-    const parts = hostname.split('.');
-    if (parts.length >= 3 && parts[0] !== 'www') return parts[0];
 
-    // Final fallback for dev
+    // Skip IP addresses
+    const isIP = /^\d+\.\d+\.\d+\.\d+$/.test(hostname);
+    if (!isIP) {
+      const parts = hostname.split('.');
+      if (parts.length >= 3 && parts[0] !== 'www') return parts[0];
+    }
+
     return 'kgr';
   };
-
   const fetchTenant = useCallback(async () => {
     try {
       const sub = extractSubdomain();
