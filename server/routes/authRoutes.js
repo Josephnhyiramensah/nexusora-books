@@ -5,10 +5,13 @@ const router = express.Router();
 const {
   register, login, refreshToken, logout, getMe, changePassword,
 } = require('../controllers/authController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, optionalProtect } = require('../middleware/authMiddleware');
 
-// Public routes (tenant context required, but no auth)
-router.post('/register', register);
+// Registration is PUBLIC only for the first user of an empty tenant.
+// optionalProtect populates req.user when an admin token is supplied, so the
+// controller can reject anonymous registration into an existing workspace.
+router.post('/register', optionalProtect, register);
+
 router.post('/login', login);
 router.post('/refresh', refreshToken);
 
