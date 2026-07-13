@@ -109,15 +109,6 @@ function RootRedirect() {
   return <Navigate to={isPublic ? '/register' : '/home'} replace />;
 }
 
-// ─── Root redirect ────────────────────────────────────────────────────────────
-// On a tenant subdomain (kgr.nexusorabooks.com) "/" goes to the workspace.
-// On the apex domain (nexusorabooks.com) there is NO tenant — send visitors to
-// the public registration page, never into a client's workspace.
-function RootRedirect() {
-  const { loading, isPublic } = useTenant();
-  if (loading) return null;
-  return <Navigate to={isPublic ? '/register' : '/home'} replace />;
-}
 // ─── App ───────────────────────────────────────────────────────────
 export default function App() {
   return (
