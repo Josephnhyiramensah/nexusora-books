@@ -6,14 +6,58 @@ const { getModel } = require('../utils/getModel');
 const { generateTokenPair } = require('../utils/generateToken');
 const { logAudit } = require('../middleware/auditMiddleware');
 
+// Roles an administrator may assign via registration.
+// 'super_admin' is deliberately EXCLUDED — it cannot be minted through this
+// endpoint. Promote an existing user via Administration instead.
+const ASSIGNABLE_ROLES = ['admin', 'accountant', 'staff', 'viewer'];
+
 /**
  * POST /api/auth/register
- * Register first user (super_admin) or additional users (admin-only).
+ *
+ * Two legitimate cases only:
+ *   1. Tenant database is EMPTY → bootstrap the first user as super_admin.
+ *   2. Tenant already has users → caller MUST be an authenticated admin.
+ *
+ * Anonymous registration into an existing workspace is rejected.
+ * The role is NEVER taken on trust from an anonymous request body.
  */
 const register = async (req, res) => {
   try {
     const { firstName, lastName, email, password, role, phone } = req.body;
     const User = getModel(req.tenantDb, 'User');
+
+    const userCount = await User.countDocuments();
+    let assignedRole;
+
+    if (userCount === 0) {
+      // Bootstrap: brand-new tenant, no users yet.
+      assignedRole = 'super_admin';
+    } else {
+      // Workspace already exists — an administrator must be doing this.
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          message: 'Registration is closed for this organisation. Please contact your administrator.',
+        });
+      }
+
+      if (!['super_admin', 'admin'].includes(req.user.role)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Only administrators can create new users.',
+        });
+      }
+
+      const requested = String(role || 'staff').toLowerCase();
+      if (!ASSIGNABLE_ROLES.includes(requested)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid role. Allowed roles: ${ASSIGNABLE_ROLES.join(', ')}.`,
+        });
+      }
+
+      assignedRole = requested;
+    }
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -21,20 +65,6 @@ const register = async (req, res) => {
         success: false,
         message: 'A user with this email already exists.',
       });
-    }
-
-    // First user is always super_admin
-    const userCount = await User.countDocuments();
-    const assignedRole = userCount === 0 ? 'super_admin' : (role || 'staff');
-
-    // Only super_admin/admin can create users after the first
-    if (userCount > 0 && req.user) {
-      if (!['super_admin', 'admin'].includes(req.user.role)) {
-        return res.status(403).json({
-          success: false,
-          message: 'Only administrators can create new users.',
-        });
-      }
     }
 
     const user = await User.create({
@@ -52,12 +82,14 @@ const register = async (req, res) => {
     await user.save();
 
     await logAudit(req.tenantDb, {
-      userId: user._id,
+      userId: req.user ? req.user._id : user._id,
       action: 'create',
       module: 'auth',
       entityId: user._id,
       entityType: 'User',
-      description: `User registered: ${user.firstName} ${user.lastName} (${assignedRole})`,
+      description: req.user
+        ? `User created by ${req.user.email}: ${user.firstName} ${user.lastName} (${assignedRole})`
+        : `Tenant bootstrapped — first user registered: ${user.firstName} ${user.lastName} (${assignedRole})`,
       newData: { email: user.email, role: assignedRole },
     }, req);
 
@@ -176,6 +208,14 @@ const refreshTokenHandler = async (req, res) => {
     }
 
     const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+
+    // Cross-tenant assertion on refresh as well.
+    if (decoded.tenant && req.tenant && decoded.tenant !== req.tenant.subdomain) {
+      return res.status(401).json({
+        success: false,
+        message: 'Refresh token is not valid for this workspace.',
+      });
+    }
 
     const User = getModel(req.tenantDb, 'User');
     const user = await User.findById(decoded.userId).select('+refreshToken');
