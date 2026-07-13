@@ -1,42 +1,49 @@
-// server/config/tenantResolver.js
-// Extracts subdomain from request hostname and resolves to tenant record
 
 const Tenant = require('../models/Tenant');
 
-/**
- * Extract the subdomain from the request hostname.
- * Production: kgr.nexusorabooks.com → 'kgr'
- * Development: kgr.localhost → 'kgr'
- * Fallback: ?tenant=kgr or X-Tenant-ID header
- */
+const IS_PROD = process.env.NODE_ENV === 'production';
+
+
+const RESERVED = ['www', 'api', 'admin', 'app', 'mail', 'static', 'assets'];
+
+
 const extractSubdomain = (req) => {
-  const hostname = req.hostname || req.headers.host?.split(':')[0] || '';
+  const hostname = (req.hostname || req.headers.host?.split(':')[0] || '').toLowerCase();
+
+  // Bare IP address — never a tenant.
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+    return IS_PROD ? null : devFallback(req);
+  }
 
   // Development: kgr.localhost
   if (hostname.endsWith('.localhost')) {
     const parts = hostname.split('.');
-    if (parts.length >= 2 && parts[0] !== 'www' && parts[0] !== 'localhost') {
-      return parts[0].toLowerCase();
+    if (parts.length >= 2 && parts[0] !== 'localhost' && !RESERVED.includes(parts[0])) {
+      return parts[0];
     }
   }
 
-  // Production: kgr.nexusorabooks.com
+  // Production: kgr.nexusorabooks.com → 'kgr'
+  // Apex (nexusorabooks.com) has only 2 parts → falls through → null.
   const parts = hostname.split('.');
-  if (parts.length >= 3 && parts[0] !== 'www' && parts[0] !== 'api') {
-    return parts[0].toLowerCase();
+  if (parts.length >= 3 && !RESERVED.includes(parts[0])) {
+    return parts[0];
   }
 
-  // Fallback: query parameter (?tenant=kgr)
+  return IS_PROD ? null : devFallback(req);
+};
+
+/**
+ * Development-only fallbacks. Compiled out of the production path above.
+ */
+const devFallback = (req) => {
   if (req.query && req.query.tenant) {
-    return req.query.tenant.toLowerCase();
+    return String(req.query.tenant).toLowerCase();
   }
-
-  // Fallback: X-Tenant-ID header (for API testing tools)
   const tenantHeader = req.headers['x-tenant-id'];
   if (tenantHeader) {
-    return tenantHeader.toLowerCase();
+    return String(tenantHeader).toLowerCase();
   }
-
   return null;
 };
 

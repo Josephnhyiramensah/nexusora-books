@@ -1,49 +1,38 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import api from '../services/api';
+import api, { getSubdomain } from '../services/api';
 
 const TenantContext = createContext({});
 
 export function TenantProvider({ children }) {
-  const [subdomain, setSubdomain] = useState('');
+  const [subdomain, setSubdomain] = useState(null);
   const [companyName, setCompanyName] = useState('');
   const [plan, setPlan] = useState('trial');
   const [settings, setSettings] = useState({});
   const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
 
-  const extractSubdomain = () => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const tenantParam = urlParams.get('tenant');
-    if (tenantParam) {
-      sessionStorage.setItem('dev_tenant', tenantParam);
-      return tenantParam;
-    }
-
-    const stored = sessionStorage.getItem('dev_tenant');
-    if (stored) return stored;
-
-    const hostname = window.location.hostname;
-
-    // Skip IP addresses
-    const isIP = /^\d+\.\d+\.\d+\.\d+$/.test(hostname);
-    if (!isIP) {
-      const parts = hostname.split('.');
-      if (parts.length >= 3 && parts[0] !== 'www') return parts[0];
-    }
-
-    return 'kgr';
-  };
   const fetchTenant = useCallback(async () => {
+    const sub = getSubdomain();
+    setSubdomain(sub);
+
+    // Apex domain — no tenant. This is the public site, not a workspace.
+    if (!sub) {
+      setLoading(false);
+      return;
+    }
+
     try {
-      const sub = extractSubdomain();
-      setSubdomain(sub);
       const { data } = await api.get(`/tenants/${sub}`);
       if (data.success) {
         setCompanyName(data.data.companyName || '');
         setPlan(data.data.plan || 'trial');
         setSettings(data.data.settings || {});
+      } else {
+        setNotFound(true);
       }
     } catch (error) {
       console.warn('[Tenant] Could not fetch tenant info:', error.message);
+      setNotFound(true);
     } finally {
       setLoading(false);
     }
@@ -51,7 +40,7 @@ export function TenantProvider({ children }) {
 
   useEffect(() => { fetchTenant(); }, [fetchTenant]);
 
-  // 👇 ADDED: Apply white-label branding dynamically
+  // Apply white-label branding dynamically
   useEffect(() => {
     const wl = settings?.whiteLabel;
     if (wl?.enabled) {
@@ -60,7 +49,6 @@ export function TenantProvider({ children }) {
     }
   }, [settings]);
 
-  // Call this after saving settings to immediately update context without reload
   const updateSettings = useCallback((newSettings) => {
     setSettings((prev) => ({ ...prev, ...newSettings }));
   }, []);
@@ -73,8 +61,16 @@ export function TenantProvider({ children }) {
 
   return (
     <TenantContext.Provider value={{
-      subdomain, companyName, plan, settings, loading,
-      updateSettings, updateTenantInfo, refreshTenant: fetchTenant,
+      subdomain,
+      companyName,
+      plan,
+      settings,
+      loading,
+      notFound,
+      isPublic: !loading && !subdomain,   // true on the apex domain
+      updateSettings,
+      updateTenantInfo,
+      refreshTenant: fetchTenant,
     }}>
       {children}
     </TenantContext.Provider>

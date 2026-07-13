@@ -1,40 +1,48 @@
 import axios from 'axios';
 
+/**
+ * Resolve the current tenant from the hostname.
+ *
+ * SECURITY: returns null on the apex domain (nexusorabooks.com) — the root
+ * domain is the public site and must never resolve to a client workspace.
+ * The ?tenant= / sessionStorage overrides exist for local development only
+ * and are removed from the production bundle by Vite's dead-code elimination.
+ */
 const getSubdomain = () => {
   const hostname = window.location.hostname;
 
-  // Check URL query param first (?tenant=kgr)
-  const urlParams = new URLSearchParams(window.location.search);
-  const tenantParam = urlParams.get('tenant');
-  if (tenantParam) {
-    sessionStorage.setItem('dev_tenant', tenantParam);
-    return tenantParam;
-  }
+  if (import.meta.env.DEV) {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tenantParam = urlParams.get('tenant');
+    if (tenantParam) {
+      sessionStorage.setItem('dev_tenant', tenantParam);
+      return tenantParam;
+    }
 
-  // Check sessionStorage (persists across navigations in same tab)
-  const stored = sessionStorage.getItem('dev_tenant');
-  if (stored) return stored;
+    const stored = sessionStorage.getItem('dev_tenant');
+    if (stored) return stored;
 
-  // Development: kgr.localhost
-  if (hostname.endsWith('.localhost')) {
-    const parts = hostname.split('.');
-    if (parts.length >= 2 && parts[0] !== 'www' && parts[0] !== 'localhost') {
-      return parts[0];
+    if (hostname.endsWith('.localhost')) {
+      const parts = hostname.split('.');
+      if (parts.length >= 2 && parts[0] !== 'localhost') {
+        return parts[0];
+      }
     }
   }
 
- // Skip if hostname is an IP address
-  const isIP = /^\d+\.\d+\.\d+\.\d+$/.test(hostname);
-  if (!isIP) {
-    // Production: kgr.nexusorabooks.com
-    const parts = hostname.split('.');
-    if (parts.length >= 3 && parts[0] !== 'www') {
-      return parts[0];
-    }
+  // Never trust a stale dev override in production.
+  sessionStorage.removeItem('dev_tenant');
+
+  // Bare IP → no tenant.
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return null;
+
+  const parts = hostname.split('.');
+  if (parts.length >= 3 && parts[0] !== 'www') {
+    return parts[0].toLowerCase();
   }
 
-  // Final fallback for plain localhost or IP access
-   return 'kgr';
+  // Apex domain → no tenant. Public site.
+  return null;
 };
 
 const api = axios.create({

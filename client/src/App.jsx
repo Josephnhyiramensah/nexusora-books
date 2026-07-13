@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
-import { TenantProvider } from './context/TenantContext';
+import { TenantProvider, useTenant } from './context/TenantContext';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
 import HomeScreen from './pages/HomeScreen';
@@ -99,6 +99,25 @@ const reportsSidebar = [
 
 const g = (path, label) => [{ path, label: `All ${label}`, icon: FiList, exact: true }];
 
+// ─── Root redirect ────────────────────────────────────────────────────────────
+// Tenant subdomain (kgr.nexusorabooks.com) → "/" opens the workspace.
+// Apex domain (nexusorabooks.com) → NO tenant → public registration page.
+// Never route an apex visitor into a client's workspace.
+function RootRedirect() {
+  const { loading, isPublic } = useTenant();
+  if (loading) return null;
+  return <Navigate to={isPublic ? '/register' : '/home'} replace />;
+}
+
+// ─── Root redirect ────────────────────────────────────────────────────────────
+// On a tenant subdomain (kgr.nexusorabooks.com) "/" goes to the workspace.
+// On the apex domain (nexusorabooks.com) there is NO tenant — send visitors to
+// the public registration page, never into a client's workspace.
+function RootRedirect() {
+  const { loading, isPublic } = useTenant();
+  if (loading) return null;
+  return <Navigate to={isPublic ? '/register' : '/home'} replace />;
+}
 // ─── App ───────────────────────────────────────────────────────────
 export default function App() {
   return (
@@ -109,7 +128,7 @@ export default function App() {
 
             {/* ── Public ── */}
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/"      element={<Navigate to="/home" replace />} />
+            <Route path="/"      element={<RootRedirect />} />
 
             {/* ── Home Screen (tile grid) ── */}
             <Route path="/home" element={
