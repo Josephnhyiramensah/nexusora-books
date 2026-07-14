@@ -130,6 +130,39 @@ const getTenant = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/tenants/:subdomain/public
+ *
+ * PUBLIC — unauthenticated. Used by the login page to render tenant branding.
+ * Returns ONLY what the login screen needs. Never exposes owner details,
+ * subscription terms, usage stats, or databaseName.
+ */
+const getTenantPublic = async (req, res) => {
+  try {
+    const tenant = await Tenant.findOne({ subdomain: req.params.subdomain })
+      .select('subdomain companyName plan status settings.whiteLabel settings.logo');
+
+    if (!tenant || ['suspended', 'archived'].includes(tenant.status)) {
+      return res.status(404).json({ success: false, message: 'Tenant not found.' });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        subdomain: tenant.subdomain,
+        companyName: tenant.companyName,
+        plan: tenant.plan,
+        settings: {
+          whiteLabel: tenant.settings?.whiteLabel || {},
+          logo: tenant.settings?.logo || '',
+        },
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to fetch tenant.' });
+  }
+};
+
 const updateTenantSettings = async (req, res) => {
   try {
     const tenant = await Tenant.findOne({ subdomain: req.params.subdomain });
@@ -351,6 +384,7 @@ module.exports = {
   provisionTenant,
   listTenants,
   getTenant,
+  getTenantPublic,
   getAdminStats,
   suspendTenant,
   reactivateTenant,

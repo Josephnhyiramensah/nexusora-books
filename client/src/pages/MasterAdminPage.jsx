@@ -8,7 +8,17 @@ import nexusoraLogo from '../assets/nexusora-logo.png';
 import api from '../services/api';
 import { clearSettingsCache } from '../services/platformService';
 
-const MASTER_PASSWORD = import.meta.env.VITE_MASTER_ADMIN_PASSWORD || 'nexusora-master-2026';
+const PLATFORM_TOKEN_KEY = 'platformToken';
+
+
+const pHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem(PLATFORM_TOKEN_KEY) || ''}` });
+const platformApi = {
+  get:    (url)       => api.get(url,          { headers: pHeaders() }),
+  post:   (url, body) => api.post(url, body,   { headers: pHeaders() }),
+  put:    (url, body) => api.put(url, body,    { headers: pHeaders() }),
+  delete: (url)       => api.delete(url,       { headers: pHeaders() }),
+};
+
 
 // ─── Company Info Settings Component ─────────────────────────────────────────
 function CompanyInfoSettings() {
@@ -24,7 +34,7 @@ function CompanyInfoSettings() {
   const [settingsTab, setSettingsTab] = useState('company');
 
   useEffect(() => {
-    api.get('/platform/settings/admin')
+    platformApi.get('/platform/settings/admin')
       .then(({ data }) => { if (data.success) setForm(data.data); })
       .catch((err) => console.warn('[PlatformSettings]', err.message))
       .finally(() => setLoadingSettings(false));
@@ -33,7 +43,7 @@ function CompanyInfoSettings() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.put('/platform/settings', form);
+      await platformApi.put('/platform/settings', form);
       clearSettingsCache();
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -123,15 +133,15 @@ function TenantDetailModal({ tenant, onClose, onRefresh }) {
   useEffect(() => {
     // Load users and stats
     Promise.all([
-      api.get(`/tenants/${tenant.subdomain}/users`).then(({ data }) => { if (data.success) setUsers(data.data); }).catch(() => {}),
-      api.get(`/tenants/${tenant.subdomain}/detail-stats`).then(({ data }) => { if (data.success) setDetailStats(data.data); }).catch(() => {}),
+      platformApi.get(`/tenants/${tenant.subdomain}/users`).then(({ data }) => { if (data.success) setUsers(data.data); }).catch(() => {}),
+      platformApi.get(`/tenants/${tenant.subdomain}/detail-stats`).then(({ data }) => { if (data.success) setDetailStats(data.data); }).catch(() => {}),
     ]).finally(() => setLoadingUsers(false));
   }, [tenant.subdomain]);
 
   const handleSaveNote = async () => {
     setSavingNote(true);
     try {
-      await api.put(`/tenants/${tenant.subdomain}/settings`, { supportNote: note });
+      await platformApi.put(`/tenants/${tenant.subdomain}/settings`, { supportNote: note });
       onRefresh();
     } catch {} finally { setSavingNote(false); }
   };
@@ -142,7 +152,7 @@ function TenantDetailModal({ tenant, onClose, onRefresh }) {
     try {
       const current = tenant.subscription?.expiryDate ? new Date(tenant.subscription.expiryDate) : new Date();
       const newExpiry = new Date(Math.max(current.getTime(), Date.now()) + extendDays * 86400000);
-      await api.put(`/tenants/${tenant.subdomain}/settings`, { subscription: { ...tenant.subscription, expiryDate: newExpiry } });
+      await platformApi.put(`/tenants/${tenant.subdomain}/settings`, { subscription: { ...tenant.subscription, expiryDate: newExpiry } });
       onRefresh();
       alert(`✅ Extended to ${newExpiry.toLocaleDateString('en-GB')}`);
     } catch (err) { alert('Failed: ' + err.message); }
@@ -154,7 +164,7 @@ function TenantDetailModal({ tenant, onClose, onRefresh }) {
     if (resetPassword.length < 8) { setResetMsg('❌ Password must be at least 8 characters.'); return; }
     setResetting(true); setResetMsg('');
     try {
-      const { data } = await api.post(`/tenants/${tenant.subdomain}/reset-password`, { email: resetEmail, newPassword: resetPassword });
+      const { data } = await platformApi.post(`/tenants/${tenant.subdomain}/reset-password`, { email: resetEmail, newPassword: resetPassword });
       if (data.success) { setResetMsg('✅ Password reset successfully.'); setResetEmail(''); setResetPassword(''); }
       else setResetMsg(`❌ ${data.message}`);
     } catch (err) { setResetMsg(`❌ ${err.response?.data?.message || 'Failed.'}`); }
@@ -373,6 +383,7 @@ function TenantDetailModal({ tenant, onClose, onRefresh }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function MasterAdminPage() {
   const [authenticated, setAuthenticated] = useState(false);
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [tenants, setTenants] = useState([]);
@@ -396,17 +407,28 @@ export default function MasterAdminPage() {
   const [addTenantLoading, setAddTenantLoading] = useState(false);
   const [addTenantError, setAddTenantError] = useState('');
 
-  const handleLogin = () => {
-    if (password === MASTER_PASSWORD) { setAuthenticated(true); fetchAll(); }
-    else setPasswordError('Invalid master password');
+  const handleLogin = async () => {
+   try {
+      setPasswordError('');
+      const { data } = await api.post('/platform-auth/login', { email, password });
+      if (data.success) {
+        localStorage.setItem(PLATFORM_TOKEN_KEY, data.data.accessToken);
+        setAuthenticated(true);
+        fetchAll();
+      } else {
+        setPasswordError(data.message || 'Invalid credentials');
+      }
+    } catch (err) {
+      setPasswordError(err.response?.data?.message || 'Invalid credentials');
+    }
   };
 
   const fetchAll = async () => {
     setLoading(true);
     try {
       const [tenantsRes, statsRes] = await Promise.all([
-        api.get('/tenants'),
-        api.get('/tenants/admin/stats').catch(() => ({ data: { success: false } })),
+       platformApi.get('/tenants'),
+        platformApi.get('/tenants/admin/stats').catch(() => ({ data: { success: false } })),
       ]);
       if (tenantsRes.data.success) setTenants(tenantsRes.data.data);
       if (statsRes.data.success) setStats(statsRes.data.data);
@@ -417,13 +439,13 @@ export default function MasterAdminPage() {
   const handleSuspend = async (subdomain) => {
     if (!window.confirm(`Deactivate ${subdomain}?`)) return;
     setActionLoading(subdomain);
-    try { await api.post(`/tenants/${subdomain}/suspend`); fetchAll(); }
+    try { await platformApi.post(`/tenants/${subdomain}/suspend`); fetchAll(); }
     catch {} finally { setActionLoading(''); }
   };
 
   const handleReactivate = async (subdomain) => {
     setActionLoading(subdomain);
-    try { await api.post(`/tenants/${subdomain}/reactivate`); fetchAll(); }
+    try { await platformApi.post(`/tenants/${subdomain}/reactivate`); fetchAll(); }
     catch {} finally { setActionLoading(''); }
   };
 
@@ -431,7 +453,8 @@ export default function MasterAdminPage() {
     if (!window.confirm(`Change ${subdomain} to ${newPlan} plan?`)) return;
     setChangingPlan(subdomain);
     try {
-      await api.put(`/tenants/${subdomain}/plan`, { plan: newPlan });
+      await platformApi.put(`/tenants/${subdomain}/plan`, { plan: newPlan })
+;
       fetchAll();
     }
     catch (err) { alert(err.response?.data?.message || 'Failed to change plan'); }
@@ -486,6 +509,13 @@ export default function MasterAdminPage() {
           <h1 style={{ fontFamily: 'Poppins, sans-serif', fontSize: 22, fontWeight: 700, color: '#1A3560', marginBottom: 6 }}>Developer Console</h1>
           <p style={{ fontSize: 13, color: '#6B7280', marginBottom: 28 }}>Nexusora Technologies · Restricted Access</p>
           {passwordError && <div style={{ padding: '10px 16px', background: '#FEE2E2', borderRadius: 10, color: '#DC2626', fontSize: 13, marginBottom: 16 }}>{passwordError}</div>}
+          <input
+  type="email"
+  value={email}
+  onChange={(e) => setEmail(e.target.value)}
+  placeholder="Platform admin email"
+  style={{ width: '100%', padding: '12px 16px', border: '1px solid #E2E8F0', borderRadius: 10, fontSize: 14, outline: 'none', marginBottom: 12 }}
+/>
           <input type="password" value={password}
             onChange={(e) => { setPassword(e.target.value); setPasswordError(''); }}
             onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
@@ -668,7 +698,7 @@ export default function MasterAdminPage() {
         if (confirm !== t.subdomain) { alert('Subdomain did not match. Deletion cancelled.'); return; }
         setActionLoading(t.subdomain);
         try {
-          const { data } = await api.delete(`/tenants/${t.subdomain}`);
+          const { data } = await platformApi.delete(`/tenants/${t.subdomain}`);
           if (data.success) { alert('✅ Tenant deleted permanently.'); fetchAll(); }
           else alert('Failed: ' + data.message);
         } catch (err) { alert('Failed: ' + (err.response?.data?.message || err.message)); }
@@ -895,7 +925,7 @@ export default function MasterAdminPage() {
                   if (f.adminPassword.length < 8) { setAddTenantError('Password must be at least 8 characters.'); return; }
                   setAddTenantLoading(true); setAddTenantError('');
                   try {
-                    const { data } = await api.post('/tenants/provision', { subdomain: f.subdomain, companyName: f.companyName, plan: f.plan, owner: { name: f.ownerName, email: f.ownerEmail, phone: f.ownerPhone }, adminUser: { firstName: f.adminFirstName, lastName: f.adminLastName, email: f.adminEmail, password: f.adminPassword } });
+                    const { data } = await platformApi.post('/tenants/provision', { subdomain: f.subdomain, companyName: f.companyName, plan: f.plan, owner: { name: f.ownerName, email: f.ownerEmail, phone: f.ownerPhone }, adminUser: { firstName: f.adminFirstName, lastName: f.adminLastName, email: f.adminEmail, password: f.adminPassword } });
                     if (data.success) {
                       setShowAddTenantModal(false);
                       setAddTenantForm({ companyName: '', subdomain: '', ownerName: '', ownerEmail: '', ownerPhone: '', plan: 'enterprise', adminFirstName: '', adminLastName: '', adminEmail: '', adminPassword: '' });

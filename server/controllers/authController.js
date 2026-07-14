@@ -210,8 +210,8 @@ const refreshTokenHandler = async (req, res) => {
     const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
 
     // Cross-tenant assertion on refresh as well.
-    if (decoded.tenant && req.tenant && decoded.tenant !== req.tenant.subdomain) {
-      return res.status(401).json({
+if (decoded.tenantId && req.tenant && decoded.tenantId !== req.tenant.subdomain) {
+        return res.status(401).json({
         success: false,
         message: 'Refresh token is not valid for this workspace.',
       });

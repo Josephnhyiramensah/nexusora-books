@@ -22,7 +22,7 @@ export function TenantProvider({ children }) {
     }
 
     try {
-      const { data } = await api.get(`/tenants/${sub}`);
+      const { data } = await api.get(`/tenants/${sub}/public`);
       if (data.success) {
         setCompanyName(data.data.companyName || '');
         setPlan(data.data.plan || 'trial');

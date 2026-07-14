@@ -42,7 +42,7 @@ const auditRoutes        = require('./routes/auditRoutes');
 const apiKeyRoutes       = require('./routes/apiKeyRoutes');
 const externalApiRoutes  = require('./routes/externalApiRoutes');
 const platformRoutes     = require('./routes/platformRoutes');
-
+const platformAuthRoutes = require('./routes/platformAuthRoutes');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -111,6 +111,9 @@ app.use('/api/audit',            tm, es,   auditRoutes);
 app.use('/api/upload',           tm,       uploadRoutes);
 app.use('/api/platform', platformRoutes);
 
+// Platform administration auth — NO tenantMiddleware. A platform admin logs in
+// at the apex domain (nexusorabooks.com) where no tenant exists.
+app.use('/api/platform-auth', platformAuthRoutes);
 // Internal: manage API keys (authenticated users)
 app.use('/api/api-keys', tm, es, apiKeyRoutes);
 

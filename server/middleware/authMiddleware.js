@@ -13,8 +13,8 @@ const resolveUserFromToken = async (req, token) => {
 
   // Cross-tenant assertion: a token issued for tenant A must never be
   // accepted against tenant B, regardless of the X-Tenant-ID header.
-  if (decoded.tenant && req.tenant && decoded.tenant !== req.tenant.subdomain) {
-    return { error: { status: 401, message: 'Token is not valid for this workspace.' } };
+if (decoded.tenantId && req.tenant && decoded.tenantId !== req.tenant.subdomain) {
+      return { error: { status: 401, message: 'Token is not valid for this workspace.' } };
   }
 
   const User = getModel(req.tenantDb, 'User');
