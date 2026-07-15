@@ -5,7 +5,12 @@ const getUsers = async (req, res) => {
   try {
     const User = getModel(req.tenantDb, 'User');
     const users = await User.find({}).select('-password -refreshToken -twoFactorSecret').sort({ createdAt: -1 }).lean();
-    res.json({ success: true, data: users, count: users.length });
+    const now = Date.now();
+    const withLockStatus = users.map((u) => ({
+      ...u,
+      isLocked: !!(u.lockedUntil && new Date(u.lockedUntil).getTime() > now),
+    }));
+    res.json({ success: true, data: withLockStatus, count: withLockStatus.length });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch users.' });
   }
@@ -91,4 +96,44 @@ const deactivateUser = async (req, res) => {
   }
 };
 
-module.exports = { getUsers, createUser, updateUser, deactivateUser };
+/**
+ * POST /api/users/:id/unlock
+ * Release an account locked by failed login attempts.
+ * Admin-only (enforced by the router).
+ */
+const unlockUser = async (req, res) => {
+  try {
+    const User = getModel(req.tenantDb, 'User');
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    if (!user.isLocked()) {
+      return res.status(400).json({ success: false, message: 'This account is not locked.' });
+    }
+
+    user.lockedUntil = null;
+    user.failedLoginAttempts = 0;
+    await user.save({ validateBeforeSave: false });
+
+    await logAudit(req.tenantDb, {
+      userId: req.user._id,
+      action: 'update',
+      module: 'users',
+      entityId: user._id,
+      entityType: 'User',
+      description: `Account unlocked by ${req.user.email}: ${user.email}`,
+    }, req);
+
+    console.log(`[Users] ${user.email} unlocked by ${req.user.email} (${req.tenant?.subdomain})`);
+
+    res.json({ success: true, message: `${user.firstName} ${user.lastName} has been unlocked.` });
+  } catch (error) {
+    console.error('[Users] Unlock error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to unlock user.' });
+  }
+};
+
+module.exports = { getUsers, createUser, updateUser, deactivateUser, unlockUser };
