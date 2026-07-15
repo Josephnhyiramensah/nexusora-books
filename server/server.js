@@ -55,10 +55,21 @@ app.disable('x-powered-by');
 app.use(helmet());
 app.use(cors({
   origin: (origin, cb) => {
+    // No origin = same-origin, curl, or server-to-server. Allow.
     if (!origin) return cb(null, true);
     if (process.env.NODE_ENV === 'development') return cb(null, true);
-    if (origin.endsWith('.nexusorabooks.com')) return cb(null, true);
-    cb(null, true);
+
+    // Production allowlist: the apps themselves, any tenant subdomain, and the company site.
+    let host;
+    try { host = new URL(origin).hostname; } catch { return cb(new Error('Invalid origin')); }
+
+    const allowed =
+      host === 'nexusorabooks.com' ||
+      host.endsWith('.nexusorabooks.com') ||
+      host === 'nexusoratech.com' ||
+      host.endsWith('.nexusoratech.com');
+
+    return allowed ? cb(null, true) : cb(new Error('Not allowed by CORS'));
   },
   credentials: true,
 }));

@@ -493,8 +493,9 @@ function UsersTab({
   setUserModalOpen,
   editingUser,
   setEditingUser,
-  handleCreateUser,
+ handleCreateUser,
   handleToggleUser,
+  handleUnlockUser,
   showToast,
   labelStyle,
   inputStyle,
@@ -576,6 +577,16 @@ function UsersTab({
                   >
                     {u.isActive ? 'Active' : 'Inactive'}
                   </span>
+                  {u.isLocked && (
+                    <span
+                      style={{
+                        marginLeft: 6, padding: '3px 10px', borderRadius: 20,
+                        fontSize: 11, fontWeight: 600, background: '#FEF3C7', color: '#92400E',
+                      }}
+                    >
+                      🔒 Locked
+                    </span>
+                  )}
                 </td>
                 <td style={{ padding: '11px 16px', textAlign: 'center' }}>
                   <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
@@ -599,8 +610,16 @@ function UsersTab({
                           background: 'none',
                           border: 'none',
                         }}
+                      >{u.isActive ? <FiToggleRight size={16} /> : <FiToggleLeft size={16} />}
+                      </button>
+                    )}
+                    {u.isLocked && (
+                      <button
+                        onClick={() => handleUnlockUser(u._id)}
+                        title="Unlock account"
+                        style={{ padding: '4px 8px', color: 'var(--nexusora-gold, #C9A227)', cursor: 'pointer', background: 'none', border: 'none' }}
                       >
-                        {u.isActive ? <FiToggleRight size={16} /> : <FiToggleLeft size={16} />}
+                        <FiUnlock size={16} />
                       </button>
                     )}
                   </div>
@@ -1169,6 +1188,17 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
     }
   };
 
+  const handleUnlockUser = async (id) => {
+    try {
+      const { data } = await api.post(`/users/${id}/unlock`);
+      if (data.success) {
+        showToast(data.message);
+        fetchUsers();
+      }
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Failed', 'error');
+    }
+  };
   const tabs = [
     { key: 'profile', label: 'My Profile', icon: FiUser },
     { key: 'company', label: 'Company & Letterhead', icon: FiGlobe },
@@ -1227,6 +1257,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
           setEditingUser={setEditingUser}
           handleCreateUser={handleCreateUser}
           handleToggleUser={handleToggleUser}
+          handleUnlockUser={handleUnlockUser}
           showToast={showToast}
           labelStyle={styles.labelStyle}
           inputStyle={styles.inputStyle}
