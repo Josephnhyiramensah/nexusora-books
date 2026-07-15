@@ -46,6 +46,11 @@ const platformAuthRoutes = require('./routes/platformAuthRoutes');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Behind Nginx. Without this, Express sees every request as coming from
+// 127.0.0.1 — rate limiting counts all users as one client, and audit logs
+// record the proxy instead of the visitor. '1' = trust exactly one proxy hop.
+app.set('trust proxy', 1);
+app.disable('x-powered-by');
 // ─── Middleware ───────────────────────────────────────────────────────────────
 app.use(helmet());
 app.use(cors({
@@ -67,8 +72,45 @@ app.post('/api/payment/webhook',
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 if (process.env.NODE_ENV === 'development') app.use(morgan('dev'));
-app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: 300 }));
+// ─── Rate limiting ────────────────────────────────────────────────────────────
+// Keyed per tenant+IP so one noisy tenant cannot exhaust another's budget.
+const tenantKey = (req) => {
+  const host = (req.hostname || '').toLowerCase();
+  const sub = host.split('.').length >= 3 ? host.split('.')[0] : 'apex';
+  return `${sub}:${req.ip}`;
+};
 
+// General API limiter.
+app.use('/api/', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  keyGenerator: tenantKey,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many requests. Please slow down and try again shortly.' },
+}));
+
+// Strict limiter on credential endpoints — the brute-force surface.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyGenerator: tenantKey,
+  skipSuccessfulRequests: true,   // only failed attempts count
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many login attempts. Please try again in 15 minutes.' },
+});
+
+app.use('/api/auth/login', authLimiter);
+app.use('/api/platform-auth/login', authLimiter);
+
+// Signup abuse — stop automated tenant creation.
+app.use('/api/tenants/provision', rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  keyGenerator: (req) => req.ip,
+  message: { success: false, message: 'Too many signup attempts. Please try again later.' },
+}));
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
   res.json({
