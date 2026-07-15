@@ -148,8 +148,27 @@ const login = async (req, res) => {
       });
     }
 
+   // Locked accounts are rejected before the password is even checked —
+    // so an attacker learns nothing from timing.
+    if (user.isLocked()) {
+      return res.status(423).json({
+        success: false,
+        message: `Account temporarily locked after repeated failed logins. Try again in ${user.minutesUntilUnlock()} minute(s), or contact your administrator.`,
+      });
+    }
+
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
+      const nowLocked = await user.registerFailedLogin();
+      console.warn(`[Auth] Failed login: ${user.email} (${req.tenant?.subdomain}) from ${req.ip}${nowLocked ? ' — ACCOUNT LOCKED' : ''}`);
+
+      if (nowLocked) {
+        return res.status(423).json({
+          success: false,
+          message: `Too many failed attempts. Account locked for ${user.minutesUntilUnlock()} minute(s).`,
+        });
+      }
+
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password.',
@@ -158,10 +177,8 @@ const login = async (req, res) => {
 
     const { accessToken, refreshToken } = generateTokenPair(user, req.tenant.subdomain);
 
-    user.refreshToken = refreshToken;
-    user.lastLogin = new Date();
-    await user.save();
-
+   user.refreshToken = refreshToken;
+    await user.registerSuccessfulLogin(req.ip);
     await logAudit(req.tenantDb, {
       userId: user._id,
       action: 'login',
