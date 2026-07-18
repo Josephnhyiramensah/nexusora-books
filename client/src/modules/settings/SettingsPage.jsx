@@ -496,10 +496,18 @@ function UsersTab({
  handleCreateUser,
   handleToggleUser,
   handleUnlockUser,
-  showToast,
+ showToast,
   labelStyle,
   inputStyle,
 }) {
+  // The founding account = oldest user by createdAt. It is immutable from within
+  // the tenant app (matches the backend guard): no role change, no deactivation.
+  // Handover/edits to it happen only from the Nexusora platform console.
+  const foundingUserId = users && users.length
+    ? users.reduce((oldest, u) =>
+        new Date(u.createdAt) < new Date(oldest.createdAt) ? u : oldest, users[0])._id
+    : null;
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
@@ -588,30 +596,37 @@ function UsersTab({
                     </span>
                   )}
                 </td>
-                <td style={{ padding: '11px 16px', textAlign: 'center' }}>
-                  <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
-                    <button
-                      onClick={() => {
-                        setEditingUser(u);
-                        setUserModalOpen(true);
-                      }}
-                      style={{ padding: '4px 8px', color: 'var(--tech-blue)', cursor: 'pointer', background: 'none', border: 'none' }}
-                    >
-                      <FiEdit2 size={13} />
-                    </button>
-                    {u.role !== 'super_admin' && (
-                      <button
-                        onClick={() => handleToggleUser(u._id)}
-                        title={u.isActive ? 'Deactivate' : 'Activate'}
-                        style={{
-                          padding: '4px 8px',
-                          color: u.isActive ? 'var(--danger)' : 'var(--success)',
-                          cursor: 'pointer',
-                          background: 'none',
-                          border: 'none',
-                        }}
-                      >{u.isActive ? <FiToggleRight size={16} /> : <FiToggleLeft size={16} />}
-                      </button>
+               <td style={{ padding: '11px 16px', textAlign: 'center' }}>
+                  <div style={{ display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center' }}>
+                    {u._id === foundingUserId ? (
+                      <span title="Founding account — managed by your provider"
+                        style={{ fontSize: 11, fontWeight: 600, color: '#B8860B', padding: '3px 8px', background: '#FEF9E7', borderRadius: 12 }}>
+                        ⭐ Founder
+                      </span>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => {
+                            setEditingUser(u);
+                            setUserModalOpen(true);
+                          }}
+                          style={{ padding: '4px 8px', color: 'var(--tech-blue)', cursor: 'pointer', background: 'none', border: 'none' }}
+                        >
+                          <FiEdit2 size={13} />
+                        </button>
+                        <button
+                          onClick={() => handleToggleUser(u._id)}
+                          title={u.isActive ? 'Deactivate' : 'Activate'}
+                          style={{
+                            padding: '4px 8px',
+                            color: u.isActive ? 'var(--danger)' : 'var(--success)',
+                            cursor: 'pointer',
+                            background: 'none',
+                            border: 'none',
+                          }}
+                        >{u.isActive ? <FiToggleRight size={16} /> : <FiToggleLeft size={16} />}
+                        </button>
+                      </>
                     )}
                     {u.isLocked && (
                       <button
@@ -798,6 +813,155 @@ function SecurityTab({ showToast, labelStyle, inputStyle }) {
           Change Password
         </button>
       </form>
+
+      <TwoFactorPanel showToast={showToast} labelStyle={labelStyle} inputStyle={inputStyle} />
+    </div>
+  );
+}
+
+
+// ─── Two-Factor Authentication Panel ───────────────────────────────────────
+// Optional for all roles. Enrolment flow: setup (get QR) → verify a code →
+// receive backup codes ONCE. Also disable + regenerate backup codes. Reads the
+// current enabled-state from /auth/me on mount.
+function TwoFactorPanel({ showToast, labelStyle, inputStyle }) {
+  const [enabled, setEnabled] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [stage, setStage] = useState('idle');      // idle | enrolling | showingCodes
+  const [qr, setQr] = useState('');
+  const [manualKey, setManualKey] = useState('');
+  const [verifyCode, setVerifyCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [backupCodes, setBackupCodes] = useState([]);
+  const [disablePass, setDisablePass] = useState('');
+  const [disableCode, setDisableCode] = useState('');
+  const [showDisable, setShowDisable] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await api.get('/auth/me');
+        if (data.success) setEnabled(!!data.data.user.twoFactorEnabled);
+      } catch {} finally { setLoading(false); }
+    })();
+  }, []);
+
+  const beginSetup = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post('/auth/2fa/setup');
+      if (data.success) {
+        setQr(data.data.qrDataUrl);
+        setManualKey(data.data.manualEntryKey);
+        setStage('enrolling');
+      }
+    } catch (err) { showToast(err.response?.data?.message || 'Failed to start setup', 'error'); }
+    finally { setBusy(false); }
+  };
+
+  const confirmSetup = async () => {
+    if (!/^\d{6}$/.test(verifyCode.trim())) { showToast('Enter the 6-digit code', 'error'); return; }
+    setBusy(true);
+    try {
+      const { data } = await api.post('/auth/2fa/verify-setup', { token: verifyCode.trim() });
+      if (data.success) {
+        setBackupCodes(data.data.backupCodes || []);
+        setStage('showingCodes');
+        setEnabled(true);
+        setVerifyCode('');
+        showToast('Two-factor authentication enabled');
+      }
+    } catch (err) { showToast(err.response?.data?.message || 'Incorrect code', 'error'); }
+    finally { setBusy(false); }
+  };
+
+  const doDisable = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post('/auth/2fa/disable', { password: disablePass, token: disableCode.trim() });
+      if (data.success) {
+        setEnabled(false); setShowDisable(false);
+        setDisablePass(''); setDisableCode(''); setStage('idle');
+        showToast('Two-factor authentication disabled');
+      }
+    } catch (err) { showToast(err.response?.data?.message || 'Failed to disable', 'error'); }
+    finally { setBusy(false); }
+  };
+
+  const finishCodes = () => { setStage('idle'); setBackupCodes([]); setQr(''); setManualKey(''); };
+
+  const btn = (bg) => ({ padding: '10px 22px', borderRadius: 'var(--radius-sm)', background: bg, color: '#fff', fontSize: 14, fontWeight: 600, border: 'none', cursor: busy ? 'not-allowed' : 'pointer' });
+
+  return (
+    <div style={{ ...styles.card, maxWidth: 600, marginTop: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 600 }}>Two-Factor Authentication</h2>
+        {!loading && (
+          <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20,
+            background: enabled ? '#D1FAE5' : '#FEE2E2', color: enabled ? '#065F46' : '#991B1B' }}>
+            {enabled ? 'ON' : 'OFF'}
+          </span>
+        )}
+      </div>
+      <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+        Add a second step at login using an authenticator app (Google Authenticator, Authy). Optional, but strongly recommended.
+      </p>
+
+      {loading ? (
+        <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading…</p>
+      ) : stage === 'showingCodes' ? (
+        <div>
+          <div style={{ padding: '12px 14px', background: '#FEF9E7', border: '1px solid #F5E6B3', borderRadius: 8, marginBottom: 14 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: '#92400E', marginBottom: 4 }}>Save these backup codes now</p>
+            <p style={{ fontSize: 12, color: '#92400E' }}>Each works once if you lose your device. They will not be shown again.</p>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+            {backupCodes.map((c) => (
+              <code key={c} style={{ fontFamily: 'monospace', fontSize: 14, fontWeight: 700, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 6, padding: '8px 10px', textAlign: 'center', letterSpacing: '0.08em' }}>{c}</code>
+            ))}
+          </div>
+          <button onClick={finishCodes} style={btn('var(--tech-blue)')}>I've saved them</button>
+        </div>
+      ) : stage === 'enrolling' ? (
+        <div>
+          <p style={{ fontSize: 13, marginBottom: 12 }}>1. Scan this QR code with your authenticator app:</p>
+          {qr && <img src={qr} alt="2FA QR code" style={{ width: 200, height: 200, display: 'block', margin: '0 auto 12px', border: '1px solid #E2E8F0', borderRadius: 8 }} />}
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Or enter this key manually:</p>
+          <code style={{ display: 'block', fontFamily: 'monospace', fontSize: 13, background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 6, padding: '8px 10px', marginBottom: 18, wordBreak: 'break-all' }}>{manualKey}</code>
+          <p style={{ fontSize: 13, marginBottom: 8 }}>2. Enter the 6-digit code it shows:</p>
+          <input value={verifyCode} onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, ''))}
+            inputMode="numeric" maxLength={6} placeholder="123456"
+            style={{ ...inputStyle, textAlign: 'center', fontSize: 20, letterSpacing: '0.3em', fontWeight: 700, marginBottom: 16 }} />
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={confirmSetup} disabled={busy} style={btn('var(--finance-green, #1A6B3C)')}>{busy ? 'Verifying…' : 'Verify & Enable'}</button>
+            <button onClick={() => setStage('idle')} disabled={busy} style={{ ...btn('#9CA3AF') }}>Cancel</button>
+          </div>
+        </div>
+      ) : enabled ? (
+        <div>
+          {!showDisable ? (
+            <button onClick={() => setShowDisable(true)} style={btn('var(--danger)')}>Disable 2FA</button>
+          ) : (
+            <div>
+              <p style={{ fontSize: 13, marginBottom: 12 }}>Confirm with your password and a current authenticator code:</p>
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>Password</label>
+                <input type="password" value={disablePass} onChange={(e) => setDisablePass(e.target.value)} style={inputStyle} />
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Authenticator code</label>
+                <input value={disableCode} onChange={(e) => setDisableCode(e.target.value.replace(/\D/g, ''))} inputMode="numeric" maxLength={6} style={inputStyle} />
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={doDisable} disabled={busy} style={btn('var(--danger)')}>{busy ? 'Disabling…' : 'Confirm Disable'}</button>
+                <button onClick={() => setShowDisable(false)} disabled={busy} style={btn('#9CA3AF')}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <button onClick={beginSetup} disabled={busy} style={btn('var(--finance-green, #1A6B3C)')}>{busy ? 'Starting…' : 'Set up 2FA'}</button>
+      )}
     </div>
   );
 }

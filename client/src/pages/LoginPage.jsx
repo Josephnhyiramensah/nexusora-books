@@ -89,7 +89,7 @@ function SplashReveal({ onComplete }) {
 
 // ─── Login Page ───────────────────────────────────────────────────────────────
 export default function LoginPage() {
-  const { login, isAuthenticated, error, clearError } = useAuth();
+  const { login, verifyTwoFactor, isAuthenticated, error, clearError } = useAuth();
   const navigate = useNavigate();
 
   const [showSplash, setShowSplash] = useState(true);
@@ -99,6 +99,15 @@ export default function LoginPage() {
   const [localError, setLocalError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // ─── 2FA second step ─────────────────────────────────────────────────────
+  // When the password step returns twoFactorRequired, we hold the short-lived
+  // challenge token and switch the card to a code-entry view. No session exists
+  // yet — the user is authenticated only once the code verifies.
+  const [twoFactorStep, setTwoFactorStep] = useState(false);
+  const [challengeToken, setChallengeToken] = useState('');
+  const [code, setCode] = useState('');
+  const [useBackup, setUseBackup] = useState(false);
+  const [backupCode, setBackupCode] = useState('');
   useEffect(() => {
     if (isAuthenticated) navigate('/home', { replace: true });
   }, [isAuthenticated, navigate]);
@@ -114,8 +123,42 @@ export default function LoginPage() {
     setSubmitting(true);
     const result = await login(email, password);
     setSubmitting(false);
+
+    // 2FA-enabled account: switch to the code-entry step instead of navigating.
+    if (result.twoFactorRequired) {
+      setChallengeToken(result.challengeToken);
+      setTwoFactorStep(true);
+      return;
+    }
+
     if (result.success) navigate('/home', { replace: true });
     else setLocalError(result.message || 'Login failed. Please check your credentials.');
+  };
+
+  const handleVerify2FA = async (e) => {
+    e.preventDefault();
+    setLocalError('');
+    const entered = useBackup ? backupCode.trim() : code.trim();
+    if (!entered) { setLocalError(useBackup ? 'Enter a backup code.' : 'Enter the 6-digit code.'); return; }
+
+    setSubmitting(true);
+    const result = await verifyTwoFactor(
+      challengeToken,
+      useBackup ? { backupCode: entered } : { code: entered }
+    );
+    setSubmitting(false);
+
+    if (result.success) {
+      navigate('/home', { replace: true });
+    } else {
+      // If the challenge expired, send the user back to the password step.
+      if (result.message && /expired|session/i.test(result.message)) {
+        setTwoFactorStep(false);
+        setChallengeToken('');
+        setCode(''); setBackupCode('');
+      }
+      setLocalError(result.message || 'Verification failed. Please try again.');
+    }
   };
 
   const inputStyle = {
@@ -235,6 +278,70 @@ export default function LoginPage() {
                 )}
               </AnimatePresence>
 
+              {twoFactorStep ? (
+                <form onSubmit={handleVerify2FA}>
+                  <p style={{ fontSize: 13, color: '#6B7280', marginBottom: 18 }}>
+                    {useBackup
+                      ? 'Enter one of your saved backup codes.'
+                      : 'Enter the 6-digit code from your authenticator app.'}
+                  </p>
+
+                  {!useBackup ? (
+                    <input
+                      autoFocus
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={code}
+                      onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                      placeholder="123456"
+                      style={{
+                        width: '100%', padding: '14px', textAlign: 'center',
+                        fontSize: 24, letterSpacing: '0.4em', fontWeight: 700,
+                        border: '1.5px solid #E2E8F0', borderRadius: 10, color: '#1A3560',
+                        outline: 'none', marginBottom: 20, boxSizing: 'border-box',
+                      }}
+                    />
+                  ) : (
+                    <input
+                      autoFocus
+                      value={backupCode}
+                      onChange={(e) => setBackupCode(e.target.value.toUpperCase())}
+                      placeholder="XXXXX-XXXXX"
+                      style={{
+                        width: '100%', padding: '14px', textAlign: 'center',
+                        fontSize: 18, letterSpacing: '0.15em', fontWeight: 700,
+                        border: '1.5px solid #E2E8F0', borderRadius: 10, color: '#1A3560',
+                        outline: 'none', marginBottom: 20, boxSizing: 'border-box',
+                      }}
+                    />
+                  )}
+
+                  <motion.button
+                    type="submit"
+                    disabled={submitting}
+                    whileHover={{ scale: submitting ? 1 : 1.02 }}
+                    whileTap={{ scale: submitting ? 1 : 0.97 }}
+                    style={{
+                      width: '100%', padding: '13px 24px',
+                      background: submitting ? '#9CA3AF' : 'linear-gradient(135deg, #1A3560 0%, #2E75B6 100%)',
+                      color: '#fff', borderRadius: 10, fontSize: 15, fontWeight: 700,
+                      border: 'none', cursor: submitting ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {submitting ? 'Verifying…' : 'Verify & Sign In'}
+                  </motion.button>
+
+                  <div style={{ textAlign: 'center', marginTop: 18 }}>
+                    <button
+                      type="button"
+                      onClick={() => { setUseBackup(!useBackup); setLocalError(''); setCode(''); setBackupCode(''); }}
+                      style={{ background: 'none', border: 'none', color: '#2563EB', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      {useBackup ? '← Use authenticator code' : 'Use a backup code instead'}
+                    </button>
+                  </div>
+                </form>
+              ) : (
               <form onSubmit={handleSubmit}>
                 {/* Email */}
                 <motion.div
@@ -354,6 +461,7 @@ export default function LoginPage() {
                   ) : 'Sign In'}
                 </motion.button>
               </form>
+              )}
 
               {/* Register Link */}
               <motion.div

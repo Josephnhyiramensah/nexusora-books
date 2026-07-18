@@ -11,6 +11,16 @@ const { getModel } = require('../utils/getModel');
 const resolveUserFromToken = async (req, token) => {
   const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
+  // Typed-token rejection: real access tokens carry NO `type` claim. Challenge
+  // tokens (e.g. 2fa_pending, issued after the password step but before the
+  // second factor) DO carry a `type`, and are signed with this same secret. If we
+  // let one satisfy `protect`, a user could skip 2FA entirely by presenting their
+  // pending token as a Bearer token. So any token with a `type` claim is refused
+  // here — it must go only to its dedicated handler (e.g. POST /auth/2fa/login).
+  if (decoded.type) {
+    return { error: { status: 401, message: 'This token cannot be used to access resources.' } };
+  }
+
   // Cross-tenant assertion: a token issued for tenant A must never be
   // accepted against tenant B, regardless of the X-Tenant-ID header.
 if (decoded.tenantId && req.tenant && decoded.tenantId !== req.tenant.subdomain) {

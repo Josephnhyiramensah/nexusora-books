@@ -61,18 +61,70 @@ const createUser = async (req, res) => {
   }
 };
 
+// The founding account = the oldest user in the tenant (earliest createdAt).
+// It is IMMUTABLE from within the tenant app: no tenant admin may change its
+// role, demote it, or deactivate it. (The platform console CAN edit it — that
+// path lives in tenantController and is intentionally exempt from this guard.)
+// Returns the founding user's _id as a string, or null if the tenant is empty.
+const getFoundingUserId = async (User) => {
+  const founder = await User.findOne({}).sort({ createdAt: 1 }).select('_id').lean();
+  return founder ? String(founder._id) : null;
+};
+
+// Roles a TENANT admin may assign. super_admin is deliberately excluded — it can
+// only be granted from the platform console, never from inside the tenant app.
+const TENANT_ASSIGNABLE_ROLES = ['admin', 'accountant', 'staff', 'viewer'];
+
 const updateUser = async (req, res) => {
   try {
     const User = getModel(req.tenantDb, 'User');
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
 
+    const foundingId = await getFoundingUserId(User);
+    const isFounder = foundingId && String(user._id) === foundingId;
+
+    // A role change is being requested if `role` is present and differs.
+    const roleChangeRequested = req.body.role !== undefined && req.body.role !== user.role;
+
+    if (roleChangeRequested) {
+      // Nobody may assign super_admin from inside the tenant app.
+      if (req.body.role === 'super_admin') {
+        return res.status(403).json({
+          success: false,
+          message: 'The super admin role can only be assigned from the Nexusora console. Contact your provider.',
+        });
+      }
+      // The founding account's role is immutable here.
+      if (isFounder) {
+        return res.status(403).json({
+          success: false,
+          message: 'The founding account cannot be changed from within the app. Contact your provider to hand it over.',
+        });
+      }
+      // Any other requested role must be one a tenant admin is allowed to assign.
+      if (!TENANT_ASSIGNABLE_ROLES.includes(req.body.role)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid role. Allowed: ${TENANT_ASSIGNABLE_ROLES.join(', ')}.`,
+        });
+      }
+    }
+
+    // Name/phone edits are always fine; role only reaches here if it passed above.
     const fields = ['firstName', 'lastName', 'phone', 'role'];
     fields.forEach((f) => { if (req.body[f] !== undefined) user[f] = req.body[f]; });
     await user.save();
 
+    await logAudit(req.tenantDb, {
+      userId: req.user._id, action: 'update', module: 'settings',
+      entityId: user._id, entityType: 'User',
+      description: `Updated user: ${user.email}${roleChangeRequested ? ` (role → ${req.body.role})` : ''}`,
+    }, req);
+
     res.json({ success: true, message: 'User updated.', data: user });
   } catch (error) {
+    console.error('[Users] Update error:', error.message);
     res.status(500).json({ success: false, message: 'Failed to update user.' });
   }
 };
@@ -83,8 +135,13 @@ const deactivateUser = async (req, res) => {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
 
-    if (user.role === 'super_admin') {
-      return res.status(400).json({ success: false, message: 'Cannot deactivate the super admin.' });
+    // Founder-based (not role-based) immutability: only the founding account is
+    // protected. A promoted super_admin can still be deactivated. This matches
+    // the console's handover model — the founder is sacred inside the app, but
+    // editable from the platform console.
+    const foundingId = await getFoundingUserId(User);
+    if (foundingId && String(user._id) === foundingId) {
+      return res.status(400).json({ success: false, message: 'The founding account cannot be deactivated from within the app.' });
     }
 
     user.isActive = !user.isActive;

@@ -3,7 +3,7 @@
 
 const jwt = require('jsonwebtoken');
 const { getModel } = require('../utils/getModel');
-const { generateTokenPair } = require('../utils/generateToken');
+const { generateTokenPair, generateChallengeToken } = require('../utils/generateToken');
 const { logAudit } = require('../middleware/auditMiddleware');
 
 // Roles an administrator may assign via registration.
@@ -119,6 +119,19 @@ const register = async (req, res) => {
 
 /**
  * POST /api/auth/login
+ *
+ * On a correct password, one of two outcomes:
+ *   A. User has 2FA enabled → no session; return a 2fa_pending challenge. The
+ *      client completes login at POST /api/auth/2fa/login.
+ *   C. Otherwise            → full access/refresh session (as before). 2FA is
+ *      OPTIONAL, so a user without it simply logs in. The response carries
+ *      twoFactorEnabled:false so the client can show a (skippable) "set up 2FA"
+ *      prompt and an off-by-default warning — that nudge is entirely frontend.
+ *
+ * In Case A the lockout counters are intentionally NOT cleared — they clear only
+ * when a full session is issued (Case C here, or a successful second factor in
+ * the 2fa/login handler), keeping the failed-attempt count continuous across both
+ * factors and single-sourced.
  */
 const login = async (req, res) => {
   try {
@@ -148,7 +161,7 @@ const login = async (req, res) => {
       });
     }
 
-   // Locked accounts are rejected before the password is even checked —
+    // Locked accounts are rejected before the password is even checked —
     // so an attacker learns nothing from timing.
     if (user.isLocked()) {
       return res.status(423).json({
@@ -175,9 +188,24 @@ const login = async (req, res) => {
       });
     }
 
+    // ─── Password correct. ────────────────────────────────────────────────────
+
+    // Case A: 2FA enabled → issue NO real tokens; require the second factor.
+    if (user.twoFactorEnabled) {
+      const challengeToken = generateChallengeToken(user, req.tenant.subdomain, '2fa_pending');
+      return res.json({
+        success: true,
+        twoFactorRequired: true,
+        message: 'Enter the code from your authenticator app to finish signing in.',
+        data: { challengeToken },
+      });
+    }
+
+    // Case C: no 2FA → full session, exactly as before. twoFactorEnabled:false is
+    // surfaced so the client can offer a skippable "set up 2FA" prompt/banner.
     const { accessToken, refreshToken } = generateTokenPair(user, req.tenant.subdomain);
 
-   user.refreshToken = refreshToken;
+    user.refreshToken = refreshToken;
     await user.registerSuccessfulLogin(req.ip);
     await logAudit(req.tenantDb, {
       userId: user._id,
@@ -196,6 +224,7 @@ const login = async (req, res) => {
           lastName: user.lastName,
           email: user.email,
           role: user.role,
+          twoFactorEnabled: user.twoFactorEnabled,
         },
         accessToken,
         refreshToken,
@@ -227,8 +256,8 @@ const refreshTokenHandler = async (req, res) => {
     const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
 
     // Cross-tenant assertion on refresh as well.
-if (decoded.tenantId && req.tenant && decoded.tenantId !== req.tenant.subdomain) {
-        return res.status(401).json({
+    if (decoded.tenantId && req.tenant && decoded.tenantId !== req.tenant.subdomain) {
+      return res.status(401).json({
         success: false,
         message: 'Refresh token is not valid for this workspace.',
       });

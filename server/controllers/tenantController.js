@@ -380,6 +380,138 @@ const deleteTenant = async (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to delete tenant.' });
   }
 };
+// ─── OPERATOR CONSOLE: per-user controls (platformProtect only) ───────────────
+// Called from the Master Admin console to fix a stuck tenant user. Identified by
+// userId (from the Users table), so they keep working even while an email is
+// being changed. The console is intentionally all-powerful here — the
+// founding-account immutability rule lives on the TENANT side (Settings → Users),
+// never here, so a founding account CAN be fully handed over (email + name +
+// phone changed) from this console.
+//
+// NB: every save uses { validateBeforeSave: false } because the user is loaded
+// WITHOUT the select:false password field; full validation would wrongly fail on
+// "password required". Role and email are validated explicitly below instead.
+
+const VALID_TENANT_ROLES = ['super_admin', 'admin', 'accountant', 'staff', 'viewer'];
+
+// Shared: resolve tenant → its User model → the target user by id.
+const resolveTenantUser = async (subdomain, userId) => {
+  const tenant = await Tenant.findOne({ subdomain });
+  if (!tenant) return { error: { status: 404, message: 'Tenant not found.' } };
+  const tenantDb = await getTenantConnection(tenant.databaseName);
+  const User = getModel(tenantDb, 'User');
+  const user = await User.findById(userId);
+  if (!user) return { error: { status: 404, message: 'User not found in this tenant.' } };
+  return { tenant, User, user };
+};
+
+// POST /:subdomain/users/:userId/unlock
+// Clears the FULL progressive-lockout state — a deliberate operator override.
+const unlockTenantUser = async (req, res) => {
+  try {
+    const { user, error } = await resolveTenantUser(req.params.subdomain, req.params.userId);
+    if (error) return res.status(error.status).json({ success: false, message: error.message });
+
+    user.failedLoginAttempts = 0;
+    user.lockoutCount = 0;
+    user.lockedUntil = null;
+    await user.save({ validateBeforeSave: false });
+
+    console.log(`[Console] Unlocked ${user.email} in ${req.params.subdomain} by ${req.platformAdmin?.email}`);
+    res.json({ success: true, message: `${user.email} unlocked.`, data: { _id: user._id } });
+  } catch (error) {
+    console.error('[Console] Unlock error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to unlock user.' });
+  }
+};
+
+// PUT /:subdomain/users/:userId/role   body: { role }
+const changeTenantUserRole = async (req, res) => {
+  try {
+    const { role } = req.body;
+    if (!VALID_TENANT_ROLES.includes(role)) {
+      return res.status(400).json({ success: false, message: `Invalid role. Must be one of: ${VALID_TENANT_ROLES.join(', ')}.` });
+    }
+
+    const { user, error } = await resolveTenantUser(req.params.subdomain, req.params.userId);
+    if (error) return res.status(error.status).json({ success: false, message: error.message });
+
+    const previous = user.role;
+    user.role = role;
+    await user.save({ validateBeforeSave: false });
+
+    console.log(`[Console] Role ${previous} → ${role} for ${user.email} in ${req.params.subdomain} by ${req.platformAdmin?.email}`);
+    res.json({ success: true, message: `${user.email} is now ${role.replace('_', ' ')}.`, data: { _id: user._id, role: user.role } });
+  } catch (error) {
+    console.error('[Console] Role change error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to change role.' });
+  }
+};
+
+// PUT /:subdomain/users/:userId/identity   body: { email?, firstName?, lastName?, phone? }
+// The handover control — replaces a founding/test account's details with the
+// real owner's. Only the fields provided are changed.
+const changeTenantUserIdentity = async (req, res) => {
+  try {
+    const { email, firstName, lastName, phone } = req.body;
+    if (!email && firstName === undefined && lastName === undefined && phone === undefined) {
+      return res.status(400).json({ success: false, message: 'Provide at least one field to change.' });
+    }
+
+    const { User, user, error } = await resolveTenantUser(req.params.subdomain, req.params.userId);
+    if (error) return res.status(error.status).json({ success: false, message: error.message });
+
+    if (email) {
+      const normalized = email.toLowerCase().trim();
+      if (!/^\S+@\S+\.\S+$/.test(normalized)) {
+        return res.status(400).json({ success: false, message: 'Please provide a valid email.' });
+      }
+      const clash = await User.findOne({ email: normalized, _id: { $ne: user._id } });
+      if (clash) {
+        return res.status(409).json({ success: false, message: 'Another user in this tenant already uses that email.' });
+      }
+      user.email = normalized;
+    }
+    if (firstName !== undefined) user.firstName = firstName;
+    if (lastName !== undefined) user.lastName = lastName;
+    if (phone !== undefined) user.phone = phone;
+
+    await user.save({ validateBeforeSave: false });
+
+    console.log(`[Console] Identity updated for ${user._id} (${user.email}) in ${req.params.subdomain} by ${req.platformAdmin?.email}`);
+    res.json({
+      success: true,
+      message: 'User details updated.',
+      data: { _id: user._id, firstName: user.firstName, lastName: user.lastName, email: user.email, phone: user.phone },
+    });
+  } catch (error) {
+    console.error('[Console] Identity change error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to update user details.' });
+  }
+};
+
+// PUT /:subdomain/users/:userId/active   body: { isActive }
+const setTenantUserActive = async (req, res) => {
+  try {
+    const { isActive } = req.body;
+    if (typeof isActive !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'isActive must be true or false.' });
+    }
+
+    const { user, error } = await resolveTenantUser(req.params.subdomain, req.params.userId);
+    if (error) return res.status(error.status).json({ success: false, message: error.message });
+
+    user.isActive = isActive;
+    await user.save({ validateBeforeSave: false });
+
+    console.log(`[Console] ${isActive ? 'Activated' : 'Deactivated'} ${user.email} in ${req.params.subdomain} by ${req.platformAdmin?.email}`);
+    res.json({ success: true, message: `${user.email} ${isActive ? 'activated' : 'deactivated'}.`, data: { _id: user._id, isActive: user.isActive } });
+  } catch (error) {
+    console.error('[Console] Active toggle error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to update account status.' });
+  }
+};
+
 module.exports = {
   provisionTenant,
   listTenants,
@@ -395,4 +527,8 @@ module.exports = {
   resetTenantUserPassword,
   getTenantDetailStats,
   deleteTenant,
+  unlockTenantUser,
+  changeTenantUserRole,
+  changeTenantUserIdentity,
+  setTenantUserActive,
 };

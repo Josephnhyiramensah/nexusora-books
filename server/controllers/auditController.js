@@ -23,12 +23,17 @@ const getAuditLogs = async (req, res) => {
       .limit(Number(limit))
       .lean();
 
-    // Enrich with user names from User model
+    // Enrich with user names from User model.
+    // NOTE: the actor is stored on the log as `user` (an ObjectId ref), NOT
+    // `userId`. Reading the wrong key here is what made every row render as
+    // "System" in the UI — the lookup always missed and returned user: null.
     const User = getModel(req.tenantDb, 'User');
     const enriched = await Promise.all(logs.map(async (log) => {
       try {
-        if (log.userId) {
-          const u = await User.findById(log.userId).select('firstName lastName email role').lean();
+        // log.user is the stored ObjectId; resolve it to a name object. We
+        // overwrite the same `user` key because that is what the frontend reads.
+        if (log.user) {
+          const u = await User.findById(log.user).select('firstName lastName email role').lean();
           return { ...log, user: u || null };
         }
         return { ...log, user: null };

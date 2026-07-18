@@ -130,6 +130,28 @@ function TenantDetailModal({ tenant, onClose, onRefresh }) {
   const [resetting, setResetting] = useState(false);
   const [resetMsg, setResetMsg] = useState('');
 
+  // Per-user management (console controls): which row is expanded, busy state,
+  // per-row feedback, and the identity-edit draft.
+  const [manageUserId, setManageUserId] = useState(null);
+  const [rowBusy, setRowBusy] = useState('');
+  const [rowMsg, setRowMsg] = useState({ id: null, text: '', ok: true });
+  const [identityDraft, setIdentityDraft] = useState({ firstName: '', lastName: '', email: '', phone: '' });
+
+  // The founding account = oldest by createdAt. Immutable ONLY in the tenant UI;
+  // the console can edit it (that's the handover path). We surface a badge so the
+  // operator knows which one it is, but all controls remain enabled here.
+  const foundingUserId = users.length
+    ? users.reduce((oldest, u) =>
+        new Date(u.createdAt) < new Date(oldest.createdAt) ? u : oldest, users[0])._id
+    : null;
+
+  const reloadUsers = async () => {
+    try {
+      const { data } = await platformApi.get(`/tenants/${tenant.subdomain}/users`);
+      if (data.success) setUsers(data.data);
+    } catch {}
+  };
+
   useEffect(() => {
     // Load users and stats
     Promise.all([
@@ -137,6 +159,60 @@ function TenantDetailModal({ tenant, onClose, onRefresh }) {
       platformApi.get(`/tenants/${tenant.subdomain}/detail-stats`).then(({ data }) => { if (data.success) setDetailStats(data.data); }).catch(() => {}),
     ]).finally(() => setLoadingUsers(false));
   }, [tenant.subdomain]);
+
+  // Open the manage panel for a user, seeding the identity draft from their record.
+  const openManage = (u) => {
+    if (manageUserId === u._id) { setManageUserId(null); return; }
+    setManageUserId(u._id);
+    setRowMsg({ id: null, text: '', ok: true });
+    setIdentityDraft({ firstName: u.firstName || '', lastName: u.lastName || '', email: u.email || '', phone: u.phone || '' });
+  };
+
+  const say = (id, text, ok = true) => setRowMsg({ id, text, ok });
+
+  const doUnlock = async (u) => {
+    setRowBusy(u._id + ':unlock');
+    try {
+      const { data } = await platformApi.post(`/tenants/${tenant.subdomain}/users/${u._id}/unlock`);
+      say(u._id, data.success ? '✅ Unlocked.' : `❌ ${data.message}`, data.success);
+      if (data.success) await reloadUsers();
+    } catch (err) { say(u._id, `❌ ${err.response?.data?.message || 'Failed.'}`, false); }
+    finally { setRowBusy(''); }
+  };
+
+  const doRole = async (u, role) => {
+    if (role === u.role) return;
+    if (!window.confirm(`Change ${u.email} from ${u.role.replace('_', ' ')} to ${role.replace('_', ' ')}?`)) return;
+    setRowBusy(u._id + ':role');
+    try {
+      const { data } = await platformApi.put(`/tenants/${tenant.subdomain}/users/${u._id}/role`, { role });
+      say(u._id, data.success ? `✅ Now ${role.replace('_', ' ')}.` : `❌ ${data.message}`, data.success);
+      if (data.success) await reloadUsers();
+    } catch (err) { say(u._id, `❌ ${err.response?.data?.message || 'Failed.'}`, false); }
+    finally { setRowBusy(''); }
+  };
+
+  const doActive = async (u) => {
+    const next = !u.isActive;
+    if (!window.confirm(`${next ? 'Activate' : 'Deactivate'} ${u.email}?`)) return;
+    setRowBusy(u._id + ':active');
+    try {
+      const { data } = await platformApi.put(`/tenants/${tenant.subdomain}/users/${u._id}/active`, { isActive: next });
+      say(u._id, data.success ? `✅ ${next ? 'Activated' : 'Deactivated'}.` : `❌ ${data.message}`, data.success);
+      if (data.success) await reloadUsers();
+    } catch (err) { say(u._id, `❌ ${err.response?.data?.message || 'Failed.'}`, false); }
+    finally { setRowBusy(''); }
+  };
+
+  const doIdentity = async (u) => {
+    setRowBusy(u._id + ':identity');
+    try {
+      const { data } = await platformApi.put(`/tenants/${tenant.subdomain}/users/${u._id}/identity`, identityDraft);
+      say(u._id, data.success ? '✅ Details updated.' : `❌ ${data.message}`, data.success);
+      if (data.success) await reloadUsers();
+    } catch (err) { say(u._id, `❌ ${err.response?.data?.message || 'Failed.'}`, false); }
+    finally { setRowBusy(''); }
+  };
 
   const handleSaveNote = async () => {
     setSavingNote(true);
@@ -265,13 +341,14 @@ function TenantDetailModal({ tenant, onClose, onRefresh }) {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
                       <tr style={{ background: '#F8FAFF' }}>
-                        {['Name', 'Email', 'Role', 'Status', 'Last Login'].map((h) => (
+                        {['Name', 'Email', 'Role', 'Status', 'Last Login', 'Actions'].map((h) => (
                           <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontWeight: 600, color: '#6B7280', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {users.map((u, i) => (
+                        <>
                         <tr key={u._id} style={{ borderTop: '1px solid #F0F4F8', background: i % 2 === 0 ? '#fff' : '#FAFBFC' }}>
                           <td style={{ padding: '10px 14px', fontWeight: 600 }}>{u.firstName} {u.lastName}</td>
                           <td style={{ padding: '10px 14px', color: '#6B7280' }}>{u.email}</td>
@@ -288,7 +365,80 @@ function TenantDetailModal({ tenant, onClose, onRefresh }) {
                           <td style={{ padding: '10px 14px', color: '#9CA3AF', fontSize: 12 }}>
                             {u.lastLogin ? new Date(u.lastLogin).toLocaleDateString('en-GB') : 'Never'}
                           </td>
+                         <td style={{ padding: '10px 14px' }}>
+                            <button onClick={() => openManage(u)}
+                              style={{ padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                                border: '1px solid #C9A227', background: manageUserId === u._id ? '#C9A227' : '#fff', color: manageUserId === u._id ? '#fff' : '#B8860B' }}>
+                              {manageUserId === u._id ? 'Close' : 'Manage'}
+                            </button>
+                          </td>
                         </tr>
+                        {manageUserId === u._id && (
+                          <tr key={u._id + '-manage'}>
+                            <td colSpan={6} style={{ padding: '16px 18px', background: '#FBFCFF', borderTop: '1px solid #E2E8F0' }}>
+                              {u._id === foundingUserId && (
+                                <div style={{ fontSize: 11, fontWeight: 700, color: '#B8860B', background: '#FEF9E7', border: '1px solid #F5E6B3', borderRadius: 6, padding: '6px 10px', marginBottom: 12, display: 'inline-block' }}>
+                                  ⭐ Founding account — immutable in the tenant app, but fully editable here (use for handover).
+                                </div>
+                              )}
+
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                                {/* Quick actions */}
+                                <div>
+                                  <p style={{ fontSize: 12, fontWeight: 700, color: '#1A3560', marginBottom: 8 }}>Quick actions</p>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                                    <button onClick={() => doUnlock(u)} disabled={rowBusy === u._id + ':unlock'}
+                                      style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, border: '1px solid #2563EB', background: '#fff', color: '#2563EB', cursor: 'pointer' }}>
+                                      🔓 Unlock
+                                    </button>
+                                    <button onClick={() => doActive(u)} disabled={rowBusy === u._id + ':active'}
+                                      style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                                        border: `1px solid ${u.isActive ? '#DC2626' : '#059669'}`, background: '#fff', color: u.isActive ? '#DC2626' : '#059669' }}>
+                                      {u.isActive ? '🚫 Deactivate' : '✅ Activate'}
+                                    </button>
+                                  </div>
+
+                                  <p style={{ fontSize: 12, fontWeight: 700, color: '#1A3560', marginBottom: 6 }}>Role</p>
+                                  <select value={u.role} onChange={(e) => doRole(u, e.target.value)} disabled={rowBusy === u._id + ':role'}
+                                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 13, background: '#fff' }}>
+                                    {['super_admin', 'admin', 'accountant', 'staff', 'viewer'].map((r) => (
+                                      <option key={r} value={r}>{r.replace('_', ' ')}</option>
+                                    ))}
+                                  </select>
+                                  <p style={{ fontSize: 10, color: '#9CA3AF', marginTop: 4 }}>Promotion to super admin is only possible here, never in the tenant app.</p>
+                                </div>
+
+                                {/* Identity / handover */}
+                                <div>
+                                  <p style={{ fontSize: 12, fontWeight: 700, color: '#1A3560', marginBottom: 8 }}>Edit details (handover)</p>
+                                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                                    <input placeholder="First name" value={identityDraft.firstName}
+                                      onChange={(e) => setIdentityDraft((p) => ({ ...p, firstName: e.target.value }))}
+                                      style={{ flex: 1, padding: '8px 10px', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+                                    <input placeholder="Last name" value={identityDraft.lastName}
+                                      onChange={(e) => setIdentityDraft((p) => ({ ...p, lastName: e.target.value }))}
+                                      style={{ flex: 1, padding: '8px 10px', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }} />
+                                  </div>
+                                  <input placeholder="Email" value={identityDraft.email}
+                                    onChange={(e) => setIdentityDraft((p) => ({ ...p, email: e.target.value }))}
+                                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 13, marginBottom: 8, boxSizing: 'border-box' }} />
+                                  <input placeholder="Phone" value={identityDraft.phone}
+                                    onChange={(e) => setIdentityDraft((p) => ({ ...p, phone: e.target.value }))}
+                                    style={{ width: '100%', padding: '8px 10px', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 13, marginBottom: 10, boxSizing: 'border-box' }} />
+                                  <button onClick={() => doIdentity(u)} disabled={rowBusy === u._id + ':identity'}
+                                    style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, border: 'none', background: '#1A3560', color: '#fff', cursor: 'pointer' }}>
+                                    {rowBusy === u._id + ':identity' ? 'Saving…' : 'Save details'}
+                                  </button>
+                                </div>
+                              </div>
+
+                              {rowMsg.id === u._id && rowMsg.text && (
+                                <p style={{ fontSize: 12, marginTop: 12, fontWeight: 600, color: rowMsg.ok ? '#059669' : '#DC2626' }}>{rowMsg.text}</p>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                        </>
                       ))}
                     </tbody>
                   </table>

@@ -7,6 +7,7 @@ const {
   getPricing, suspendTenant, reactivateTenant, getAdminStats,
   changeTenantPlan, getTenantUsers, resetTenantUserPassword,
   getTenantDetailStats, deleteTenant,
+  unlockTenantUser, changeTenantUserRole, changeTenantUserIdentity, setTenantUserActive,
 } = require('../controllers/tenantController');
 const { platformProtect, platformOwnerOnly } = require('../middleware/platformMiddleware');
 
@@ -36,6 +37,11 @@ router.get('/:subdomain/users', getTenantUsers);
 router.post('/:subdomain/reset-password', resetTenantUserPassword);
 router.get('/:subdomain/detail-stats', getTenantDetailStats);
 
+// Per-user operator controls (all inherit platformProtect from router.use above).
+router.post('/:subdomain/users/:userId/unlock', unlockTenantUser);
+router.put('/:subdomain/users/:userId/role', changeTenantUserRole);
+router.put('/:subdomain/users/:userId/identity', changeTenantUserIdentity);
+router.put('/:subdomain/users/:userId/active', setTenantUserActive);
 // Destructive — platform OWNER only.
 router.delete('/:subdomain', platformOwnerOnly, deleteTenant);
 

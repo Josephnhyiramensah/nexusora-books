@@ -64,15 +64,57 @@ export function AuthProvider({ children }) {
     try {
       dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: true });
       const { data } = await api.post('/auth/login', { email, password });
+ 
+      // Outcome 1: 2FA-enabled user. Password was correct but NO session is
+      // issued yet — the server returned a short-lived challenge token. Hand it
+      // back to the login page so it can collect the second factor. We set no
+      // localStorage and dispatch no LOGIN_SUCCESS: not authenticated yet.
+      if (data.success && data.twoFactorRequired) {
+        dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: false });
+        return { success: false, twoFactorRequired: true, challengeToken: data.data.challengeToken };
+      }
+
+      // Outcome 2: normal login (2FA off). Full session issued.
       if (data.success) {
         localStorage.setItem('accessToken', data.data.accessToken);
         localStorage.setItem('refreshToken', data.data.refreshToken);
         localStorage.setItem('user', JSON.stringify(data.data.user));
         dispatch({ type: AUTH_ACTIONS.LOGIN_SUCCESS, payload: data.data });
-        return { success: true };
+        // twoFactorEnabled:false here → the login page may offer a skippable
+        // "set up 2FA" prompt. That nudge is purely a frontend concern.
+        return { success: true, twoFactorEnabled: !!data.data.user?.twoFactorEnabled };
       }
     } catch (error) {
       const message = error.response?.data?.message || 'Login failed. Please try again.';
+      dispatch({ type: AUTH_ACTIONS.AUTH_ERROR, payload: message });
+      return { success: false, message };
+    }
+  }, []);
+
+  // Complete step 2 of login for a 2FA-enabled user. Accepts EITHER a 6-digit
+  // TOTP (code) OR a backup code — pass whichever the user entered. On success
+  // this is a fully completed login (same session writes as a normal login).
+  const verifyTwoFactor = useCallback(async (challengeToken, { code, backupCode }) => {
+    try {
+      dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: true });
+      const body = { challengeToken };
+      if (backupCode) body.backupCode = backupCode;
+      else body.token = code;
+
+      const { data } = await api.post('/auth/2fa/login', body);
+      if (data.success) {
+        localStorage.setItem('accessToken', data.data.accessToken);
+        localStorage.setItem('refreshToken', data.data.refreshToken);
+        localStorage.setItem('user', JSON.stringify(data.data.user));
+        dispatch({ type: AUTH_ACTIONS.LOGIN_SUCCESS, payload: data.data });
+        return {
+          success: true,
+          usedBackupCode: !!data.data.usedBackupCode,
+          backupCodesRemaining: data.data.backupCodesRemaining,
+        };
+      }
+    } catch (error) {
+      const message = error.response?.data?.message || 'Verification failed. Please try again.';
       dispatch({ type: AUTH_ACTIONS.AUTH_ERROR, payload: message });
       return { success: false, message };
     }
@@ -111,8 +153,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ ...state, login, register, logout, clearError }}>
-      {children}
+<AuthContext.Provider value={{ ...state, login, verifyTwoFactor, register, logout, clearError }}>    
+    {children}
     </AuthContext.Provider>
   );
 }
