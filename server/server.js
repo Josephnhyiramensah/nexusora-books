@@ -123,6 +123,7 @@ app.use('/api/tenants/provision', rateLimit({
   message: { success: false, message: 'Too many signup attempts. Please try again later.' },
 }));
 // ─── Health check ─────────────────────────────────────────────────────────────
+// Lightweight liveness ping (kept for uptime monitors / load balancers).
 app.get('/api/health', (req, res) => {
   res.json({
     success: true,
@@ -130,6 +131,19 @@ app.get('/api/health', (req, res) => {
     environment: process.env.NODE_ENV,
     timestamp: new Date().toISOString(),
   });
+});
+
+// Detailed system vitals for the operator console. Behind platformProtect so
+// only a logged-in platform admin can see server internals.
+const { getHealth } = require('./utils/healthCheck');
+const { platformProtect } = require('./middleware/platformMiddleware');
+app.get('/api/health/detailed', platformProtect, (req, res) => {
+  try {
+    res.json({ success: true, data: getHealth() });
+  } catch (error) {
+    console.error('[Health] detailed error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to read system health.' });
+  }
 });
 
 // ─── Public routes (no auth, no tenant) ──────────────────────────────────────

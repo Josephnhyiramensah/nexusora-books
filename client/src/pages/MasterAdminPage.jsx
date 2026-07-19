@@ -615,11 +615,26 @@ export default function MasterAdminPage() {
     setHealthLoading(true);
     try {
       const start = Date.now();
-      const res = await api.get('/health');
-      setHealthData({ status: res.data.success ? 'healthy' : 'degraded', ping: Date.now() - start, environment: res.data.environment, timestamp: res.data.timestamp });
-    } catch { setHealthData({ status: 'down', ping: null }); }
+      const res = await api.get('/health/detailed');
+      const ping = Date.now() - start;
+      if (res.data.success) {
+        setHealthData({ ...res.data.data, ping, reachable: true });
+      } else {
+        setHealthData({ reachable: false, ping });
+      }
+    } catch { setHealthData({ reachable: false, ping: null }); }
     finally { setHealthLoading(false); }
   };
+
+  // Auto-refresh vitals every 5s while the Health tab is open. Cleans up on tab
+  // change/unmount so we never poll in the background.
+  useEffect(() => {
+    if (activeTab !== 'health') return undefined;
+    fetchHealth();                              // immediate on open
+    const id = setInterval(fetchHealth, 5000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   const handleBroadcast = async () => {
     if (!announcement.title || !announcement.message) { alert('Fill in title and message'); return; }
@@ -910,24 +925,57 @@ export default function MasterAdminPage() {
                 {healthLoading ? '⏳ Checking...' : '🔍 Run Health Check'}
               </motion.button>
             </div>
-            {healthData && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
-                {[
-                  { label: 'API Status', value: healthData.status === 'healthy' ? '✅ Online' : '❌ Down', color: healthData.status === 'healthy' ? '#16A34A' : '#DC2626' },
-                  { label: 'Response Time', value: healthData.ping ? `${healthData.ping}ms` : 'N/A', color: (healthData.ping || 0) < 300 ? '#16A34A' : '#D97706' },
-                  { label: 'Environment', value: healthData.environment || 'unknown', color: '#2563EB' },
-                  { label: 'Total Tenants', value: tenants.length, color: '#1A3560' },
-                  { label: 'Active', value: tenants.filter((t) => t.status === 'active').length, color: '#16A34A' },
-                  { label: 'Suspended', value: tenants.filter((t) => t.status === 'suspended').length, color: '#DC2626' },
-                ].map((s, i) => (
-                  <div key={i} style={{ background: '#fff', borderRadius: 12, padding: '16px 20px', border: '1px solid #E2E8F0' }}>
-                    <p style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 6, textTransform: 'uppercase' }}>{s.label}</p>
-                    <p style={{ fontSize: 20, fontWeight: 700, color: s.color }}>{s.value}</p>
+            {healthData && healthData.reachable && (() => {
+              const fmtUptime = (s) => {
+                if (s == null) return 'N/A';
+                const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+                return d > 0 ? `${d}d ${h}h ${m}m` : h > 0 ? `${h}h ${m}m` : `${m}m ${s % 60}s`;
+              };
+              const memPct = healthData.memory ? Math.round((healthData.memory.heapUsedMb / healthData.memory.heapTotalMb) * 100) : 0;
+              const loadPct = healthData.system?.loadPercent ?? 0;
+              const cards = [
+                { label: 'API', value: '✅ Online', color: '#16A34A' },
+                { label: 'Master DB', value: healthData.database?.masterConnected ? '✅ Connected' : '❌ Down',
+                  color: healthData.database?.masterConnected ? '#16A34A' : '#DC2626' },
+                { label: 'Response', value: healthData.ping != null ? `${healthData.ping}ms` : 'N/A',
+                  color: (healthData.ping || 0) < 300 ? '#16A34A' : (healthData.ping || 0) < 800 ? '#D97706' : '#DC2626' },
+                { label: 'Uptime', value: fmtUptime(healthData.uptimeSeconds), color: '#1A3560' },
+                { label: 'Memory (heap)', value: healthData.memory ? `${healthData.memory.heapUsedMb} / ${healthData.memory.heapTotalMb} MB` : 'N/A',
+                  color: memPct < 75 ? '#16A34A' : memPct < 90 ? '#D97706' : '#DC2626' },
+                { label: 'RSS', value: healthData.memory ? `${healthData.memory.rssMb} MB` : 'N/A', color: '#1A3560' },
+                { label: 'CPU Load', value: `${loadPct}%`,
+                  color: loadPct < 70 ? '#16A34A' : loadPct < 90 ? '#D97706' : '#DC2626' },
+                { label: 'Live Tenant DBs', value: healthData.database?.liveTenantConnections ?? 0, color: '#2563EB' },
+                { label: 'Environment', value: healthData.process?.env || 'unknown', color: '#2563EB' },
+                { label: 'Node', value: healthData.process?.nodeVersion || 'N/A', color: '#6B7280' },
+                { label: 'Total Tenants', value: tenants.length, color: '#1A3560' },
+                { label: 'Active / Suspended', value: `${tenants.filter((t) => t.status === 'active').length} / ${tenants.filter((t) => t.status === 'suspended').length}`, color: '#1A3560' },
+              ];
+              return (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                    <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#16A34A', display: 'inline-block', animation: 'none' }} />
+                    <span style={{ fontSize: 12, color: '#6B7280' }}>
+                      Live · auto-refreshing every 5s · updated {new Date(healthData.timestamp).toLocaleTimeString('en-GB')}
+                    </span>
                   </div>
-                ))}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
+                    {cards.map((s, i) => (
+                      <div key={i} style={{ background: '#fff', borderRadius: 12, padding: '16px 20px', border: '1px solid #E2E8F0' }}>
+                        <p style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 6, textTransform: 'uppercase' }}>{s.label}</p>
+                        <p style={{ fontSize: 20, fontWeight: 700, color: s.color }}>{s.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+            {healthData && !healthData.reachable && (
+              <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 12, padding: 24, textAlign: 'center', color: '#DC2626', fontWeight: 600, marginBottom: 24 }}>
+                ❌ Server did not respond to the health check. It may be down or overloaded.
               </div>
             )}
-            {!healthData && <div style={{ background: '#fff', borderRadius: 12, padding: 32, textAlign: 'center', color: '#9CA3AF', border: '1px solid #E2E8F0' }}>Click "Run Health Check" to see system status</div>}
+            {!healthData && <div style={{ background: '#fff', borderRadius: 12, padding: 32, textAlign: 'center', color: '#9CA3AF', border: '1px solid #E2E8F0' }}>Loading system vitals…</div>}
             <div style={{ background: '#fff', borderRadius: 12, padding: '20px 24px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
               <h3 style={{ fontSize: 15, fontWeight: 600, color: '#1A3560', marginBottom: 16 }}>⚠️ Expiring Within 7 Days</h3>
               {tenants.filter((t) => { if (!t.subscription?.expiryDate) return false; const d = (new Date(t.subscription.expiryDate) - new Date()) / 86400000; return d >= 0 && d <= 7; }).length === 0
