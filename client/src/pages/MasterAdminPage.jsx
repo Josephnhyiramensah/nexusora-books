@@ -615,7 +615,7 @@ export default function MasterAdminPage() {
     setHealthLoading(true);
     try {
       const start = Date.now();
-      const res = await api.get('/health/detailed');
+      const res = await platformApi.get('/health/detailed');
       const ping = Date.now() - start;
       if (res.data.success) {
         setHealthData({ ...res.data.data, ping, reachable: true });
