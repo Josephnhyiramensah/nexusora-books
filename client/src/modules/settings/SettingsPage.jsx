@@ -478,7 +478,7 @@ function CompanyTab({
         </div>
       </div>
 
-      <button onClick={handleSaveCompany} style={styles.buttonPrimary}>
+      <button onClick={() => handleSaveCompany()} style={styles.buttonPrimary}>
         Save Company Settings
       </button>
     </div>
@@ -1301,8 +1301,17 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
 
   const handleSaveCompany = async (overrideForm) => {
     try {
-      const payload = overrideForm || companyForm;
-
+      // Guard: when this is wired directly to a button's onClick, React passes
+      // the click EVENT as the first arg (its target is an HTMLButtonElement),
+      // which poisons the payload and makes JSON.stringify throw "circular
+      // structure". Only treat the arg as form data if it's a plain object
+      // without a DOM/event shape.
+      const isPlainForm = overrideForm
+        && typeof overrideForm === 'object'
+        && !overrideForm.nativeEvent
+        && !overrideForm.target
+        && !(overrideForm instanceof Event);
+      const payload = isPlainForm ? overrideForm : companyForm;
       // Strip base64 images before saving — only save Cloudinary URLs
       const cleanPayload = { ...payload };
       // Guard with typeof — logo/letterheadImage may be a non-string (e.g. a File
