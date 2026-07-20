@@ -178,7 +178,8 @@ const updateTenantSettings = async (req, res) => {
 
     res.json({ success: true, message: 'Settings updated.', data: tenant });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to update settings.' });
+    console.error('[Tenant] Settings update error:', error.message);
+    res.status(500).json({ success: false, message: error.message || 'Failed to update settings.' });
   }
 };
 

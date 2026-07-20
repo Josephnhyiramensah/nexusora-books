@@ -977,10 +977,10 @@ export default function MasterAdminPage() {
             )}
             {!healthData && <div style={{ background: '#fff', borderRadius: 12, padding: 32, textAlign: 'center', color: '#9CA3AF', border: '1px solid #E2E8F0' }}>Loading system vitals…</div>}
             <div style={{ background: '#fff', borderRadius: 12, padding: '20px 24px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-              <h3 style={{ fontSize: 15, fontWeight: 600, color: '#1A3560', marginBottom: 16 }}>⚠️ Expiring Within 7 Days</h3>
-              {tenants.filter((t) => { if (!t.subscription?.expiryDate) return false; const d = (new Date(t.subscription.expiryDate) - new Date()) / 86400000; return d >= 0 && d <= 7; }).length === 0
-                ? <p style={{ color: '#9CA3AF', fontSize: 13 }}>No tenants expiring within 7 days. ✅</p>
-                : tenants.filter((t) => { if (!t.subscription?.expiryDate) return false; const d = (new Date(t.subscription.expiryDate) - new Date()) / 86400000; return d >= 0 && d <= 7; }).map((t) => (
+             <h3 style={{ fontSize: 15, fontWeight: 600, color: '#1A3560', marginBottom: 16 }}>⚠️ Expiring Within 30 Days</h3>
+              {tenants.filter((t) => { if (!t.subscription?.expiryDate) return false; const d = (new Date(t.subscription.expiryDate) - new Date()) / 86400000; return d >= 0 && d <= 30; }).length === 0
+                ? <p style={{ color: '#9CA3AF', fontSize: 13 }}>No tenants expiring within 30 days. ✅</p>
+                : tenants.filter((t) => { if (!t.subscription?.expiryDate) return false; const d = (new Date(t.subscription.expiryDate) - new Date()) / 86400000; return d >= 0 && d <= 30; }).map((t) => (
                   <div key={t._id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 14px', background: '#FEF3C7', borderRadius: 8, marginBottom: 8, border: '1px solid #FDE68A' }}>
                     <span style={{ fontWeight: 600, fontSize: 13 }}>{t.companyName} <span style={{ fontWeight: 400, color: '#6B7280' }}>({t.subdomain})</span></span>
                     <span style={{ fontSize: 12, color: '#D97706', fontWeight: 600 }}>{new Date(t.subscription.expiryDate).toLocaleDateString('en-GB')}</span>
