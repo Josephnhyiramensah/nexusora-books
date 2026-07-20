@@ -1305,15 +1305,22 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
 
       // Strip base64 images before saving — only save Cloudinary URLs
       const cleanPayload = { ...payload };
-      if (cleanPayload.logo && cleanPayload.logo.startsWith('data:')) {
-        delete cleanPayload.logo; // Don't save base64 logo — upload it first via Choose Logo File
+      // Guard with typeof — logo/letterheadImage may be a non-string (e.g. a File
+      // object) which would make .startsWith throw synchronously and fail the save
+      // instantly with no request sent. Strip base64 data URLs; drop non-strings too.
+      if (typeof cleanPayload.logo === 'string') {
+        if (cleanPayload.logo.startsWith('data:')) delete cleanPayload.logo;
+      } else if (cleanPayload.logo) {
+        delete cleanPayload.logo;
       }
-      if (cleanPayload.letterheadImage && cleanPayload.letterheadImage.startsWith('data:')) {
+      if (typeof cleanPayload.letterheadImage === 'string') {
+        if (cleanPayload.letterheadImage.startsWith('data:')) delete cleanPayload.letterheadImage;
+      } else if (cleanPayload.letterheadImage) {
         delete cleanPayload.letterheadImage;
       }
 
-    const { data } = await api.put('/auth/company-settings', { settings: cleanPayload });      if (data.success) {
-        updateSettings(cleanPayload);
+const { data } = await api.put('/auth/company-settings', { settings: cleanPayload });
+      if (data.success) {        updateSettings(cleanPayload);
         showToast('Settings saved successfully');
       }
     } catch (err) {
