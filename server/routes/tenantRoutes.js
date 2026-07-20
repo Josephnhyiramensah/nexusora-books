@@ -25,10 +25,11 @@ router.get('/:subdomain/public', getTenantPublic);
 // Every route below requires a valid PLATFORM token. A tenant user's token —
 // even KGR's super_admin — is signed with a different secret and cannot pass.
 router.use(platformProtect);
-router.put('/:subdomain/settings', updateTenantSettings);
+
 router.get('/', listTenants);
 router.get('/admin/stats', getAdminStats);
 router.get('/:subdomain', getTenant);
+router.put('/:subdomain/settings', updateTenantSettings);
 router.post('/:subdomain/suspend', suspendTenant);
 router.post('/:subdomain/reactivate', reactivateTenant);
 router.put('/:subdomain/plan', changeTenantPlan);

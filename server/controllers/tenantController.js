@@ -190,6 +190,10 @@ const updateTenantSettings = async (req, res) => {
 // URL parameter. So a user logged into tenant A can only ever edit tenant A;
 // there is no subdomain in the path to tamper with.
 const updateMyTenantSettings = async (req, res) => {
+  console.log('[MySettings] ===== REQUEST ARRIVED =====');
+  console.log('[MySettings] req.tenant:', req.tenant ? req.tenant.subdomain : 'MISSING');
+  console.log('[MySettings] req.user:', req.user ? req.user.email : 'MISSING');
+  console.log('[MySettings] body keys:', req.body && req.body.settings ? Object.keys(req.body.settings) : 'no settings');
   try {
     // req.tenant is set by tenantMiddleware from the host subdomain — trusted.
     const subdomain = req.tenant?.subdomain;
