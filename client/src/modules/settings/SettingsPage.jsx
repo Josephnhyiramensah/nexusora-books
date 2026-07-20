@@ -1319,14 +1319,33 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
         delete cleanPayload.letterheadImage;
       }
 
-const { data } = await api.put('/auth/company-settings', { settings: cleanPayload });
-      if (data.success) {        updateSettings(cleanPayload);
+// Bypass the axios `api` instance and use raw fetch. A direct fetch to this
+      // endpoint verifiably returns 200 with the identical payload; routing it
+      // through axios's response interceptor was failing the save. This mirrors
+      // the proven-working request exactly.
+      const token = localStorage.getItem('accessToken');
+      const host = window.location.hostname;
+      const subdomain = /^\d+\.\d+\.\d+\.\d+$/.test(host) ? '' : host.split('.')[0];
+      const res = await fetch('/api/auth/company-settings', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          'X-Tenant-ID': subdomain,
+        },
+        body: JSON.stringify({ settings: cleanPayload }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        updateSettings(cleanPayload);
         showToast('Settings saved successfully');
+      } else {
+        showToast(data.message || 'Failed to save', 'error');
       }
     } catch (err) {
-      showToast(err.response?.data?.message || 'Failed', 'error');
+      showToast(err.message || 'Failed', 'error');
     }
-  };
+    };
   const handleCreateUser = async (e) => {
     e.preventDefault();
     const fd = Object.fromEntries(new FormData(e.target));
