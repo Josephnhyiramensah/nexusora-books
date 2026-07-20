@@ -1312,8 +1312,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
         delete cleanPayload.letterheadImage;
       }
 
-      const { data } = await api.put(`/tenants/${subdomain}/settings`, { settings: cleanPayload });
-      if (data.success) {
+    const { data } = await api.put('/auth/company-settings', { settings: cleanPayload });      if (data.success) {
         updateSettings(cleanPayload);
         showToast('Settings saved successfully');
       }

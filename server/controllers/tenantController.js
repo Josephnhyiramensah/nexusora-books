@@ -174,11 +174,48 @@ const updateTenantSettings = async (req, res) => {
       allowed.forEach((f) => { if (settings[f] !== undefined) tenant.settings[f] = settings[f]; });
       tenant.markModified('settings');
     }
-    await tenant.save();
+   await tenant.save();
 
     res.json({ success: true, message: 'Settings updated.', data: tenant });
   } catch (error) {
     console.error('[Tenant] Settings update error:', error.message);
+    res.status(500).json({ success: false, message: error.message || 'Failed to update settings.' });
+  }
+};
+
+// PUT /api/auth/company-settings   (protect + tenantMiddleware)
+// TENANT-FACING settings save. Unlike updateTenantSettings (platform-console
+// only), this saves settings for the CALLER'S OWN tenant — identified by
+// req.tenant (resolved from the request host by tenantMiddleware), NEVER from a
+// URL parameter. So a user logged into tenant A can only ever edit tenant A;
+// there is no subdomain in the path to tamper with.
+const updateMyTenantSettings = async (req, res) => {
+  try {
+    // req.tenant is set by tenantMiddleware from the host subdomain — trusted.
+    const subdomain = req.tenant?.subdomain;
+    if (!subdomain) {
+      return res.status(400).json({ success: false, message: 'No tenant context.' });
+    }
+
+    const tenant = await Tenant.findOne({ subdomain });
+    if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found.' });
+
+    const { settings } = req.body;
+    if (settings) {
+      // Full whitelist matching the Tenant.settings schema, including
+      // letterheadImage (which the platform route's list was missing).
+      const allowed = [
+        'logo', 'letterheadImage', 'address', 'city', 'region', 'taxId',
+        'letterhead', 'fiscalYearStart', 'baseCurrency', 'dateFormat', 'whiteLabel',
+      ];
+      allowed.forEach((f) => { if (settings[f] !== undefined) tenant.settings[f] = settings[f]; });
+      tenant.markModified('settings');
+    }
+    await tenant.save();
+
+    res.json({ success: true, message: 'Settings updated.', data: { settings: tenant.settings } });
+  } catch (error) {
+    console.error('[Tenant] My-settings update error:', error.message);
     res.status(500).json({ success: false, message: error.message || 'Failed to update settings.' });
   }
 };
@@ -523,6 +560,7 @@ module.exports = {
   reactivateTenant,
   getPricing,
   updateTenantSettings,
+  updateMyTenantSettings,
   changeTenantPlan,
   getTenantUsers,
   resetTenantUserPassword,

@@ -5,6 +5,7 @@ const router = express.Router();
 const {
   register, login, refreshToken, logout, getMe, changePassword,
 } = require('../controllers/authController');
+const { updateMyTenantSettings } = require('../controllers/tenantController');
 const {
   setup, verifySetup, disable, regenerateBackupCodes, loginVerify,
 } = require('../controllers/twoFactorController');
@@ -27,6 +28,9 @@ router.post('/logout', protect, logout);
 router.get('/me', protect, getMe);
 router.put('/change-password', protect, changePassword);
 
+// Tenant-facing company settings save. Saves to the caller's OWN tenant only
+// (req.tenant, from the host) — no subdomain in the path to tamper with.
+router.put('/company-settings', protect, updateMyTenantSettings);
 // 2FA enrolment & management — behind protect (user is already logged in).
 router.post('/2fa/setup', protect, setup);
 router.post('/2fa/verify-setup', protect, verifySetup);
