@@ -2,12 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import reportService from '../../services/reportService';
 import { useTenant } from '../../context/TenantContext';
 import { useToast } from '../../hooks/useToast';
-import { ReportHeader, ExportBar, exportToCSV } from './ReportShared';
-
+import { ReportHeader, ExportBar, exportToCSV, printReport } from './ReportShared';
 export default function BalanceSheetPage() {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
-  const { companyName } = useTenant();
+  const { companyName, settings } = useTenant();
   const { showToast, ToastComponent } = useToast();
   const printRef = useRef(null);
 
@@ -18,14 +17,7 @@ export default function BalanceSheetPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const handlePrint = () => {
-    const win = window.open('', '_blank');
-    win.document.write(`<html><head><title>Balance Sheet</title><style>body{font-family:'Inter',sans-serif;padding:40px;color:#1A3560}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:8px 12px;border-bottom:1px solid #E2E8F0}.right{text-align:right}h1{text-align:center}h2{text-align:center;color:#C9A227;font-size:13px}</style></head><body>`);
-    win.document.write(printRef.current.innerHTML);
-    win.document.write('</body></html>');
-    win.document.close();
-    win.print();
-  };
+  const handlePrint = () => printReport(printRef.current, 'Balance Sheet');
 
   const handleCSV = () => {
     if (!report) return;
@@ -75,7 +67,7 @@ export default function BalanceSheetPage() {
       </div>
 
       <div ref={printRef} style={{ background: '#fff', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: 32 }}>
-        <ReportHeader title="Balance Sheet" subtitle={`As at ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`} companyName={companyName} />
+        <ReportHeader title="Balance Sheet" subtitle={`As at ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`} companyName={companyName} settings={settings} />
 
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <tbody>

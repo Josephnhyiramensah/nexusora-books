@@ -3,18 +3,101 @@
 import { FiPrinter, FiDownload } from 'react-icons/fi';
 import ExcelJS from 'exceljs';
 
-export function ReportHeader({ title, subtitle, companyName }) {
-  return (
-    <div style={{ textAlign: 'center', marginBottom: 28, paddingBottom: 20, borderBottom: '2px solid var(--deep-navy)' }}>
-      <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: 14, fontWeight: 600, color: 'var(--nexusora-gold)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
-        {companyName || 'Company'}
-      </h2>
-      <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 22, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
-        {title}
-      </h1>
-      {subtitle && <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>{subtitle}</p>}
+// NOTE: colours are hard-coded hex, not CSS variables. The print window is a
+// fresh document without the app stylesheet, so var(--…) would resolve to
+// nothing and the header would print black.
+export function ReportHeader({ title, subtitle, companyName, settings }) {
+  const s = settings || {};
+  const lh = s.letterhead || {};
+  const displayName = lh.companyName || companyName || 'Company';
+  const addressLine = lh.address || [s.address, s.city, s.region].filter(Boolean).join(', ');
+  const contactBits = [lh.phone, lh.email, lh.website].filter(Boolean);
+
+  const titleBlock = (
+    <div style={{ textAlign: 'center', marginTop: 18 }}>
+      <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1A3560', margin: '0 0 4px' }}>{title}</h1>
+      {subtitle && <p style={{ fontSize: 13, color: '#6B7280', margin: 0 }}>{subtitle}</p>}
     </div>
   );
+
+  // 1) Tenant uploaded a letterhead — it becomes the page header.
+  if (s.letterheadImage) {
+    return (
+      <div style={{ marginBottom: 26 }}>
+        <img src={s.letterheadImage} alt="" style={{ width: '100%', maxHeight: 150, objectFit: 'contain', display: 'block' }} />
+        <div style={{ display: 'flex', height: 4, borderRadius: 2, overflow: 'hidden', marginTop: 12 }}>
+          <div style={{ flex: 3, background: '#1A3560' }} />
+          <div style={{ flex: 1, background: '#C9A227' }} />
+        </div>
+        {titleBlock}
+      </div>
+    );
+  }
+
+  // 2) Fallback — build a branded header from the company details on file.
+  return (
+    <div style={{ marginBottom: 26 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20, paddingBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
+          {s.logo && <img src={s.logo} alt="" style={{ width: 58, height: 58, objectFit: 'contain', borderRadius: 8, flexShrink: 0 }} />}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 19, fontWeight: 800, color: '#1A3560', lineHeight: 1.2 }}>{displayName}</div>
+            {lh.tagline && <div style={{ fontSize: 12, fontStyle: 'italic', color: '#C9A227', marginTop: 3 }}>{lh.tagline}</div>}
+          </div>
+        </div>
+        <div style={{ textAlign: 'right', fontSize: 11, color: '#6B7280', lineHeight: 1.7, flexShrink: 0 }}>
+          {addressLine && <div>{addressLine}</div>}
+          {contactBits.map((b, i) => <div key={i}>{b}</div>)}
+          {s.taxId && <div style={{ color: '#1A3560', fontWeight: 700, marginTop: 2 }}>TIN: {s.taxId}</div>}
+        </div>
+      </div>
+      <div style={{ display: 'flex', height: 4, borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{ flex: 3, background: '#1A3560' }} />
+        <div style={{ flex: 1, background: '#C9A227' }} />
+      </div>
+      {titleBlock}
+    </div>
+  );
+}
+
+/**
+ * Open a print window for a report node and trigger the print dialog.
+ * Waits for images (letterhead/logo) to finish loading first — otherwise the
+ * saved PDF can come out with a blank header. A4 page size and
+ * print-color-adjust keep the branding intact in the PDF.
+ */
+export function printReport(node, title) {
+  if (!node) return;
+  const win = window.open('', '_blank');
+  if (!win) { alert('Please allow pop-ups to print this report.'); return; }
+
+  win.document.write(`<html><head><title>${title || 'Report'}</title><style>
+@page { size: A4; margin: 14mm; }
+* { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-sizing: border-box; }
+body { font-family: 'Inter', Arial, Helvetica, sans-serif; color: #1A3560; margin: 0; }
+img { max-width: 100%; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td { padding: 7px 10px; border-bottom: 1px solid #E2E8F0; }
+.right { text-align: right; }
+</style></head><body>`);
+  win.document.write(node.innerHTML);
+  win.document.write('</body></html>');
+  win.document.close();
+
+  let printed = false;
+  const go = () => { if (printed) return; printed = true; win.focus(); win.print(); };
+  const pending = Array.from(win.document.images || []).filter((im) => !im.complete);
+  if (pending.length === 0) {
+    setTimeout(go, 150);
+  } else {
+    let left = pending.length;
+    pending.forEach((im) => {
+      const done = () => { left -= 1; if (left === 0) go(); };
+      im.onload = done;
+      im.onerror = done;
+    });
+  }
+  setTimeout(go, 3000); // safety net if an image never settles
 }
 
 export function DateRangePicker({ startDate, endDate, onStartChange, onEndChange }) {
