@@ -64,8 +64,7 @@ export default function TrialBalancePage() {
       </div>
 
       <div ref={printRef} style={{ background: '#fff', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: 32 }}>
-        <ReportHeader title="Trial Balance" subtitle={`As at ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`} companyName={companyName} />
-
+<ReportHeader title="Trial Balance" subtitle={`As at ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`} companyName={companyName} settings={settings} />
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '2px solid var(--deep-navy)' }}>
