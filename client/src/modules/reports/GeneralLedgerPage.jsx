@@ -3,7 +3,7 @@ import reportService from '../../services/reportService';
 import accountService from '../../services/accountService';
 import { useTenant } from '../../context/TenantContext';
 import { useToast } from '../../hooks/useToast';
-import { ReportHeader, DateRangePicker, ExportBar, exportToCSV } from './ReportShared';
+import { ReportHeader, DateRangePicker, ExportBar, exportToCSV, exportToExcelStyled } from './ReportShared';
 import { formatDate } from '../../utils/formatters';
 
 export default function GeneralLedgerPage() {
@@ -40,17 +40,38 @@ export default function GeneralLedgerPage() {
     win.print();
   };
 
-  const handleCSV = () => {
+  const handleExcel = async () => {
     if (!report) return;
-    const rows = [];
-    report.accounts.forEach((acct) => {
-      rows.push([`--- ${acct.code} ${acct.name} ---`, '', '', '', '']);
-      acct.transactions.forEach((t) => rows.push([formatDate(t.date), t.entryNumber, t.description, t.debit.toFixed(2), t.credit.toFixed(2), t.balance.toFixed(2)]));
-      rows.push(['', '', 'Closing Balance', '', '', acct.closingBalance.toFixed(2)]);
+    const columns = [
+      { header: 'Date', key: 'date', width: 14 },
+      { header: 'Entry #', key: 'entry', width: 14 },
+      { header: 'Description', key: 'description', width: 42 },
+      { header: 'Debit', key: 'debit', width: 16, money: true },
+      { header: 'Credit', key: 'credit', width: 16, money: true },
+      { header: 'Balance', key: 'balance', width: 16, money: true },
+    ];
+    const sections = report.accounts.map((acct) => ({
+      label: `${acct.code} — ${acct.name}`,
+      rows: acct.transactions.map((t) => ({
+        date: formatDate(t.date),
+        entry: t.entryNumber,
+        description: t.description,
+        debit: t.debit > 0 ? t.debit : '',
+        credit: t.credit > 0 ? t.credit : '',
+        balance: t.balance,
+      })),
+      totalLabel: 'Closing Balance',
+      totalValues: { balance: acct.closingBalance },
+    }));
+    await exportToExcelStyled({
+      filename: 'general_ledger',
+      companyName,
+      title: 'General Ledger',
+      subtitle: `Period: ${formatDate(startDate)} to ${formatDate(endDate)}`,
+      columns,
+      sections,
     });
-    exportToCSV('general_ledger', ['Date', 'Entry #', 'Description', 'Debit', 'Credit', 'Balance'], rows);
   };
-
   if (loading && !report) return <p style={{ padding: 40, color: 'var(--text-muted)' }}>Generating report...</p>;
 
   return (
@@ -58,8 +79,8 @@ export default function GeneralLedgerPage() {
       {ToastComponent}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 22, fontWeight: 600, color: 'var(--text-primary)' }}>General Ledger</h1>
-        <ExportBar onPrint={handlePrint} onExportCSV={handleCSV} />
-      </div>
+         <ExportBar onPrint={handlePrint} onExportExcel={handleExcel} />    
+           </div>
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
