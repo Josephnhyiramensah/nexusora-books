@@ -9,8 +9,7 @@ const { updateMyTenantSettings } = require('../controllers/tenantController');
 const {
   setup, verifySetup, disable, regenerateBackupCodes, loginVerify,
 } = require('../controllers/twoFactorController');
-const { protect, optionalProtect } = require('../middleware/authMiddleware');
-
+const { protect, optionalProtect, authorise } = require('../middleware/authMiddleware');
 // Registration is PUBLIC only for the first user of an empty tenant.
 // optionalProtect populates req.user when an admin token is supplied, so the
 // controller can reject anonymous registration into an existing workspace.
@@ -30,8 +29,9 @@ router.put('/change-password', protect, changePassword);
 
 // Tenant-facing company settings save. Saves to the caller's OWN tenant only
 // (req.tenant, from the host) — no subdomain in the path to tamper with.
-router.put('/company-settings', protect, updateMyTenantSettings);
-// 2FA enrolment & management — behind protect (user is already logged in).
+// Company profile, letterhead text, TIN and white-label are owner-level settings —
+// staff and viewers must not be able to change the company's identity.
+router.put('/company-settings', protect, authorise('super_admin', 'admin'), updateMyTenantSettings);// 2FA enrolment & management — behind protect (user is already logged in).
 router.post('/2fa/setup', protect, setup);
 router.post('/2fa/verify-setup', protect, verifySetup);
 router.post('/2fa/disable', protect, disable);

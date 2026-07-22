@@ -268,8 +268,8 @@ export default function App() {
               { path: '/assets/analytics', label: '📊 Analytics', icon: FiBarChart2 },
             ]} /></ProtectedRoute>}>
               <Route path="/assets"           element={<AccountListPage />} />
-              <Route path="/assets/analytics" element={<FinancialAnalyticsPage />} />
-            </Route>
+            <Route path="/assets/analytics" element={<ProtectedRoute roles={['super_admin','admin','accountant']}><FinancialAnalyticsPage /></ProtectedRoute>} />
+              </Route>
             
             {/* ── 404 ── */}
             <Route path="*" element={
