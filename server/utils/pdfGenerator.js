@@ -169,7 +169,7 @@ async function generateCustomerStatement({ customer, invoices, tenantSettings, c
         doc.fillColor(inv.balance > 0 ? COLORS.red : COLORS.green);
         doc.text(`GHS ${(inv.balance || 0).toFixed(2)}`,    cols.balance + 4, y + 6, { width: 60, align: 'right' });
         doc.fillColor(statusColor);
-        doc.text((inv.status || '').toUpperCase(), cols.status + 4, y + 6);
+        doc.text((inv.status || '').replace(/_/g, ' ').toUpperCase(), cols.status + 4, y + 6);
         y += 20;
       });
 
@@ -213,21 +213,15 @@ async function generateInvoicePDF({ invoice, customer, tenantSettings, companyNa
           // the gold rule and the content directly below the height it actually
           // rendered at. The rule used to be hard-coded at y=124, which cut
           // straight through taller letterheads and left the title inside them.
-          const MAX_H = 130;
-          let w = 595;
-          let h = MAX_H;
-          try {
-            const img = doc.openImage(lhBuffer);
-            const scale = Math.min(595 / img.width, MAX_H / img.height);
-            w = img.width * scale;
-            h = img.height * scale;
-          } catch (dimErr) {
-            // Could not read dimensions — fall back to a full-width band.
-          }
-          doc.image(lhBuffer, (595 - w) / 2, 0, { width: w, height: h });
-          doc.rect(0, h, 595, 4).fill(COLORS.gold);
+          // Full-bleed letterhead: edge to edge across the page with a fixed
+          // header height. Passing BOTH width and height makes pdfkit fill the
+          // band exactly instead of preserving the aspect ratio — that is what
+          // keeps it flush to both margins while staying short.
+          const HEADER_H = 105;
+          doc.image(lhBuffer, 0, 0, { width: 595, height: HEADER_H });
+          doc.rect(0, HEADER_H, 595, 4).fill(COLORS.gold);
           doc.fillColor(COLORS.black);
-          hY = h + 10;
+          hY = HEADER_H + 12;
         } catch (e) {
           console.error('[PDF] Letterhead embed failed:', e.message);
           hY = drawTextHeader(doc, tenantSettings, companyName);
@@ -247,7 +241,7 @@ async function generateInvoicePDF({ invoice, customer, tenantSettings, companyNa
       const sc = statusColors[invoice.status] || COLORS.gray;
       doc.rect(400, sY, 145, 28).fill(sc + '20').stroke(sc);
       doc.fillColor(sc).fontSize(11).font('Helvetica-Bold')
-        .text((invoice.status || '').toUpperCase(), 402, sY + 8, { width: 141, align: 'center' });
+        .text((invoice.status || '').replace(/_/g, ' ').toUpperCase(), 402, sY + 8, { width: 141, align: 'center' });
 
       drawLine(doc, sY + 44);
 
