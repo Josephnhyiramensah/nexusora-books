@@ -10,7 +10,7 @@ const PLANS = [
   { key: 'trial', name: 'Free Trial', price: 'GHS 0', period: '30 days', color: '#CBD5E1', features: ['2 user accounts', '1 accountant', 'Core accounting modules', 'Journals, invoicing, reports', 'No credit card required'], cta: 'Start Free Trial', popular: false },
   { key: 'starter', name: 'Starter', price: 'GHS 300', period: 'per month', color: '#2563EB', features: ['5 user accounts', '2 accountants', 'All core modules', 'Inventory & fixed assets', 'Payroll (PAYE + SSNIT)', 'Email support'], cta: 'Choose Starter', popular: false },
   { key: 'professional', name: 'Professional', price: 'GHS 990', period: 'per month', color: '#C9A227', features: ['20 user accounts', '5 accountants', 'Everything in Starter', 'AI Anomaly Detection', 'AI Cash Flow Forecast', 'Smart Categorisation', 'Priority support'], cta: 'Choose Professional', popular: true },
- { key: 'enterprise', name: 'Enterprise', price: 'GHS 2,400', period: 'per month', color: '#A5B4FC', features: ['Unlimited users', 'Unlimited accountants', 'Everything in Professional', 'API access', 'White-label option', 'Dedicated support', 'Custom onboarding'], cta: 'Contact Us', popular: false },
+{ key: 'enterprise', name: 'Enterprise', price: 'GHS 2,400', period: 'per month', color: '#F0C24B', italic: true, features: ['Unlimited users', 'Unlimited accountants', 'Everything in Professional', 'API access', 'White-label option', 'Dedicated support', 'Custom onboarding'], cta: 'Contact Us', popular: false },
 ];
 
 export default function RegisterPage() {
@@ -86,8 +86,7 @@ export default function RegisterPage() {
                   style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 16, padding: '28px 24px', cursor: 'pointer', border: plan.popular ? `2px solid ${plan.color}` : '1px solid rgba(255,255,255,0.15)', position: 'relative' }}>
                   {plan.popular && <div style={{ position: 'absolute', top: -14, left: '50%', transform: 'translateX(-50%)', background: plan.color, color: '#1A3560', padding: '4px 16px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>⭐ MOST POPULAR</div>}
                   <div style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: plan.color, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>{plan.name}</div>
-                    <div style={{ fontSize: 32, fontWeight: 800, color: '#fff', lineHeight: 1 }}>{plan.price}</div>
+<div style={{ fontSize: 12, fontWeight: 800, color: plan.color, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6, fontStyle: plan.italic ? 'italic' : 'normal' }}>{plan.name}</div>                    <div style={{ fontSize: 32, fontWeight: 800, color: '#fff', lineHeight: 1 }}>{plan.price}</div>
                     <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>{plan.period}</div>
                   </div>
                   <div style={{ marginBottom: 20 }}>
@@ -99,8 +98,7 @@ export default function RegisterPage() {
                     ))}
                   </div>
                   <button onClick={(e) => { e.stopPropagation(); setSelectedPlan(plan); plan.key === 'enterprise' ? setShowEnterpriseModal(true) : setStep(2); }}
-                    style={{ width: '100%', padding: '12px', borderRadius: 10, background: plan.popular ? plan.color : 'transparent', border: plan.popular ? 'none' : `1px solid ${plan.color}`, color: plan.popular ? '#1A3560' : plan.color, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-                    {plan.cta}
+style={{ width: '100%', padding: '12px', borderRadius: 10, background: plan.popular ? plan.color : 'transparent', border: plan.popular ? 'none' : `1.5px solid ${plan.color}`, color: plan.popular ? '#1A3560' : plan.color, fontSize: 14, fontWeight: 800, fontStyle: plan.italic ? 'italic' : 'normal', cursor: 'pointer' }}>                    {plan.cta}
                   </button>
                 </motion.div>
               ))}
