@@ -202,27 +202,27 @@ export default function App() {
             </Route>
 
             {/* ── Payroll ── */}
-            <Route element={<ProtectedRoute><ModuleShell moduleTitle="Payroll" sidebarItems={g('/payroll','Payroll')} /></ProtectedRoute>}>
+            <Route element={<ProtectedRoute roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Payroll" sidebarItems={g('/payroll','Payroll')} /></ProtectedRoute>}>
               <Route path="/payroll" element={<PayrollPage />} />
             </Route>
 
             {/* ── Banking ── */}
-            <Route element={<ProtectedRoute><ModuleShell moduleTitle="Banking" sidebarItems={g('/banking','Bank Accounts')} /></ProtectedRoute>}>
+            <Route element={<ProtectedRoute roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Banking" sidebarItems={g('/banking','Bank Accounts')} /></ProtectedRoute>}>
               <Route path="/banking" element={<BankingPage />} />
             </Route>
 
             {/* ── Budget ── */}
-            <Route element={<ProtectedRoute><ModuleShell moduleTitle="Budget" sidebarItems={g('/budget','Budgets')} /></ProtectedRoute>}>
+            <Route element={<ProtectedRoute roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Budget" sidebarItems={g('/budget','Budgets')} /></ProtectedRoute>}>
               <Route path="/budget" element={<BudgetPage />} />
             </Route>
 
             {/* ── Tax ── */}
-            <Route element={<ProtectedRoute><ModuleShell moduleTitle="Tax" sidebarItems={g('/tax','Tax')} /></ProtectedRoute>}>
+            <Route element={<ProtectedRoute roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Tax" sidebarItems={g('/tax','Tax')} /></ProtectedRoute>}>
               <Route path="/tax" element={<TaxPage />} />
             </Route>
 
             {/* ── Reports ── */}
-            <Route element={<ProtectedRoute><ModuleShell moduleTitle="Reports" sidebarItems={reportsSidebar} /></ProtectedRoute>}>
+            <Route element={<ProtectedRoute roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Reports" sidebarItems={reportsSidebar} /></ProtectedRoute>}>
               <Route path="/reports"                   element={<TrialBalancePage />} />
               <Route path="/reports/trial-balance"     element={<TrialBalancePage />} />
               <Route path="/reports/profit-loss"       element={<ProfitLossPage />} />
@@ -246,7 +246,7 @@ export default function App() {
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
             {/* Audit Log */}
-<Route element={<ProtectedRoute><ModuleShell moduleTitle="Audit Log" sidebarItems={[{ path: '/audit', label: 'Audit Trail', icon: FiShield, exact: true }]} /></ProtectedRoute>}>
+<Route element={<ProtectedRoute roles={['super_admin','admin']}><ModuleShell moduleTitle="Audit Log" sidebarItems={[{ path: '/audit', label: 'Audit Trail', icon: FiShield, exact: true }]} /></ProtectedRoute>}>
   <Route path="/audit" element={<AuditLogPage />} />
 </Route>
 

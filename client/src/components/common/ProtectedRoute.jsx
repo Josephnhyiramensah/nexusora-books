@@ -1,5 +1,6 @@
 import { Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { FiLock } from 'react-icons/fi';
 import { useAuth } from '../../context/AuthContext';
 
 function SplashScreen() {
@@ -55,13 +56,28 @@ export default function ProtectedRoute({ children, roles }) {
   if (isLoading) return <SplashScreen />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
 
-  if (roles && user && !roles.includes(user.role)) {
+ if (roles && user && !roles.includes(user.role)) {
+    const roleLabel = (user.role || '').replace('_', ' ');
     return (
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <div style={{ textAlign: 'center' }}>
-          <h2 style={{ color: 'var(--danger)', marginBottom: 8 }}>Access Denied</h2>
-          <p style={{ color: 'var(--text-secondary)' }}>You don't have permission to access this page.</p>
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', padding: 24 }}>
+        <div style={{ maxWidth: 460, textAlign: 'center', background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '36px 32px' }}>
+          <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#FEF3C7', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}>
+            <FiLock size={26} color="#B45309" />
+          </div>
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: 20, fontWeight: 700, color: 'var(--deep-navy)', marginBottom: 12 }}>
+            You don’t have access to this section
+          </h2>
+          <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: 6 }}>
+            Your account is set up as <strong style={{ textTransform: 'capitalize', color: 'var(--deep-navy)' }}>{roleLabel}</strong>, which doesn’t include this area.
+          </p>
+          <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: 26 }}>
+            Please ask your administrator to grant you access.
+          </p>
+          <button type="button" onClick={() => window.history.back()}
+            style={{ padding: '10px 24px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: '#fff', color: 'var(--text-secondary)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+            ← Go back
+          </button>
         </div>
       </motion.div>
     );
