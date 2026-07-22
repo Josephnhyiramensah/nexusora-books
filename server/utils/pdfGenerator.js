@@ -140,13 +140,15 @@ async function generateCustomerStatement({ customer, invoices, tenantSettings, c
 
       doc.rect(50, y, 495, 22).fill(COLORS.navy);
       doc.fillColor('#fff').fontSize(8).font('Helvetica-Bold');
-      const cols = { num: 50, date: 130, due: 210, total: 290, paid: 370, balance: 450, status: 500 };
+      // Re-spaced: BALANCE (right-aligned) used to run into STATUS, printing
+      // both on top of each other.
+      const cols = { num: 50, date: 115, due: 180, total: 245, paid: 315, balance: 385, status: 460 };
       doc.text('INVOICE #', cols.num + 4,    y + 7);
       doc.text('DATE',       cols.date + 4,  y + 7);
       doc.text('DUE DATE',   cols.due + 4,   y + 7);
-      doc.text('TOTAL',      cols.total + 4, y + 7, { width: 70, align: 'right' });
-      doc.text('PAID',       cols.paid + 4,  y + 7, { width: 70, align: 'right' });
-      doc.text('BALANCE',    cols.balance + 4, y + 7, { width: 70, align: 'right' });
+      doc.text('TOTAL',      cols.total + 4, y + 7, { width: 60, align: 'right' });
+      doc.text('PAID',       cols.paid + 4,  y + 7, { width: 60, align: 'right' });
+      doc.text('BALANCE',    cols.balance + 4, y + 7, { width: 60, align: 'right' });
       doc.text('STATUS',     cols.status + 4, y + 7);
       y += 22;
 
@@ -164,10 +166,10 @@ async function generateCustomerStatement({ customer, invoices, tenantSettings, c
         doc.text(inv.invoiceNumber || '—', cols.num + 4, y + 6);
         doc.text(new Date(inv.date).toLocaleDateString('en-GB'),    cols.date + 4, y + 6);
         doc.text(new Date(inv.dueDate).toLocaleDateString('en-GB'), cols.due + 4,  y + 6);
-        doc.text(`GHS ${(inv.total || 0).toFixed(2)}`,      cols.total + 4,   y + 6, { width: 70, align: 'right' });
-        doc.text(`GHS ${(inv.amountPaid || 0).toFixed(2)}`, cols.paid + 4,    y + 6, { width: 70, align: 'right' });
+        doc.text(`GHS ${(inv.total || 0).toFixed(2)}`,      cols.total + 4,   y + 6, { width: 60, align: 'right' });
+        doc.text(`GHS ${(inv.amountPaid || 0).toFixed(2)}`, cols.paid + 4,    y + 6, { width: 60, align: 'right' });
         doc.fillColor(inv.balance > 0 ? COLORS.red : COLORS.green);
-        doc.text(`GHS ${(inv.balance || 0).toFixed(2)}`,    cols.balance + 4, y + 6, { width: 70, align: 'right' });
+        doc.text(`GHS ${(inv.balance || 0).toFixed(2)}`,    cols.balance + 4, y + 6, { width: 60, align: 'right' });
         doc.fillColor(statusColor);
         doc.text((inv.status || '').toUpperCase(), cols.status + 4, y + 6);
         y += 20;
@@ -214,6 +216,7 @@ async function generateInvoicePDF({ invoice, customer, tenantSettings, companyNa
           doc.fillColor(COLORS.black);
           hY = 128;
         } catch (e) {
+          console.error('[PDF] Letterhead embed failed:', e.message);
           hY = drawTextHeader(doc, tenantSettings, companyName);
         }
       } else {

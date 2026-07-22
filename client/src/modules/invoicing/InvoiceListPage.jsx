@@ -8,8 +8,8 @@ import { formatCurrency, formatDate, getStatusColor } from '../../utils/formatte
 import { useToast } from '../../hooks/useToast';
 import ActionMenu from '../../components/common/ActionMenu';
 import api from '../../services/api';
-import { openAuthedPdf } from '../../utils/openAuthedPdf';
 import ResponsiveTable from '../../components/common/ResponsiveTable';
+import { openAuthedPdf } from '../../utils/openAuthedPdf';
 
 export default function InvoiceListPage() {
   const [invoices, setInvoices] = useState([]);
