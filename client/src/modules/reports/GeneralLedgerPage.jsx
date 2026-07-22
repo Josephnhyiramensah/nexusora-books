@@ -40,18 +40,21 @@ export default function GeneralLedgerPage() {
     win.print();
   };
 
-  const handleExcel = async () => {
+ const handleExcel = async () => {
     if (!report) return;
     const columns = [
-      { header: 'Date', key: 'date', width: 14 },
-      { header: 'Entry #', key: 'entry', width: 14 },
-      { header: 'Description', key: 'description', width: 42 },
-      { header: 'Debit', key: 'debit', width: 16, money: true },
-      { header: 'Credit', key: 'credit', width: 16, money: true },
-      { header: 'Balance', key: 'balance', width: 16, money: true },
+      { header: 'Code', key: 'code', width: 12 },
+      { header: 'Account', key: 'account', width: 26 },
+      { header: 'Date', key: 'date', width: 13 },
+      { header: 'Entry #', key: 'entry', width: 13 },
+      { header: 'Description', key: 'description', width: 38 },
+      { header: 'Debit', key: 'debit', width: 15, money: true },
+      { header: 'Credit', key: 'credit', width: 15, money: true },
+      { header: 'Balance', key: 'balance', width: 15, money: true },
     ];
     const sections = report.accounts.map((acct) => ({
-      label: `${acct.code} — ${acct.name}`,
+      // Code + name sit in their own columns on the shaded band row (shown once).
+      bandValues: { code: acct.code, account: acct.name },
       rows: acct.transactions.map((t) => ({
         date: formatDate(t.date),
         entry: t.entryNumber,
@@ -61,6 +64,7 @@ export default function GeneralLedgerPage() {
         balance: t.balance,
       })),
       totalLabel: 'Closing Balance',
+      totalLabelKey: 'description',
       totalValues: { balance: acct.closingBalance },
     }));
     await exportToExcelStyled({

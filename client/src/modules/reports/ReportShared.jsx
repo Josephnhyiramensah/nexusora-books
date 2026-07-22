@@ -141,8 +141,23 @@ export async function exportToExcelStyled({ filename, companyName, title, subtit
 
   // ── Sections ──
   sections.forEach((section) => {
-    // Section band.
-    if (section.label) {
+    // Section band. Two modes:
+    //  - section.bandValues: place values in specific columns (by key), shading
+    //    the whole band row but keeping columns distinct (grouped-table look).
+    //  - section.label: legacy single merged banner across all columns.
+    if (section.bandValues) {
+      const bandRow = ws.getRow(r);
+      columns.forEach((c, i) => {
+        const cell = bandRow.getCell(i + 1);
+        const val = section.bandValues[c.key];
+        if (val !== undefined) cell.value = val;
+        cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: NAVY } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: LIGHT } };
+        cell.alignment = { horizontal: c.align || (c.money ? 'right' : 'left'), vertical: 'middle' };
+      });
+      bandRow.height = 18;
+      r += 1;
+    } else if (section.label) {
       ws.mergeCells(`A${r}:${lastColLetter}${r}`);
       const band = ws.getCell(`A${r}`);
       band.value = section.label;
@@ -168,15 +183,17 @@ export async function exportToExcelStyled({ filename, companyName, title, subtit
       r += 1;
     });
 
-    // Total row.
+   // Total row. The label can target a specific column via totalLabelKey
+    // (defaults to the first column); values go in their keyed columns.
     if (section.totalLabel) {
       const tr = ws.getRow(r);
+      const labelKey = section.totalLabelKey || columns[0].key;
       columns.forEach((c, i) => {
         const cell = tr.getCell(i + 1);
         cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: NAVY } };
         cell.border = { top: { style: 'thin', color: { argb: NAVY } } };
         cell.alignment = { horizontal: c.align || (c.money ? 'right' : 'left') };
-        if (i === 0) {
+        if (c.key === labelKey) {
           cell.value = section.totalLabel;
         } else if (section.totalValues && section.totalValues[c.key] !== undefined) {
           cell.value = section.totalValues[c.key];
