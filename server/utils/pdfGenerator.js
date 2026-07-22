@@ -207,12 +207,27 @@ async function generateInvoicePDF({ invoice, customer, tenantSettings, companyNa
       doc.on('error', reject);
 
       let hY = 99;
-      if (lhBuffer) {
+     if (lhBuffer) {
         try {
-          doc.image(lhBuffer, 0, 0, { width: 595 });
-          doc.rect(0, 124, 595, 4).fill(COLORS.gold);
+          // Fit the letterhead to the page width but cap its height, then place
+          // the gold rule and the content directly below the height it actually
+          // rendered at. The rule used to be hard-coded at y=124, which cut
+          // straight through taller letterheads and left the title inside them.
+          const MAX_H = 130;
+          let w = 595;
+          let h = MAX_H;
+          try {
+            const img = doc.openImage(lhBuffer);
+            const scale = Math.min(595 / img.width, MAX_H / img.height);
+            w = img.width * scale;
+            h = img.height * scale;
+          } catch (dimErr) {
+            // Could not read dimensions — fall back to a full-width band.
+          }
+          doc.image(lhBuffer, (595 - w) / 2, 0, { width: w, height: h });
+          doc.rect(0, h, 595, 4).fill(COLORS.gold);
           doc.fillColor(COLORS.black);
-          hY = 128;
+          hY = h + 10;
         } catch (e) {
           console.error('[PDF] Letterhead embed failed:', e.message);
           hY = drawTextHeader(doc, tenantSettings, companyName);
