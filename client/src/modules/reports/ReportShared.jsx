@@ -24,7 +24,7 @@ export function ReportHeader({ title, subtitle, companyName, settings }) {
   if (s.letterheadImage) {
     return (
       <div style={{ marginBottom: 26 }}>
-        <img src={s.letterheadImage} alt="" style={{ width: '100%', maxHeight: 150, objectFit: 'contain', display: 'block' }} />
+        <img src={s.letterheadImage} alt="" style={{ width: '100%', height: 'auto', display: 'block' }} />
         <div style={{ display: 'flex', height: 4, borderRadius: 2, overflow: 'hidden', marginTop: 12 }}>
           <div style={{ flex: 3, background: '#1A3560' }} />
           <div style={{ flex: 1, background: '#C9A227' }} />

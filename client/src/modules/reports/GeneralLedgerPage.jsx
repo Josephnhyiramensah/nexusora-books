@@ -3,7 +3,7 @@ import reportService from '../../services/reportService';
 import accountService from '../../services/accountService';
 import { useTenant } from '../../context/TenantContext';
 import { useToast } from '../../hooks/useToast';
-import { ReportHeader, DateRangePicker, ExportBar, exportToCSV, exportToExcelStyled } from './ReportShared';
+import { ReportHeader, DateRangePicker, ExportBar, exportToCSV, exportToExcelStyled, printReport } from './ReportShared';
 import { formatDate } from '../../utils/formatters';
 
 export default function GeneralLedgerPage() {
@@ -13,7 +13,7 @@ export default function GeneralLedgerPage() {
   const [selectedAccount, setSelectedAccount] = useState('');
   const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
-  const { companyName } = useTenant();
+  const { companyName, settings } = useTenant();
   const { showToast, ToastComponent } = useToast();
   const printRef = useRef(null);
 
@@ -31,15 +31,7 @@ export default function GeneralLedgerPage() {
 
   useEffect(() => { fetchReport(); }, [selectedAccount, startDate, endDate]);
 
-  const handlePrint = () => {
-    const win = window.open('', '_blank');
-    win.document.write(`<html><head><title>General Ledger</title><style>body{font-family:'Inter',sans-serif;padding:40px;color:#1A3560;font-size:12px}table{width:100%;border-collapse:collapse}th,td{padding:6px 10px;border-bottom:1px solid #E2E8F0}th{background:#F2F6FA;font-weight:600}h1{text-align:center;font-size:18px}h2{text-align:center;color:#C9A227;font-size:12px}h3{margin-top:24px;padding:8px;background:#1A3560;color:#fff;font-size:13px}</style></head><body>`);
-    win.document.write(printRef.current.innerHTML);
-    win.document.write('</body></html>');
-    win.document.close();
-    win.print();
-  };
-
+ const handlePrint = () => printReport(printRef.current, 'General Ledger');
  const handleExcel = async () => {
     if (!report) return;
     const columns = [
@@ -98,6 +90,12 @@ export default function GeneralLedgerPage() {
 
       {report && (
         <div ref={printRef}>
+          <ReportHeader
+            title="General Ledger"
+            subtitle={`Period: ${formatDate(startDate)} to ${formatDate(endDate)}`}
+            companyName={companyName}
+            settings={settings}
+          />
           {report.accounts.length === 0 ? (
             <div style={{ background: '#fff', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
               No transactions found for the selected period.

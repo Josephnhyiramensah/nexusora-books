@@ -2,12 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import reportService from '../../services/reportService';
 import { useTenant } from '../../context/TenantContext';
 import { useToast } from '../../hooks/useToast';
-import { ReportHeader, ExportBar, exportToCSV } from './ReportShared';
-
+import { ReportHeader, ExportBar, exportToCSV, printReport } from './ReportShared';
 export default function TrialBalancePage() {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
-  const { companyName } = useTenant();
+  const { companyName, settings } = useTenant();
   const { showToast, ToastComponent } = useToast();
   const printRef = useRef(null);
 
@@ -18,23 +17,7 @@ export default function TrialBalancePage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const handlePrint = () => {
-    const content = printRef.current;
-    const win = window.open('', '_blank');
-    win.document.write(`<html><head><title>Trial Balance</title><style>
-      body { font-family: 'Inter', sans-serif; padding: 40px; color: #1A3560; }
-      table { width: 100%; border-collapse: collapse; font-size: 13px; }
-      th, td { padding: 8px 12px; border-bottom: 1px solid #E2E8F0; }
-      th { background: #F2F6FA; font-weight: 600; text-align: left; }
-      .right { text-align: right; }
-      .total { font-weight: 700; border-top: 2px solid #1A3560; }
-      h1 { font-size: 20px; text-align: center; } h2 { font-size: 13px; text-align: center; color: #C9A227; }
-    </style></head><body>`);
-    win.document.write(content.innerHTML);
-    win.document.write('</body></html>');
-    win.document.close();
-    win.print();
-  };
+  const handlePrint = () => printReport(printRef.current, 'Trial Balance');
 
   const handleCSV = () => {
     if (!report) return;

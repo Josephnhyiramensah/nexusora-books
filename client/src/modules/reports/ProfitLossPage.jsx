@@ -2,14 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import reportService from '../../services/reportService';
 import { useTenant } from '../../context/TenantContext';
 import { useToast } from '../../hooks/useToast';
-import { ReportHeader, DateRangePicker, ExportBar, exportToCSV } from './ReportShared';
-
+import { ReportHeader, DateRangePicker, ExportBar, exportToCSV, printReport } from './ReportShared';
 export default function ProfitLossPage() {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
-  const { companyName } = useTenant();
+  const { companyName, settings } = useTenant();
   const { showToast, ToastComponent } = useToast();
   const printRef = useRef(null);
 
@@ -23,21 +22,9 @@ export default function ProfitLossPage() {
 
   useEffect(() => { fetchReport(); }, [startDate, endDate]);
 
-  const handlePrint = () => {
-    const win = window.open('', '_blank');
-    win.document.write(`<html><head><title>Profit & Loss</title><style>
-      body { font-family: 'Inter', sans-serif; padding: 40px; color: #1A3560; }
-      table { width: 100%; border-collapse: collapse; font-size: 13px; }
-      th, td { padding: 8px 12px; border-bottom: 1px solid #E2E8F0; }
-      .section { background: #F2F6FA; font-weight: 600; } .total { font-weight: 700; }
-      .right { text-align: right; } h1 { text-align: center; } h2 { text-align: center; color: #C9A227; font-size: 13px; }
-    </style></head><body>`);
-    win.document.write(printRef.current.innerHTML);
-    win.document.write('</body></html>');
-    win.document.close();
-    win.print();
-  };
+  const handlePrint = () => printReport(printRef.current, 'Profit & Loss');
 
+  
   const handleCSV = () => {
     if (!report) return;
     const rows = [];
