@@ -2,8 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import reportService from '../../services/reportService';
 import { useTenant } from '../../context/TenantContext';
 import { useToast } from '../../hooks/useToast';
-import { ReportHeader, DateRangePicker, ExportBar, exportToCSV, printReport } from './ReportShared';
-export default function ProfitLossPage() {
+import { ReportHeader, DateRangePicker, ExportBar, exportToCSV, printReport, exportToExcelStyled } from './ReportShared';export default function ProfitLossPage() {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]);
@@ -24,7 +23,7 @@ export default function ProfitLossPage() {
 
   const handlePrint = () => printReport(printRef.current, 'Profit & Loss');
 
-  
+
   const handleCSV = () => {
     if (!report) return;
     const rows = [];
@@ -40,6 +39,37 @@ export default function ProfitLossPage() {
     rows.push(['', 'Total Expenses', report.operatingExpenses.total.toFixed(2)]);
     rows.push(['', 'NET INCOME', report.netIncome.toFixed(2)]);
     exportToCSV('profit_and_loss', ['Code', 'Account', 'Amount'], rows);
+  };
+
+
+  const handleExcel = async () => {
+    if (!report) return;
+    const columns = [
+      { header: 'Code', key: 'code', width: 12 },
+      { header: 'Account', key: 'name', width: 44 },
+      { header: 'Amount', key: 'amount', width: 18, money: true },
+    ];
+    const mk = (label, block, totalLabel) => ({
+      bandValues: { code: '', name: label },
+      rows: (block.items || []).map((i) => ({ code: i.code, name: i.name, amount: i.balance })),
+      totalLabel,
+      totalLabelKey: 'name',
+      totalValues: { amount: block.total },
+    });
+    await exportToExcelStyled({
+      filename: 'profit_and_loss',
+      companyName,
+      title: 'Profit & Loss (Income Statement)',
+      subtitle: `For the period ${startDate} to ${endDate}`,
+      columns,
+      sections: [
+        mk('REVENUE', report.revenue, 'Total Revenue'),
+        mk('COST OF GOODS SOLD', report.costOfGoodsSold, 'Total COGS'),
+        { rows: [], totalLabel: 'GROSS PROFIT', totalLabelKey: 'name', totalValues: { amount: report.grossProfit } },
+        mk('OPERATING EXPENSES', report.operatingExpenses, 'Total Expenses'),
+        { rows: [], totalLabel: 'NET INCOME', totalLabelKey: 'name', totalValues: { amount: report.netIncome } },
+      ],
+    });
   };
 
   const SectionRow = ({ label, items, total, totalLabel }) => (
@@ -70,13 +100,13 @@ export default function ProfitLossPage() {
         <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 22, fontWeight: 600, color: 'var(--text-primary)' }}>Profit & Loss</h1>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
-          <ExportBar onPrint={handlePrint} onExportCSV={handleCSV} />
+          <ExportBar onPrint={handlePrint} onExportExcel={handleExcel} />
         </div>
       </div>
 
       {report && (
         <div ref={printRef} style={{ background: '#fff', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: 32 }}>
-          <ReportHeader title="Profit & Loss (Income Statement)" subtitle={`For the period ${startDate} to ${endDate}`} companyName={companyName} />
+         <ReportHeader title="Profit & Loss (Income Statement)" subtitle={`For the period ${startDate} to ${endDate}`} companyName={companyName} settings={settings} />
 
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <tbody>

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import reportService from '../../services/reportService';
 import { useTenant } from '../../context/TenantContext';
 import { useToast } from '../../hooks/useToast';
-import { ReportHeader, DateRangePicker, ExportBar, exportToCSV, printReport } from './ReportShared';
+import { ReportHeader, DateRangePicker, ExportBar, exportToCSV, printReport, exportToExcelStyled } from './ReportShared';
 import { formatDate } from '../../utils/formatters';
 
 export default function CashFlowPage() {
@@ -41,6 +41,35 @@ export default function CashFlowPage() {
     exportToCSV('cash_flow', ['Date', 'Description', 'Amount'], rows);
   };
 
+  const handleExcel = async () => {
+    if (!report) return;
+    const columns = [
+      { header: 'Date', key: 'date', width: 14 },
+      { header: 'Description', key: 'description', width: 52 },
+      { header: 'Amount', key: 'amount', width: 18, money: true },
+    ];
+    const mk = (label, block, totalLabel) => ({
+      bandValues: { date: '', description: label },
+      rows: (block.items || []).map((i) => ({ date: formatDate(i.date), description: i.description, amount: i.amount })),
+      totalLabel,
+      totalLabelKey: 'description',
+      totalValues: { amount: block.total },
+    });
+    await exportToExcelStyled({
+      filename: 'cash_flow',
+      companyName,
+      title: 'Cash Flow Statement',
+      subtitle: `For the period ${startDate} to ${endDate}`,
+      columns,
+      sections: [
+        mk('OPERATING ACTIVITIES', report.operating, 'Net Operating'),
+        mk('INVESTING ACTIVITIES', report.investing, 'Net Investing'),
+        mk('FINANCING ACTIVITIES', report.financing, 'Net Financing'),
+        { rows: [], totalLabel: 'NET CHANGE IN CASH', totalLabelKey: 'description', totalValues: { amount: report.netChange } },
+      ],
+    });
+  };
+
   const CashSection = ({ title, items, total }) => (
     <>
       <tr style={{ background: 'var(--bg-app)' }}>
@@ -73,13 +102,13 @@ export default function CashFlowPage() {
         <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 22, fontWeight: 600, color: 'var(--text-primary)' }}>Cash Flow Statement</h1>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
-          <ExportBar onPrint={handlePrint} onExportCSV={handleCSV} />
+          <ExportBar onPrint={handlePrint} onExportExcel={handleExcel} />
         </div>
       </div>
 
       {report && (
         <div ref={printRef} style={{ background: '#fff', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: 32 }}>
-          <ReportHeader title="Cash Flow Statement" subtitle={`For the period ${startDate} to ${endDate}`} companyName={companyName} />
+          <ReportHeader title="Cash Flow Statement" subtitle={`For the period ${startDate} to ${endDate}`} companyName={companyName} settings={settings} />
 
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <tbody>

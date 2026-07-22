@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import reportService from '../../services/reportService';
 import { useTenant } from '../../context/TenantContext';
 import { useToast } from '../../hooks/useToast';
-import { ReportHeader, ExportBar, exportToCSV, printReport } from './ReportShared';
+import { ReportHeader, ExportBar, exportToCSV, printReport, exportToExcelStyled } from './ReportShared';
 export default function TrialBalancePage() {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -27,6 +27,31 @@ export default function TrialBalancePage() {
     );
   };
 
+  const handleExcel = async () => {
+    if (!report) return;
+    await exportToExcelStyled({
+      filename: 'trial_balance',
+      companyName,
+      title: 'Trial Balance',
+      subtitle: `As at ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`,
+      columns: [
+        { header: 'Code', key: 'code', width: 12 },
+        { header: 'Account Name', key: 'name', width: 38 },
+        { header: 'Type', key: 'type', width: 16 },
+        { header: 'Debit', key: 'debit', width: 16, money: true },
+        { header: 'Credit', key: 'credit', width: 16, money: true },
+      ],
+      sections: [{
+        rows: report.rows.map((r) => ({
+          code: r.code, name: r.name, type: r.type,
+          debit: r.debit || '', credit: r.credit || '',
+        })),
+        totalLabel: 'TOTAL',
+        totalLabelKey: 'name',
+        totalValues: { debit: report.totalDebit, credit: report.totalCredit },
+      }],
+    });
+  };
   if (loading) return <p style={{ padding: 40, color: 'var(--text-muted)' }}>Generating report...</p>;
   if (!report) return <p style={{ padding: 40, color: 'var(--text-muted)' }}>No data available.</p>;
 
@@ -35,7 +60,7 @@ export default function TrialBalancePage() {
       {ToastComponent}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 22, fontWeight: 600, color: 'var(--text-primary)' }}>Trial Balance</h1>
-        <ExportBar onPrint={handlePrint} onExportCSV={handleCSV} />
+        <ExportBar onPrint={handlePrint} onExportExcel={handleExcel} />
       </div>
 
       <div ref={printRef} style={{ background: '#fff', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: 32 }}>

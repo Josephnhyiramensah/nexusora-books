@@ -2,8 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import reportService from '../../services/reportService';
 import { useTenant } from '../../context/TenantContext';
 import { useToast } from '../../hooks/useToast';
-import { ReportHeader, ExportBar, exportToCSV, printReport } from './ReportShared';
-export default function BalanceSheetPage() {
+import { ReportHeader, ExportBar, exportToCSV, printReport, exportToExcelStyled } from './ReportShared';export default function BalanceSheetPage() {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const { companyName, settings } = useTenant();
@@ -32,6 +31,34 @@ export default function BalanceSheetPage() {
     report.equity.items.forEach((i) => rows.push([`${i.code} ${i.name}`, i.balance.toFixed(2)]));
     rows.push(['Total Equity', report.equity.total.toFixed(2)]);
     exportToCSV('balance_sheet', ['Account', 'Amount (GHS)'], rows);
+  };
+
+  const handleExcel = async () => {
+    if (!report) return;
+    const columns = [
+      { header: 'Code', key: 'code', width: 12 },
+      { header: 'Account', key: 'name', width: 44 },
+      { header: 'Amount', key: 'amount', width: 18, money: true },
+    ];
+    const mk = (label, block, totalLabel) => ({
+      bandValues: { code: '', name: label },
+      rows: (block.items || []).map((i) => ({ code: i.code, name: i.name, amount: i.balance })),
+      totalLabel,
+      totalLabelKey: 'name',
+      totalValues: { amount: block.total },
+    });
+    await exportToExcelStyled({
+      filename: 'balance_sheet',
+      companyName,
+      title: 'Balance Sheet',
+      subtitle: `As at ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`,
+      columns,
+      sections: [
+        mk('ASSETS', report.assets, 'Total Assets'),
+        mk('LIABILITIES', report.liabilities, 'Total Liabilities'),
+        mk('EQUITY', report.equity, 'Total Equity'),
+      ],
+    });
   };
 
   const Section = ({ title, items, total, color }) => (
@@ -63,7 +90,7 @@ export default function BalanceSheetPage() {
       {ToastComponent}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 22, fontWeight: 600, color: 'var(--text-primary)' }}>Balance Sheet</h1>
-        <ExportBar onPrint={handlePrint} onExportCSV={handleCSV} />
+        <ExportBar onPrint={handlePrint} onExportExcel={handleExcel} />
       </div>
 
       <div ref={printRef} style={{ background: '#fff', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: 32 }}>
