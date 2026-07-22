@@ -86,10 +86,11 @@ async function generateCustomerStatement({ customer, invoices, tenantSettings, c
       let hY = 99; // default headerBottom
       if (lhBuffer) {
         try {
-          doc.image(lhBuffer, 0, 0, { width: 595 });
-          doc.rect(0, 124, 595, 4).fill(COLORS.gold);
+          const HEADER_H = 105;
+          doc.image(lhBuffer, 0, 0, { width: 595, height: HEADER_H });
+          doc.rect(0, HEADER_H, 595, 4).fill(COLORS.gold);
           doc.fillColor(COLORS.black);
-          hY = 128;
+          hY = HEADER_H + 12;
         } catch (e) {
           hY = drawTextHeader(doc, tenantSettings, companyName);
         }
