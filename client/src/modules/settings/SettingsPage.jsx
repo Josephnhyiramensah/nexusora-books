@@ -1288,6 +1288,24 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
     },
   });
 
+  // Tenant settings load asynchronously (public branding first, then the full
+  // set merged in once /auth/me resolves). useState only reads its initial value
+  // on first render, so without this the form stays empty after every refresh
+  // and the saved company details look like they were lost.
+  useEffect(() => {
+    if (!settings) return;
+    setCompanyForm((prev) => ({
+      ...prev,
+      logo: settings.logo ?? prev.logo,
+      letterheadImage: settings.letterheadImage ?? prev.letterheadImage,
+      address: settings.address ?? prev.address,
+      city: settings.city ?? prev.city,
+      region: settings.region ?? prev.region,
+      taxId: settings.taxId ?? prev.taxId,
+      letterhead: { ...prev.letterhead, ...(settings.letterhead || {}) },
+    }));
+  }, [settings]);
+
   const fetchUsers = async () => {
     try {
       const { data } = await api.get('/users');

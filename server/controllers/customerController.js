@@ -105,8 +105,9 @@ const printStatement = async (req, res) => {
       customer,
       invoices,
       payments: [],
-      tenantSettings: req.tenant?.settings || {},
+     tenantSettings: req.tenant?.settings || {},
       companyName: req.tenant?.companyName || '',
+      plan: req.tenant?.plan,
     });
 
     res.setHeader('Content-Type', 'application/pdf');
