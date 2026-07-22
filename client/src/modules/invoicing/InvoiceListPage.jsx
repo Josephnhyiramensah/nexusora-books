@@ -8,6 +8,7 @@ import { formatCurrency, formatDate, getStatusColor } from '../../utils/formatte
 import { useToast } from '../../hooks/useToast';
 import ActionMenu from '../../components/common/ActionMenu';
 import api from '../../services/api';
+import { openAuthedPdf } from '../../utils/openAuthedPdf';
 import ResponsiveTable from '../../components/common/ResponsiveTable';
 
 export default function InvoiceListPage() {
@@ -79,10 +80,10 @@ export default function InvoiceListPage() {
     });
 
     items.push({
-      icon: '🖨️', label: 'Print Statement',
-      onClick: () => window.print(),
+      icon: '🖨️', label: 'Print Invoice',
+      onClick: () => openAuthedPdf(`/api/invoices/${inv._id}/pdf`, `${inv.invoiceNumber}.pdf`)
+        .catch((e) => showToast(e.message, 'error')),
     });
-
     if (inv.status === 'draft') {
       items.push({
         icon: '🗑️', label: 'Delete Invoice',

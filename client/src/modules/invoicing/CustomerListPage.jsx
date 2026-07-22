@@ -9,6 +9,7 @@ import { useToast } from '../../hooks/useToast';
 import Modal from '../../components/common/Modal';
 import ActionMenu from '../../components/common/ActionMenu';
 import { getSubdomain } from '../../services/api';
+import { openAuthedPdf } from '../../utils/openAuthedPdf';
 // 👇 ADDED: ResponsiveTable import
 import ResponsiveTable from '../../components/common/ResponsiveTable';
 
@@ -299,7 +300,7 @@ export default function CustomerListPage() {
                       { icon: '📤', label: 'New Invoice', onClick: () => navigate('/invoicing/new') },
                       { icon: '💰', label: 'Receive Payment', onClick: () => navigate('/invoicing/receive-payment') },
                       { icon: '📋', label: 'View Invoices', onClick: () => navigate('/invoicing/invoices') },
-                      { icon: '🖨️', label: 'Print Statement', onClick: () => window.open(`/api/customers/${c._id}/statement?tenant=${getSubdomain()}`, '_blank'), dividerBefore: true },                      {
+                      { icon: '🖨️', label: 'Print Statement', onClick: () => openAuthedPdf(`/api/customers/${c._id}/statement`, `statement-${c.name}.pdf`).catch((e) => showToast(e.message, 'error')), dividerBefore: true },                      {
                         icon: c.isActive ? '🚫' : '✅',label: c.isActive ? 'Deactivate' : 'Activate',
                         onClick: async () => {
                           if (!window.confirm(`${c.isActive ? 'Deactivate' : 'Activate'} ${c.name}?`)) return;
