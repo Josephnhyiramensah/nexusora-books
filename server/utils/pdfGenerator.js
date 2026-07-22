@@ -84,11 +84,9 @@ async function generateCustomerStatement({ customer, invoices, tenantSettings, c
 
       // Header — use image if available, else text
       let hY = 99; // default headerBottom
-      if (tenantSettings?.letterheadImage) {
+      if (lhBuffer) {
         try {
-          const base64Data = tenantSettings.letterheadImage.replace(/^data:image\/\w+;base64,/, '');
-          const imgBuffer = Buffer.from(base64Data, 'base64');
-          doc.image(imgBuffer, 0, 0, { width: 595 });
+          doc.image(lhBuffer, 0, 0, { width: 595 });
           doc.rect(0, 124, 595, 4).fill(COLORS.gold);
           doc.fillColor(COLORS.black);
           hY = 128;
