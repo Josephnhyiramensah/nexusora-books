@@ -36,5 +36,22 @@ function getModel(tenantDb, modelName, schema) {
   return tenantDb.model(modelName, modelSchema);
 }
 
+/**
+ * Register every known schema on a tenant connection.
+ *
+ * Mongoose resolves .populate() targets against models registered on the SAME
+ * connection. Registering only the queried model (e.g. Invoice) leaves populate
+ * targets like Customer unregistered, which throws MissingSchemaError and
+ * surfaces as a 500 — intermittently, since it only works if some earlier
+ * request happened to register that model on this connection first.
+ * Called once per connection at creation.
+ */
+function registerAllModels(tenantDb) {
+  Object.keys(schemas).forEach((name) => {
+    if (!tenantDb.models[name]) tenantDb.model(name, schemas[name]);
+  });
+  return tenantDb;
+}
+
 function registerSchema(n, s) { schemas[n] = s; }
-module.exports = { getModel, registerSchema };
+module.exports = { getModel, registerSchema, registerAllModels };

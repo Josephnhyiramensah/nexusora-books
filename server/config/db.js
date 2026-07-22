@@ -63,6 +63,11 @@ const getTenantConnection = async (databaseName) => {
       connection.on('error', reject);
     });
 
+   // Register all tenant schemas up-front so .populate() always resolves.
+    // Lazy require avoids any circular-import risk at module load time.
+    // eslint-disable-next-line global-require
+    require('../utils/getModel').registerAllModels(connection);
+
     tenantConnections.set(databaseName, connection);
     console.log(`[DB] Tenant connection established: ${databaseName}`);
 

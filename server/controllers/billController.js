@@ -18,6 +18,7 @@ const getBills = async (req, res) => {
     const bills = await Bill.find(filter).populate('vendor', 'name email phone').sort({ date: -1 }).lean();
     res.json({ success: true, data: bills, count: bills.length });
   } catch (error) {
+    console.error('[Bills] getBills failed:', error.message);
     res.status(500).json({ success: false, message: 'Failed to fetch bills.' });
   }
 };

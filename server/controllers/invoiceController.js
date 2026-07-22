@@ -19,7 +19,8 @@ const getInvoices = async (req, res) => {
       .populate('customer', 'name email phone')
       .sort({ date: -1 }).lean();
     res.json({ success: true, data: invoices, count: invoices.length });
-  } catch (error) {
+ } catch (error) {
+    console.error('[Invoices] getInvoices failed:', error.message);
     res.status(500).json({ success: false, message: 'Failed to fetch invoices.' });
   }
 };

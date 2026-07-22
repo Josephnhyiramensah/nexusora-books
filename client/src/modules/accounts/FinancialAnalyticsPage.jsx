@@ -167,18 +167,27 @@ export default function FinancialAnalyticsPage() {
       setLoading(true);
 
       // Fetch accounts, journals, invoices, bills in parallel
-      const [accountsRes, journalsRes, invoicesRes, billsRes] = await Promise.all([
+      // allSettled (not all): one failing endpoint must not blank the whole
+      // page — render with whatever succeeded and treat failures as empty.
+      const [accountsRes, journalsRes, invoicesRes, billsRes] = await Promise.allSettled([
         api.get('/accounts?isActive=true'),
         api.get('/journals?status=posted'),
         api.get('/invoices'),
         api.get('/bills'),
       ]);
 
-      const accounts = accountsRes.data.success ? accountsRes.data.data : [];
-      const journals = journalsRes.data.success ? journalsRes.data.data : [];
-      const invoices = invoicesRes.data.success ? invoicesRes.data.data : [];
-      const bills    = billsRes.data.success    ? billsRes.data.data    : [];
+      const pick = (res, label) => {
+        if (res.status !== 'fulfilled') {
+          console.error(`[Analytics] ${label} failed:`, res.reason?.response?.status, res.reason?.message);
+          return [];
+        }
+        return res.value?.data?.success ? res.value.data.data : [];
+      };
 
+      const accounts = pick(accountsRes, 'accounts');
+      const journals = pick(journalsRes, 'journals');
+      const invoices = pick(invoicesRes, 'invoices');
+      const bills    = pick(billsRes, 'bills');
       // ── Totals by account type ──────────────────────────────────────────
       const byType = {};
       accounts.forEach((a) => {
