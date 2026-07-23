@@ -3,6 +3,7 @@ const { getTenantConnection } = require('../config/db');
 const { getModel } = require('../utils/getModel');
 const { defaultChartOfAccounts } = require('../config/seedData');
 const { generateTokenPair } = require('../utils/generateToken');
+const { logAudit } = require('../middleware/auditMiddleware');
 
 // Pricing
 const PRICING = {
@@ -444,6 +445,25 @@ const resolveTenantUser = async (subdomain, userId) => {
   return { tenant, User, user };
 };
 
+/**
+ * Write an entry into a tenant's own audit trail for an action performed from
+ * the Nexusora platform console. The operator is not a user inside the tenant
+ * database, so the entry carries actorLabel instead of a user reference.
+ */
+const logConsoleAudit = async (subdomain, req, entry) => {
+  try {
+    const tenant = await Tenant.findOne({ subdomain });
+    if (!tenant) return;
+    const conn = await getTenantConnection(tenant.databaseName);
+    await logAudit(conn, {
+      actorLabel: `Nexusora Console (${req.platformAdmin?.email || 'operator'})`,
+      ...entry,
+    }, req);
+  } catch (e) {
+    console.error('[Console] Audit write failed:', e.message);
+  }
+};
+
 // POST /:subdomain/users/:userId/unlock
 // Clears the FULL progressive-lockout state — a deliberate operator override.
 const unlockTenantUser = async (req, res) => {
@@ -457,6 +477,14 @@ const unlockTenantUser = async (req, res) => {
     await user.save({ validateBeforeSave: false });
 
     console.log(`[Console] Unlocked ${user.email} in ${req.params.subdomain} by ${req.platformAdmin?.email}`);
+
+    await logConsoleAudit(req.params.subdomain, req, {
+        action: 'update',
+        module: 'auth',
+        entityId: user._id,
+        entityType: 'User',
+        description: `Account unlocked for ${user.email} from the Nexusora console`,
+      });
     res.json({ success: true, message: `${user.email} unlocked.`, data: { _id: user._id } });
   } catch (error) {
     console.error('[Console] Unlock error:', error.message);
@@ -480,6 +508,16 @@ const changeTenantUserRole = async (req, res) => {
     await user.save({ validateBeforeSave: false });
 
     console.log(`[Console] Role ${previous} → ${role} for ${user.email} in ${req.params.subdomain} by ${req.platformAdmin?.email}`);
+    await logConsoleAudit(req.params.subdomain, req, {
+        action: 'update',
+        module: 'settings',
+        entityId: user._id,
+        entityType: 'User',
+        description: `Role changed from ${previous} to ${role} for ${user.email} from the Nexusora console`,
+        previousData: { role: previous },
+        newData: { role },
+      });
+
     res.json({ success: true, message: `${user.email} is now ${role.replace('_', ' ')}.`, data: { _id: user._id, role: user.role } });
   } catch (error) {
     console.error('[Console] Role change error:', error.message);
@@ -518,6 +556,17 @@ const changeTenantUserIdentity = async (req, res) => {
     await user.save({ validateBeforeSave: false });
 
     console.log(`[Console] Identity updated for ${user._id} (${user.email}) in ${req.params.subdomain} by ${req.platformAdmin?.email}`);
+
+
+    await logConsoleAudit(req.params.subdomain, req, {
+        action: 'update',
+        module: 'settings',
+        entityId: user._id,
+        entityType: 'User',
+        description: `Account identity updated for ${user.email} from the Nexusora console`,
+        newData: { email, firstName, lastName, phone },
+      });
+
     res.json({
       success: true,
       message: 'User details updated.',
@@ -544,6 +593,16 @@ const setTenantUserActive = async (req, res) => {
     await user.save({ validateBeforeSave: false });
 
     console.log(`[Console] ${isActive ? 'Activated' : 'Deactivated'} ${user.email} in ${req.params.subdomain} by ${req.platformAdmin?.email}`);
+
+    await logConsoleAudit(req.params.subdomain, req, {
+        action: 'update',
+        module: 'settings',
+        entityId: user._id,
+        entityType: 'User',
+        description: `Account ${isActive ? 'activated' : 'deactivated'} for ${user.email} from the Nexusora console`,
+        newData: { isActive },
+      });
+
     res.json({ success: true, message: `${user.email} ${isActive ? 'activated' : 'deactivated'}.`, data: { _id: user._id, isActive: user.isActive } });
   } catch (error) {
     console.error('[Console] Active toggle error:', error.message);
