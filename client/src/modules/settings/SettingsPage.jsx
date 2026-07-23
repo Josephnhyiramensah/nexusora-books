@@ -488,6 +488,7 @@ function CompanyTab({
 
 function UsersTab({
   users,
+  fetchUsers,
   plan,
   subdomain,
   userModalOpen,
@@ -760,7 +761,13 @@ function UsersTab({
           <PermissionsPanel
             user={editingUser}
             showToast={showToast}
-            onSaved={() => { setUserModalOpen(false); setEditingUser(null); }}
+            onSaved={async () => {
+              // Refetch so the modal (and the table) reflect what the server now
+              // holds — without this the checkboxes reopen showing stale values.
+              if (fetchUsers) await fetchUsers();
+              setUserModalOpen(false);
+              setEditingUser(null);
+            }}
           />
         )}
       </Modal>
@@ -1288,6 +1295,10 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
     city: settings?.city || '',
     region: settings?.region || '',
     taxId: settings?.taxId || '',
+    // Carry whiteLabel in the form state — WhiteLabelSettings reads its initial
+    // values from here, so without it the toggle always rendered as off after a
+    // refresh even though the value had saved.
+    whiteLabel: settings?.whiteLabel || {},
     letterhead: {
       companyName: settings?.letterhead?.companyName || companyName || '',
       tagline: settings?.letterhead?.tagline || '',
@@ -1475,6 +1486,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
       {activeTab === 'users' && isAdmin && (
         <UsersTab
           users={users}
+          fetchUsers={fetchUsers}
           plan={plan}
           subdomain={subdomain}
           userModalOpen={userModalOpen}
