@@ -98,6 +98,24 @@ const chat = async (req, res) => {
     const hasPremium = checkPremiumAI(tenant?.plan);
     const accessLevel = getAccessLevel(userRole);
 
+    // Explicit grants widen what this user may discuss, so the assistant stays
+    // consistent with what they can actually open in the app. Grants are
+    // additive — they never reduce what a role already allows.
+    const grants = Array.isArray(req.user.permissions) ? req.user.permissions : [];
+    const GRANT_LABELS = {
+      'reports.view': 'financial reports (trial balance, P&L, balance sheet, cash flow, general ledger)',
+      'analytics.view': 'financial analytics, charts and ratios',
+      'payroll.view': 'payroll data including salaries',
+      'banking.view': 'bank accounts and reconciliation',
+      'budget.view': 'budgets and variance analysis',
+      'tax.view': 'tax summaries (VAT, PAYE, corporate tax)',
+      'audit.view': 'the audit and activity log',
+    };
+    const grantedAreas = grants.map((g) => GRANT_LABELS[g]).filter(Boolean);
+    const grantContext = grantedAreas.length
+      ? `\n**ADDITIONAL ACCESS GRANTED BY THIS COMPANY'S ADMINISTRATOR:**\nDespite the role restrictions above, this specific user HAS been granted access to: ${grantedAreas.join('; ')}. You may discuss these areas with them normally. All other restrictions for their role still apply.`
+      : '';
+
     const securityContext = `
 **CURRENT SESSION SECURITY CONTEXT:**
 - User: ${req.user.firstName} ${req.user.lastName}
@@ -115,7 +133,7 @@ ${['admin', 'super_admin'].includes(userRole) ? '✅ ADMIN/SUPER_ADMIN: Full acc
 Always state what you can and cannot share based on the user's role if financial data is requested by a restricted user.
 Ghana data privacy laws and professional accounting ethics apply at all times.`;
 
-    const fullSystem = NEXUSORA_ASSISTANT_IDENTITY + '\n\n' + securityContext;
+    const fullSystem = NEXUSORA_ASSISTANT_IDENTITY + '\n\n' + securityContext + grantContext;
     const recentMessages = messages.slice(-20);
 
     const aiText = await callClaude(fullSystem, recentMessages, 1800);
