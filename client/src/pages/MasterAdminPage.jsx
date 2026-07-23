@@ -5,6 +5,7 @@ import {
   FiRefreshCw, FiSearch, FiDollarSign, FiUser, FiEdit2,
 } from 'react-icons/fi';
 import nexusoraLogo from '../assets/nexusora-logo.png';
+import axios from 'axios';
 import api from '../services/api';
 import { clearSettingsCache } from '../services/platformService';
 
@@ -12,11 +13,27 @@ const PLATFORM_TOKEN_KEY = 'platformToken';
 
 
 const pHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem(PLATFORM_TOKEN_KEY) || ''}` });
+// Dedicated instance. The shared `api` instance sets Authorization from
+// localStorage.accessToken (the TENANT token) in a request interceptor that
+// runs AFTER per-request headers merge, so it overwrote the platform token
+// whenever a tenant session existed in the same browser -> platformProtect 401
+// -> response interceptor wiped storage and redirected to /login. That was the
+// bug where clicking a company logged the operator out.
+const platformAxios = axios.create({
+  baseURL: '/api',
+  headers: { 'Content-Type': 'application/json' },
+  timeout: 30000,
+});
+platformAxios.interceptors.request.use((config) => {
+  config.headers.Authorization = `Bearer ${localStorage.getItem(PLATFORM_TOKEN_KEY) || ''}`;
+  return config;
+});
+
 const platformApi = {
-  get:    (url)       => api.get(url,          { headers: pHeaders() }),
-  post:   (url, body) => api.post(url, body,   { headers: pHeaders() }),
-  put:    (url, body) => api.put(url, body,    { headers: pHeaders() }),
-  delete: (url)       => api.delete(url,       { headers: pHeaders() }),
+  get:    (url)       => platformAxios.get(url),
+  post:   (url, body) => platformAxios.post(url, body),
+  put:    (url, body) => platformAxios.put(url, body),
+  delete: (url)       => platformAxios.delete(url),
 };
 
 
@@ -155,8 +172,8 @@ function TenantDetailModal({ tenant, onClose, onRefresh }) {
   useEffect(() => {
     // Load users and stats
     Promise.all([
-      platformApi.get(`/tenants/${tenant.subdomain}/users`).then(({ data }) => { if (data.success) setUsers(data.data); }).catch(() => {}),
-      platformApi.get(`/tenants/${tenant.subdomain}/detail-stats`).then(({ data }) => { if (data.success) setDetailStats(data.data); }).catch(() => {}),
+      platformApi.get(`/tenants/${tenant.subdomain}/users`).then(({ data }) => { if (data.success) setUsers(data.data); }).catch((e) => console.error('[Console] users load failed:', e.response?.status, e.response?.data?.message || e.message)),
+      platformApi.get(`/tenants/${tenant.subdomain}/detail-stats`).then(({ data }) => { if (data.success) setDetailStats(data.data); }).catch((e) => console.error('[Console] detail-stats load failed:', e.response?.status, e.response?.data?.message || e.message)),
     ]).finally(() => setLoadingUsers(false));
   }, [tenant.subdomain]);
 

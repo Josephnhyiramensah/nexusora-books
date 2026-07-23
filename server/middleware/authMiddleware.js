@@ -44,6 +44,9 @@ if (decoded.tenantId && req.tenant && decoded.tenantId !== req.tenant.subdomain)
       lastName: user.lastName,
       email: user.email,
       role: user.role,
+      // Grants layered on top of the role. Without this line allow() reads
+      // undefined and every explicit permission fails closed.
+      permissions: Array.isArray(user.permissions) ? user.permissions : [],
       fullName: `${user.firstName} ${user.lastName}`,
     },
   };
