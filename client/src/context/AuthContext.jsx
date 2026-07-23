@@ -152,6 +152,7 @@ export function AuthProvider({ children }) {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('user');
+      sessionStorage.removeItem('nexusora_2fa_nudge_dismissed'); // nudge returns next sign-in
       dispatch({ type: AUTH_ACTIONS.LOGOUT });
     }
   }, []);

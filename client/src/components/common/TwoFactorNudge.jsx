@@ -35,7 +35,7 @@ export default function TwoFactorNudge({ user }) {
           Add a second step at sign-in using an authenticator app — it takes about a minute.
         </p>
       </div>
-      <button type="button" onClick={() => navigate('/settings')}
+      <button type="button" onClick={() => navigate('/settings', { state: { tab: 'security' } })}
         style={{ padding: '8px 16px', borderRadius: 8, background: '#1A6B3C', color: '#fff', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', flexShrink: 0 }}>
         Set up now
       </button>

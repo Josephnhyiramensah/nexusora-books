@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   FiUser,
   FiShield,
@@ -1238,7 +1239,8 @@ export default function SettingsPage() {
   const { user } = useAuth();
 const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
   const { showToast, ToastComponent } = useToast();
-  const [activeTab, setActiveTab] = useState('profile');
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState(location.state?.tab || 'profile');
   const [users, setUsers] = useState([]);
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
