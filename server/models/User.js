@@ -33,6 +33,14 @@ const userSchema = new mongoose.Schema(
       enum: ['super_admin', 'admin', 'accountant', 'staff', 'viewer'],
       default: 'staff',
     },
+
+    // Extra access granted by an admin on top of this user's role. Additive
+    // only — a grant can never remove what the role already allows. Empty for
+    // every existing user, so behaviour is unchanged until someone grants.
+    permissions: {
+      type: [String],
+      default: [],
+    },
     phone: { type: String, trim: true },
     isActive: { type: Boolean, default: true },
     lastLogin: Date,

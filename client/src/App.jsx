@@ -102,7 +102,7 @@ const g = (path, label) => [{ path, label: `All ${label}`, icon: FiList, exact: 
 // ─── Root redirect ────────────────────────────────────────────────────────────
 // Tenant subdomain (kgr.nexusorabooks.com) → "/" opens the workspace.
 // Apex domain (nexusorabooks.com) → NO tenant → public registration page.
-// Never route an apex visitor into a client's workspace.
+// Never route an apex visitor into    client's workspace.
 function RootRedirect() {
   const { loading, isPublic } = useTenant();
   if (loading) return null;
@@ -202,27 +202,27 @@ export default function App() {
             </Route>
 
             {/* ── Payroll ── */}
-            <Route element={<ProtectedRoute roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Payroll" sidebarItems={g('/payroll','Payroll')} /></ProtectedRoute>}>
+            <Route element={<ProtectedRoute permission="payroll.view" roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Payroll" sidebarItems={g('/payroll','Payroll')} /></ProtectedRoute>}>
               <Route path="/payroll" element={<PayrollPage />} />
             </Route>
 
             {/* ── Banking ── */}
-            <Route element={<ProtectedRoute roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Banking" sidebarItems={g('/banking','Bank Accounts')} /></ProtectedRoute>}>
+            <Route element={<ProtectedRoute permission="banking.view" roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Banking" sidebarItems={g('/banking','Bank Accounts')} /></ProtectedRoute>}>
               <Route path="/banking" element={<BankingPage />} />
             </Route>
 
             {/* ── Budget ── */}
-            <Route element={<ProtectedRoute roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Budget" sidebarItems={g('/budget','Budgets')} /></ProtectedRoute>}>
+            <Route element={<ProtectedRoute permission="budget.view" roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Budget" sidebarItems={g('/budget','Budgets')} /></ProtectedRoute>}>
               <Route path="/budget" element={<BudgetPage />} />
             </Route>
 
             {/* ── Tax ── */}
-            <Route element={<ProtectedRoute roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Tax" sidebarItems={g('/tax','Tax')} /></ProtectedRoute>}>
+            <Route element={<ProtectedRoute permission="tax.view" roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Tax" sidebarItems={g('/tax','Tax')} /></ProtectedRoute>}>
               <Route path="/tax" element={<TaxPage />} />
             </Route>
 
             {/* ── Reports ── */}
-            <Route element={<ProtectedRoute roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Reports" sidebarItems={reportsSidebar} /></ProtectedRoute>}>
+            <Route element={<ProtectedRoute permission="reports.view" roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Reports" sidebarItems={reportsSidebar} /></ProtectedRoute>}>
               <Route path="/reports"                   element={<TrialBalancePage />} />
               <Route path="/reports/trial-balance"     element={<TrialBalancePage />} />
               <Route path="/reports/profit-loss"       element={<ProfitLossPage />} />
@@ -246,7 +246,7 @@ export default function App() {
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
             {/* Audit Log */}
-<Route element={<ProtectedRoute roles={['super_admin','admin']}><ModuleShell moduleTitle="Audit Log" sidebarItems={[{ path: '/audit', label: 'Audit Trail', icon: FiShield, exact: true }]} /></ProtectedRoute>}>
+<Route element={<ProtectedRoute permission="audit.view" roles={['super_admin','admin']}><ModuleShell moduleTitle="Audit Log" sidebarItems={[{ path: '/audit', label: 'Audit Trail', icon: FiShield, exact: true }]} /></ProtectedRoute>}>
   <Route path="/audit" element={<AuditLogPage />} />
 </Route>
 
@@ -268,7 +268,7 @@ export default function App() {
               { path: '/assets/analytics', label: '📊 Analytics', icon: FiBarChart2 },
             ]} /></ProtectedRoute>}>
               <Route path="/assets"           element={<AccountListPage />} />
-            <Route path="/assets/analytics" element={<ProtectedRoute roles={['super_admin','admin','accountant']}><FinancialAnalyticsPage /></ProtectedRoute>} />
+            <Route path="/assets/analytics" element={<ProtectedRoute permission="analytics.view" roles={['super_admin','admin','accountant']}><FinancialAnalyticsPage /></ProtectedRoute>} />
               </Route>
             
             {/* ── 404 ── */}

@@ -130,4 +130,30 @@ const authorise = (...roles) => {
   };
 };
 
-module.exports = { protect, optionalProtect, authorise };
+/**
+ * Gate a route by role OR an explicit per-user grant.
+ *
+ * allow('reports.view', 'super_admin', 'admin', 'accountant')
+ *
+ * Passes if the user's role is listed, or their permissions array contains the
+ * key. Use instead of authorise() wherever an admin should be able to hand an
+ * individual user access without changing their role.
+ */
+const allow = (permissionKey, ...roles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Not authenticated.' });
+    }
+    const byRole = roles.includes(req.user.role);
+    const byGrant = Array.isArray(req.user.permissions) && req.user.permissions.includes(permissionKey);
+    if (!byRole && !byGrant) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Ask your administrator to grant you access to this area.',
+      });
+    }
+    next();
+  };
+};
+
+module.exports = { protect, optionalProtect, authorise, allow };

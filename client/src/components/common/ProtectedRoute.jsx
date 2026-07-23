@@ -50,13 +50,18 @@ function SplashScreen() {
   );
 }
 
-export default function ProtectedRoute({ children, roles }) {
+export default function ProtectedRoute({ children, roles, permission }) {
   const { isAuthenticated, isLoading, user } = useAuth();
 
   if (isLoading) return <SplashScreen />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
 
- if (roles && user && !roles.includes(user.role)) {
+  // Mirrors the server's allow(): pass by role OR by an explicit grant.
+  const grantedByPermission = permission
+    && Array.isArray(user?.permissions)
+    && user.permissions.includes(permission);
+
+  if (roles && user && !roles.includes(user.role) && !grantedByPermission) {
     const roleLabel = (user.role || '').replace('_', ' ');
     return (
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}

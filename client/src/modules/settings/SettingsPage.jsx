@@ -19,7 +19,7 @@ import { motion } from 'framer-motion';
 import { FiCode } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 import { FiEdit3 } from 'react-icons/fi';   // if not already imported
-
+import PermissionsPanel from './PermissionsPanel';
 // ---------- Styles ----------
 const styles = {
   heading: {
@@ -751,10 +751,18 @@ function UsersTab({
                 cursor: 'pointer',
               }}
             >
-              {editingUser ? 'Update' : 'Create'} User
+             {editingUser ? 'Update' : 'Create'} User
             </button>
           </div>
         </form>
+
+        {editingUser && (
+          <PermissionsPanel
+            user={editingUser}
+            showToast={showToast}
+            onSaved={() => { setUserModalOpen(false); setEditingUser(null); }}
+          />
+        )}
       </Modal>
     </div>
   );

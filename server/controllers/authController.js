@@ -349,6 +349,7 @@ const getMe = async (req, res) => {
           isActive: user.isActive,
           lastLogin: user.lastLogin,
           twoFactorEnabled: user.twoFactorEnabled,
+          permissions: user.permissions || [],
           createdAt: user.createdAt,
         },
         tenant: req.tenant,

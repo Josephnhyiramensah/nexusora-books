@@ -1,5 +1,6 @@
 const { getModel } = require('../utils/getModel');
 const { logAudit } = require('../middleware/auditMiddleware');
+const { PERMISSION_KEYS } = require('../config/permissions');
 
 const getUsers = async (req, res) => {
   try {
@@ -193,4 +194,50 @@ const unlockUser = async (req, res) => {
   }
 };
 
-module.exports = { getUsers, createUser, updateUser, deactivateUser, unlockUser };
+/**
+ * PUT /api/users/:id/permissions   body: { permissions: [key] }
+ *
+ * Replaces a user's explicit grants. Grants are additive only — they never
+ * remove access a role already implies — so revoking simply omits the key.
+ * Admin-only (enforced on the route) and always audited, since this changes
+ * who can see financial data.
+ */
+const updatePermissions = async (req, res) => {
+  try {
+    const { permissions } = req.body;
+    if (!Array.isArray(permissions)) {
+      return res.status(400).json({ success: false, message: 'permissions must be an array.' });
+    }
+
+    const invalid = permissions.filter((p) => !PERMISSION_KEYS.includes(p));
+    if (invalid.length) {
+      return res.status(400).json({ success: false, message: `Unknown permission(s): ${invalid.join(', ')}.` });
+    }
+
+    const User = getModel(req.tenantDb, 'User');
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+
+    const previous = [...(user.permissions || [])];
+    user.permissions = permissions;
+    await user.save({ validateBeforeSave: false });
+
+    await logAudit(req.tenantDb, {
+      userId: req.user._id,
+      action: 'update',
+      module: 'settings',
+      entityId: user._id,
+      entityType: 'User',
+      description: `Permissions updated for ${user.email}: ${permissions.length ? permissions.join(', ') : 'none'}`,
+      previousData: { permissions: previous },
+      newData: { permissions },
+    }, req);
+
+    res.json({ success: true, message: 'Permissions updated.', data: { _id: user._id, permissions: user.permissions } });
+  } catch (error) {
+    console.error('[Users] Permissions update error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to update permissions.' });
+  }
+};
+
+module.exports = { getUsers, createUser, updateUser, deactivateUser, unlockUser, updatePermissions };

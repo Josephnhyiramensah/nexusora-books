@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { protect, authorise } = require('../middleware/authMiddleware');
+const { protect, allow } = require('../middleware/authMiddleware');
 const {
   getTrialBalance, getProfitLoss, getBalanceSheet,
   getCashFlow, getGeneralLedger,
@@ -18,7 +18,7 @@ router.get('/general-ledger', (req, res, next) => {
 }, getGeneralLedger);
 
 // Company-wide financial statements — finance roles only.
-router.use(authorise('super_admin', 'admin', 'accountant'));
+router.use(allow('reports.view', 'super_admin', 'admin', 'accountant'));
 
 router.get('/trial-balance', getTrialBalance);
 router.get('/profit-loss', getProfitLoss);
