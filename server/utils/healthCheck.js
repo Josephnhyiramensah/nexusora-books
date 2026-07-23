@@ -9,6 +9,7 @@
 const os = require('os');
 const mongoose = require('mongoose');
 const { tenantConnections } = require('../config/db');
+const { getErrorSummary } = require('./errorTracker');
 
 // mongoose readyState: 0 disconnected, 1 connected, 2 connecting, 3 disconnecting
 const DB_STATES = ['disconnected', 'connected', 'connecting', 'disconnecting'];
@@ -55,12 +56,13 @@ const getHealth = () => {
       masterConnected: dbReady === 1,
       liveTenantConnections: liveTenants,
     },
-    process: {
+   process: {
       pid: process.pid,
       nodeVersion: process.version,
       platform: process.platform,
       env: process.env.NODE_ENV || 'development',
     },
+    errors: getErrorSummary(),
     timestamp: new Date().toISOString(),
   };
 };

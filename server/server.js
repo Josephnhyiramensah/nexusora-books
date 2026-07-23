@@ -136,9 +136,14 @@ app.get('/api/health', (req, res) => {
 // Detailed system vitals for the operator console. Behind platformProtect so
 // only a logged-in platform admin can see server internals.
 const { getHealth } = require('./utils/healthCheck');
+const { recordError, clearErrors } = require('./utils/errorTracker');
 const { platformProtect } = require('./middleware/platformMiddleware');
-app.get('/api/health/detailed', platformProtect, (req, res) => {
-  try {
+app.post('/api/health/errors/clear', platformProtect, (req, res) => {
+  clearErrors();
+  res.json({ success: true, message: 'Tenant error log cleared.' });
+});
+
+app.get('/api/health/detailed', platformProtect, (req, res) => {  try {
     res.json({ success: true, data: getHealth() });
   } catch (error) {
     console.error('[Health] detailed error:', error.message);
@@ -192,7 +197,9 @@ app.use((req, res) => {
   res.status(404).json({ success: false, message: `Route not found: ${req.method} ${req.originalUrl}` });
 });
 app.use((err, req, res, _next) => {
-  console.error('[Server Error]', err.message);
+  try { recordError(req.tenant?.subdomain, err.message, req.originalUrl); }
+   catch { /* never let tracking break the response */ }
+    console.error('[Server Error]', err.message);
   res.status(500).json({
     success: false,
     message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error.',

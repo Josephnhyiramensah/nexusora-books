@@ -967,6 +967,56 @@ export default function MasterAdminPage() {
                       </div>
                     ))}
                   </div>
+
+                  {/* Per-tenant error tracking */}
+                  <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #E2E8F0', padding: 20, marginBottom: 24 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                      <h3 style={{ fontSize: 15, fontWeight: 700, color: '#1A3560', margin: 0 }}>
+                        Tenant Errors
+                        <span style={{ fontSize: 12, fontWeight: 500, color: '#6B7280', marginLeft: 8 }}>
+                          ({healthData.errors?.totalErrors || 0} total, since last restart)
+                        </span>
+                      </h3>
+                      {(healthData.errors?.tenants?.length || 0) > 0 && (
+                        <button
+                          onClick={async () => {
+                            try { await platformApi.post('/health/errors/clear'); fetchHealth(); }
+                            catch { /* ignore */ }
+                          }}
+                          style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', fontSize: 12, fontWeight: 600, color: '#6B7280', cursor: 'pointer' }}>
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    {(healthData.errors?.tenants?.length || 0) === 0 ? (
+                      <p style={{ fontSize: 13, color: '#16A34A', margin: 0 }}>✅ No tenant errors recorded.</p>
+                    ) : (
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                          <thead>
+                            <tr style={{ textAlign: 'left', color: '#9CA3AF', fontSize: 11, textTransform: 'uppercase' }}>
+                              <th style={{ padding: '6px 8px' }}>Tenant</th>
+                              <th style={{ padding: '6px 8px', textAlign: 'center' }}>Errors</th>
+                              <th style={{ padding: '6px 8px' }}>Last error</th>
+                              <th style={{ padding: '6px 8px' }}>When</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {healthData.errors.tenants.map((te) => (
+                              <tr key={te.subdomain} style={{ borderTop: '1px solid #F1F5F9' }}>
+                                <td style={{ padding: '8px', fontWeight: 600, color: '#1A3560' }}>{te.subdomain}</td>
+                                <td style={{ padding: '8px', textAlign: 'center' }}>
+                                  <span style={{ padding: '2px 8px', borderRadius: 10, background: te.count > 5 ? '#FEE2E2' : '#FEF3C7', color: te.count > 5 ? '#DC2626' : '#D97706', fontWeight: 700 }}>{te.count}</span>
+                                </td>
+                                <td style={{ padding: '8px', color: '#6B7280', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${te.lastMessage || ''} — ${te.lastPath || ''}`}>{te.lastMessage || '—'}</td>
+                                <td style={{ padding: '8px', color: '#9CA3AF', whiteSpace: 'nowrap' }}>{te.lastAt ? new Date(te.lastAt).toLocaleTimeString('en-GB') : '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })()}
