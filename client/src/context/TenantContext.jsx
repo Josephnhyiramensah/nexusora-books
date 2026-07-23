@@ -11,28 +11,12 @@ export function TenantProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
-  const fetchTenant = useCallback(async () => {
-    const sub = getSubdomain();
-    setSubdomain(sub);
 
-    // Apex domain — no tenant. This is the public site, not a workspace.
-    if (!sub) {
-      setLoading(false);
-      return;
-    }
+useEffect(() => { fetchTenant(); }, [fetchTenant]);
 
-    try {
-      const { data } = await api.get(`/tenants/${sub}/public`);
-      if (data.success) {
-        setCompanyName(data.data.companyName || '');
-        setPlan(data.data.plan || 'trial');
-        setSettings(data.data.settings || {});
-      } else {
-        setNotFound(true);
-      }
-
-      // Full settings arrive from AuthContext once /auth/me succeeds (see the
-  // dispatch there). Listening avoids a duplicate request and the token race.
+  // Full settings arrive from AuthContext once /auth/me succeeds. The public
+  // tenant endpoint exposes only logo + whiteLabel, so without this the
+  // letterhead, address and TIN are lost on every refresh.
   useEffect(() => {
     const onSettings = (e) => {
       if (e.detail) setSettings((prev) => ({ ...prev, ...e.detail }));
@@ -40,16 +24,8 @@ export function TenantProvider({ children }) {
     window.addEventListener('nexusora:tenant-settings', onSettings);
     return () => window.removeEventListener('nexusora:tenant-settings', onSettings);
   }, []);
-    } catch (error) {
-      console.warn('[Tenant] Could not fetch tenant info:', error.message);
-      setNotFound(true);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
-  useEffect(() => { fetchTenant(); }, [fetchTenant]);
-
+  // Apply white-label branding dynamically
   // Apply white-label branding dynamically
   useEffect(() => {
     const wl = settings?.whiteLabel;

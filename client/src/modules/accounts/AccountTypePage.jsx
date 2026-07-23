@@ -44,6 +44,24 @@ export default function AccountTypePage({ accountType, title, codeRange }) {
     fetchAccounts();
   }, [accountType]);
 
+  // Load the ledger for a single account. handleSelect referenced this but it
+  // was never defined, so every account click threw "fetchLedger is not defined".
+  const fetchLedger = async (accountId) => {
+    setLedgerLoading(true);
+    setLedger(null);
+    try {
+      const r = await reportService.generalLedger(accountId);
+      if (r.success) {
+        // With an accountId filter the report returns just that one account.
+        setLedger((r.data?.accounts || [])[0] || null);
+      }
+    } catch {
+      showToast('Failed to load account ledger', 'error');
+    } finally {
+      setLedgerLoading(false);
+    }
+  };
+
   const handleSelect = (acct) => {
     setSelectedAccount(acct);
     fetchLedger(acct._id);
