@@ -34,7 +34,12 @@ const getAuditLogs = async (req, res) => {
         // overwrite the same `user` key because that is what the frontend reads.
         if (log.user) {
           const u = await User.findById(log.user).select('firstName lastName email role').lean();
-          return { ...log, user: u || null };
+          if (u) return { ...log, user: u };
+        }
+        // Platform-console actions have no tenant user — surface the operator
+        // label recorded at write time instead of falling through to "System".
+        if (log.actorLabel) {
+          return { ...log, user: { firstName: log.actorLabel, lastName: '', email: '', role: 'platform' } };
         }
         return { ...log, user: null };
       } catch { return { ...log, user: null }; }

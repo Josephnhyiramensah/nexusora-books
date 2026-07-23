@@ -12,6 +12,7 @@ const logAudit = async (tenantDb, logData, req = null) => {
 
     await AuditLog.create({
       user: logData.userId,
+      actorLabel: logData.actorLabel,
       action: logData.action,
       module: logData.module,
       entityId: logData.entityId,

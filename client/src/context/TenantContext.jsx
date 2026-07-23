@@ -31,22 +31,15 @@ export function TenantProvider({ children }) {
         setNotFound(true);
       }
 
-      // The public endpoint deliberately exposes only branding basics (logo +
-      // whiteLabel) because it is unauthenticated. A signed-in user needs the
-      // tenant's full settings — letterhead image, address, TIN, contact block —
-      // which /auth/me returns for their own tenant. Without this merge those
-      // values are lost on every page refresh.
-      if (localStorage.getItem('accessToken')) {
-        try {
-          const me = await api.get('/auth/me');
-          const full = me.data?.data?.tenant?.settings;
-          if (me.data?.success && full) {
-            setSettings((prev) => ({ ...prev, ...full }));
-          }
-        } catch {
-          // Not signed in or token expired — public branding alone is fine.
-        }
-      }
+      // Full settings arrive from AuthContext once /auth/me succeeds (see the
+  // dispatch there). Listening avoids a duplicate request and the token race.
+  useEffect(() => {
+    const onSettings = (e) => {
+      if (e.detail) setSettings((prev) => ({ ...prev, ...e.detail }));
+    };
+    window.addEventListener('nexusora:tenant-settings', onSettings);
+    return () => window.removeEventListener('nexusora:tenant-settings', onSettings);
+  }, []);
     } catch (error) {
       console.warn('[Tenant] Could not fetch tenant info:', error.message);
       setNotFound(true);

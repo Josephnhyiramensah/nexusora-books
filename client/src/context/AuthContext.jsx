@@ -52,6 +52,14 @@ export function AuthProvider({ children }) {
         if (data.success) {
           dispatch({ type: AUTH_ACTIONS.SET_USER, payload: data.data.user });
           localStorage.setItem('user', JSON.stringify(data.data.user));
+          // Hand the tenant's full settings to TenantContext. The public tenant
+          // endpoint exposes only logo + whiteLabel, so without this the
+          // letterhead, address and TIN are lost on every refresh. Broadcasting
+          // from here avoids a second /auth/me call racing this one with a
+          // stale token — which is what was silently 401ing.
+          if (data.data.tenant?.settings) {
+            window.dispatchEvent(new CustomEvent('nexusora:tenant-settings', { detail: data.data.tenant.settings }));
+          }
         }
       } catch {
         dispatch({ type: AUTH_ACTIONS.SET_LOADING, payload: false });

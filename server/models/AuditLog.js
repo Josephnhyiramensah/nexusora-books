@@ -6,7 +6,8 @@ const mongoose = require('mongoose');
 
 const auditLogSchema = new mongoose.Schema(
   {
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+      user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    actorLabel: { type: String },
     action: {
       type: String,
       enum: [
