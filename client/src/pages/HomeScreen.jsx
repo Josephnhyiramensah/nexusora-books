@@ -15,6 +15,7 @@ import {
   FiEdit3, FiCheckSquare, FiSettings, FiDollarSign,
   FiMinusCircle, FiBookOpen, FiZap, FiActivity,
 } from 'react-icons/fi';
+import TwoFactorNudge from '../components/common/TwoFactorNudge';
 
 const moduleTiles = [
   { label: 'Dashboard',           subtitle: 'Financial overview',            path: '/dashboard',            accentColor: '#1A3560', icon: FiGrid },
@@ -125,6 +126,8 @@ export default function HomeScreen() {
       <DropDown>
         <TopBar onMenuToggle={showMobileNav ? () => setDrawerOpen(true) : undefined} />
       </DropDown>
+
+      <TwoFactorNudge user={user} />
 
 {/* Mobile search — below topbar */}
       {isMobile && (
