@@ -818,7 +818,7 @@ export default function MasterAdminPage() {
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #0f2240, #1A3560)' }}>
         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
           style={{ background: '#fff', borderRadius: 20, padding: '48px 40px', width: 400, textAlign: 'center' }}>
-          <img src={nexusoraLogo} alt="Nexusora" style={{ width: 60, height: 60, borderRadius: 14, marginBottom: 20 }} />
+          <img src={nexusoraLogo} alt="Nexusora" style={{ width: 60, height: 60, borderRadius: 14, marginBottom: 20, display: 'block', marginLeft: 'auto', marginRight: 'auto' }} />
           <h1 style={{ fontFamily: 'Poppins, sans-serif', fontSize: 22, fontWeight: 700, color: '#1A3560', marginBottom: 6 }}>Developer Console</h1>
           <p style={{ fontSize: 13, color: '#6B7280', marginBottom: 28 }}>Nexusora Technologies · Restricted Access</p>
           {passwordError && <div style={{ padding: '10px 16px', background: '#FEE2E2', borderRadius: 10, color: '#DC2626', fontSize: 13, marginBottom: 16 }}>{passwordError}</div>}
