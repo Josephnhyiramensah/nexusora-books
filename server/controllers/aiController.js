@@ -1,5 +1,7 @@
 const { getModel } = require('../utils/getModel');
 const Tenant = require('../models/Tenant');
+const { effectivePermissions, can } = require('../utils/aiAccess');
+const { buildAIContext } = require('../utils/aiContext');
 
 // ─── Identity & System Prompt ────────────────────────────────────────────────
 const NEXUSORA_ASSISTANT_IDENTITY = `You are the **Nexusora Account Assistant** — an intelligent AI accounting assistant embedded exclusively in Nexusora Books, a professional multi-tenant SaaS accounting management system built for Ghanaian businesses.
@@ -48,12 +50,11 @@ function checkPremiumAI(plan) {
   return ['professional', 'enterprise', 'founding'].includes(plan);
 }
 
-function getAccessLevel(role) {
-  return { super_admin: 4, admin: 3, accountant: 2, staff: 1, viewer: 0 }[role] || 0;
-}
-
-function canSeeFinancials(role) {
-  return getAccessLevel(role) >= 2;
+// Was a hardcoded role ladder that ignored req.user.permissions entirely, so a
+// viewer granted reports.view was still refused AI reports. Now resolves through
+// the same PERMISSIONS catalogue the route guards use.
+function canSeeFinancials(user) {
+  return can(user, 'reports.view');
 }
 
 async function callClaude(systemPrompt, messages, maxTokens = 2000) {
@@ -96,44 +97,33 @@ const chat = async (req, res) => {
 
     const userRole = req.user.role;
     const hasPremium = checkPremiumAI(tenant?.plan);
-    const accessLevel = getAccessLevel(userRole);
+    const perms = [...effectivePermissions(req.user)];
 
-    // Explicit grants widen what this user may discuss, so the assistant stays
-    // consistent with what they can actually open in the app. Grants are
-    // additive — they never reduce what a role already allows.
-    const grants = Array.isArray(req.user.permissions) ? req.user.permissions : [];
-    const GRANT_LABELS = {
-      'reports.view': 'financial reports (trial balance, P&L, balance sheet, cash flow, general ledger)',
-      'analytics.view': 'financial analytics, charts and ratios',
-      'payroll.view': 'payroll data including salaries',
-      'banking.view': 'bank accounts and reconciliation',
-      'budget.view': 'budgets and variance analysis',
-      'tax.view': 'tax summaries (VAT, PAYE, corporate tax)',
-      'audit.view': 'the audit and activity log',
-    };
-    const grantedAreas = grants.map((g) => GRANT_LABELS[g]).filter(Boolean);
-    const grantContext = grantedAreas.length
-      ? `\n**ADDITIONAL ACCESS GRANTED BY THIS COMPANY'S ADMINISTRATOR:**\nDespite the role restrictions above, this specific user HAS been granted access to: ${grantedAreas.join('; ')}. You may discuss these areas with them normally. All other restrictions for their role still apply.`
-      : '';
+    // Load ONLY what this user may see. Anything else is never fetched, so it
+    // never reaches the model -- no phrasing or injected instruction can extract
+    // it. Previously the assistant was merely TOLD to withhold data it could
+    // already read, and in fact received no company data at all.
+    const { context, withheld } = await buildAIContext(req.user, req.tenantDb, tenant);
 
-    const securityContext = `
-**CURRENT SESSION SECURITY CONTEXT:**
-- User: ${req.user.firstName} ${req.user.lastName}
-- Role: ${userRole} (Access Level ${accessLevel}/4)
-- Company: ${tenant?.companyName}
-- Plan: ${tenant?.plan}
-- Premium AI: ${hasPremium ? 'Active' : 'Not active (Trial/Starter)'}
+    const securityContext = [
+      '**CURRENT SESSION:**',
+      '- User: ' + req.user.firstName + ' ' + req.user.lastName,
+      '- Role: ' + userRole,
+      '- Company: ' + (tenant?.companyName || ''),
+      '- Plan: ' + (tenant?.plan || '') + (hasPremium ? ' (Premium AI active)' : ' (Premium AI not active)'),
+      '- Permitted areas: ' + (perms.length ? perms.join(', ') : 'general guidance only'),
+      '',
+      '**LIVE COMPANY DATA -- use these figures, do not invent others:**',
+      context,
+      '',
+      withheld.length
+        ? '**NOT LOADED FOR THIS USER:** ' + withheld.join('; ') + '. If asked about these, say plainly that the figures are not available at their access level and suggest they ask their administrator. Never guess, estimate or reconstruct them.'
+        : '**NOT LOADED:** nothing -- this user may see every area.',
+      '',
+      'If a figure is not in the data above, say it is not available rather than estimating.',
+    ].join('\n');
 
-**ROLE-BASED ACCESS RULES (STRICTLY ENFORCE):**
-${userRole === 'viewer' ? '⛔ VIEWER: This user can ONLY see general guidance. NEVER share financial figures, account balances, transaction details, payroll data, or sensitive business information. Redirect them to their accountant or admin for financial queries.' : ''}
-${userRole === 'staff' ? '⚠️ STAFF: Limited access. Do NOT share payroll details, profit figures, or strategic financial data. Basic operational guidance only.' : ''}
-${userRole === 'accountant' ? '✅ ACCOUNTANT: Can access all financial data, reports, journals, and accounting guidance. Cannot access user management or system settings.' : ''}
-${['admin', 'super_admin'].includes(userRole) ? '✅ ADMIN/SUPER_ADMIN: Full access to all information and guidance.' : ''}
-
-Always state what you can and cannot share based on the user's role if financial data is requested by a restricted user.
-Ghana data privacy laws and professional accounting ethics apply at all times.`;
-
-    const fullSystem = NEXUSORA_ASSISTANT_IDENTITY + '\n\n' + securityContext + grantContext;
+    const fullSystem = NEXUSORA_ASSISTANT_IDENTITY + '\n\n' + securityContext;
     const recentMessages = messages.slice(-20);
 
     const aiText = await callClaude(fullSystem, recentMessages, 1800);
@@ -144,7 +134,8 @@ Ghana data privacy laws and professional accounting ethics apply at all times.`;
         response: aiText,
         userRole,
         hasPremium,
-        accessLevel,
+        permissions: perms,
+        withheld,
       },
     });
   } catch (error) {
@@ -158,7 +149,7 @@ const generateReport = async (req, res) => {
   try {
     const tenant = await Tenant.findOne({ subdomain: req.tenant.subdomain });
 
-    if (!canSeeFinancials(req.user.role)) {
+    if (!canSeeFinancials(req.user)) {
       return res.status(403).json({
         success: false,
         message: `Your role (${req.user.role}) does not have permission to generate AI financial reports. Please contact your administrator.`,
@@ -231,7 +222,7 @@ const detectAnomalies = async (req, res) => {
     if (!checkPremiumAI(tenant?.plan)) {
       return res.status(403).json({ success: false, message: 'Anomaly detection requires Professional or Enterprise plan.' });
     }
-    if (!canSeeFinancials(req.user.role)) {
+    if (!canSeeFinancials(req.user)) {
       return res.status(403).json({ success: false, message: `Your role (${req.user.role}) cannot access anomaly detection.` });
     }
 
@@ -321,7 +312,7 @@ const forecastCashFlow = async (req, res) => {
     if (!checkPremiumAI(tenant?.plan)) {
       return res.status(403).json({ success: false, message: 'Cash flow forecasting requires Professional or Enterprise plan.' });
     }
-    if (!canSeeFinancials(req.user.role)) {
+    if (!canSeeFinancials(req.user)) {
       return res.status(403).json({ success: false, message: `Your role (${req.user.role}) cannot access cash flow forecasting.` });
     }
 
