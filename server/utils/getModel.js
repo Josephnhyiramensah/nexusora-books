@@ -17,6 +17,8 @@ const budgetSchema = require('../models/Budget');
 const inventoryItemSchema = require('../models/InventoryItem');
 const apiKeySchema = require('../models/ApiKey');
 const notificationSchema = require('../models/Notification');
+const casualWorkerSchema = require('../models/CasualWorker');
+const casualPaymentSheetSchema = require('../models/CasualPaymentSheet');
 
 
 const schemas = {
@@ -29,6 +31,8 @@ const schemas = {
   InventoryItem: inventoryItemSchema,
   ApiKey: apiKeySchema,
   Notification: notificationSchema,
+  CasualWorker: casualWorkerSchema,
+  CasualPaymentSheet: casualPaymentSheetSchema,
 };
 
 function getModel(tenantDb, modelName, schema) {

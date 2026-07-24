@@ -36,6 +36,7 @@ import MakePaymentPage from './modules/bills/MakePaymentPage';
 import InventoryPage from './modules/inventory/InventoryPage';
 import FixedAssetsPage from './modules/fixed-assets/FixedAssetsPage';
 import PayrollPage from './modules/payroll/PayrollPage';
+import CasualWorkersPage from './modules/payroll/CasualWorkersPage';
 import BankingPage from './modules/banking/BankingPage';
 import BudgetPage from './modules/budget/BudgetPage';
 import TaxPage from './modules/tax/TaxPage';
@@ -203,8 +204,12 @@ export default function App() {
             </Route>
 
             {/* ── Payroll ── */}
-            <Route element={<ProtectedRoute permission="payroll.view" roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Payroll" sidebarItems={g('/payroll','Payroll')} /></ProtectedRoute>}>
+            <Route element={<ProtectedRoute permission="payroll.view" roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Payroll" sidebarItems={[
+              { path: '/payroll', label: 'Staff Payroll', icon: FiList, exact: true },
+              { path: '/payroll/casual', label: 'Casual Workers', icon: FiUsers, exact: true },
+            ]} /></ProtectedRoute>}>
               <Route path="/payroll" element={<PayrollPage />} />
+              <Route path="/payroll/casual" element={<CasualWorkersPage />} />
             </Route>
 
             {/* ── Banking ── */}
