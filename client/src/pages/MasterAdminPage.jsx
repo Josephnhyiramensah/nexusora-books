@@ -566,6 +566,12 @@ export default function MasterAdminPage() {
   const [healthData, setHealthData] = useState(null);
   const [healthLoading, setHealthLoading] = useState(false);
   const [announcement, setAnnouncement] = useState({ title: '', message: '', type: 'info' });
+  const [broadcasts, setBroadcasts] = useState([]);
+  const [loadingBroadcasts, setLoadingBroadcasts] = useState(false);
+  const [editingBid, setEditingBid] = useState(null);
+  const [editDraft, setEditDraft] = useState({ title: '', message: '', type: 'info' });
+  const [bcSkew, setBcSkew] = useState(0);
+  const [bcBusy, setBcBusy] = useState('');
   const [announceSending, setAnnounceSending] = useState(false);
 
   // Add Tenant Modal state
@@ -665,6 +671,7 @@ export default function MasterAdminPage() {
       });
       if (data.success) {
         setAnnouncement({ title: '', message: '', type: 'info' });
+        fetchBroadcasts();
         alert('Sent to ' + data.data.sent + ' tenant(s)'
           + (data.data.failed ? ' -- ' + data.data.failed + ' failed, see console' : ''));
         if (data.data.failed) console.warn('[Broadcast] failures:', data.data.results.filter((r) => !r.ok));
@@ -674,6 +681,65 @@ export default function MasterAdminPage() {
     } catch (err) {
       alert(err.response?.data?.message || 'Broadcast failed.');
     } finally { setAnnounceSending(false); }
+  };
+
+  // One broadcast exists as N documents (one per tenant db). The server groups
+  // them by broadcastId so the operator manages it as a single item.
+  const fetchBroadcasts = async () => {
+    setLoadingBroadcasts(true);
+    try {
+      const { data } = await platformApi.get('/tenants/broadcasts');
+      if (data.success) {
+        setBroadcasts(data.data);
+        if (data.serverNow) setBcSkew(Date.now() - data.serverNow);
+      }
+    } catch (e) { console.error('[Console] broadcasts load failed:', e.response?.status, e.message); }
+    finally { setLoadingBroadcasts(false); }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'announce') fetchBroadcasts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  // Ages measured against the SERVER clock, so a skewed operator machine cannot
+  // make a fresh broadcast look hours old.
+  const bcAgo = (d) => {
+    const ms = (Date.now() - bcSkew) - new Date(d).getTime();
+    if (ms < 60000) return 'Just now';
+    const mins = Math.floor(ms / 60000);
+    if (mins < 60) return mins + 'm ago';
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return hrs + 'h ago';
+    const days = Math.floor(hrs / 24);
+    return days < 7 ? days + 'd ago' : new Date(d).toLocaleDateString('en-GB');
+  };
+
+  const startEdit = (b) => {
+    setEditingBid(b.broadcastId);
+    setEditDraft({ title: b.title, message: b.message, type: b.type || 'info' });
+  };
+
+  const saveEdit = async (b) => {
+    if (!editDraft.title || !editDraft.message) { alert('Title and message are required.'); return; }
+    setBcBusy(b.broadcastId + ':save');
+    try {
+      const { data } = await platformApi.put('/tenants/broadcasts/' + b.broadcastId, editDraft);
+      if (data.success) { setEditingBid(null); fetchBroadcasts(); }
+      else alert('Update failed.');
+    } catch (e) { alert(e.response?.data?.message || 'Update failed.'); }
+    finally { setBcBusy(''); }
+  };
+
+  const removeBroadcast = async (b) => {
+    if (!window.confirm('Withdraw "' + b.title + '" from all ' + b.tenants.length + ' tenant(s)? It disappears from their bell and announcements page.')) return;
+    setBcBusy(b.broadcastId + ':del');
+    try {
+      const { data } = await platformApi.delete('/tenants/broadcasts/' + b.broadcastId);
+      if (data.success) fetchBroadcasts();
+      else alert('Delete failed.');
+    } catch (e) { alert(e.response?.data?.message || 'Delete failed.'); }
+    finally { setBcBusy(''); }
   };
 
   const planColor = { trial: '#6B7280', starter: '#2563EB', professional: '#C9A227', enterprise: '#1A3560', founding: '#16A34A' };
@@ -1098,6 +1164,62 @@ export default function MasterAdminPage() {
                 style={{ width: '100%', padding: '13px', borderRadius: 10, background: announceSending ? '#9CA3AF' : 'linear-gradient(135deg, #C9A227, #e0b930)', color: '#1A3560', fontSize: 14, fontWeight: 700, border: 'none', cursor: announceSending ? 'not-allowed' : 'pointer' }}>
                 {announceSending ? '⏳ Sending...' : `📢 Broadcast to All ${tenants.length} Tenants`}
               </motion.button>
+            </div>
+
+            <div style={{ background: '#fff', borderRadius: 12, padding: '24px 28px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginTop: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: '#1A3560' }}>Sent Announcements</h3>
+                <button onClick={fetchBroadcasts} style={{ fontSize: 12, color: '#2563EB', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer' }}>Refresh</button>
+              </div>
+              <p style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 18 }}>Editing or withdrawing updates every tenant copy at once.</p>
+              {loadingBroadcasts ? (
+                <p style={{ fontSize: 13, color: '#9CA3AF' }}>Loading...</p>
+              ) : broadcasts.length === 0 ? (
+                <p style={{ fontSize: 13, color: '#9CA3AF' }}>Nothing broadcast yet.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {broadcasts.map((b) => (
+                    <div key={b.broadcastId} style={{ border: '1px solid #E2E8F0', borderRadius: 10, padding: '14px 16px' }}>
+                      {editingBid === b.broadcastId ? (
+                        <div>
+                          <input value={editDraft.title} onChange={(e) => setEditDraft((p) => ({ ...p, title: e.target.value }))} style={{ width: '100%', padding: '9px 12px', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 13, marginBottom: 8, boxSizing: 'border-box' }} />
+                          <textarea value={editDraft.message} onChange={(e) => setEditDraft((p) => ({ ...p, message: e.target.value }))} rows={4} style={{ width: '100%', padding: '9px 12px', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 13, marginBottom: 8, resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                            {['info', 'warning', 'success', 'danger'].map((t) => (
+                              <button key={t} onClick={() => setEditDraft((p) => ({ ...p, type: t }))} style={{ padding: '5px 12px', borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: '1px solid ' + (editDraft.type === t ? '#1A3560' : '#E2E8F0'), background: editDraft.type === t ? '#1A3560' : '#fff', color: editDraft.type === t ? '#fff' : '#6B7280', textTransform: 'capitalize' }}>{t}</button>
+                            ))}
+                          </div>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button onClick={() => saveEdit(b)} disabled={bcBusy === b.broadcastId + ':save'} style={{ padding: '8px 18px', borderRadius: 8, background: '#1A3560', color: '#fff', fontSize: 12, fontWeight: 700, border: 'none', cursor: 'pointer' }}>{bcBusy === b.broadcastId + ':save' ? 'Saving...' : 'Save to all tenants'}</button>
+                            <button onClick={() => setEditingBid(null)} style={{ padding: '8px 18px', borderRadius: 8, background: '#fff', color: '#6B7280', fontSize: 12, fontWeight: 600, border: '1px solid #E2E8F0', cursor: 'pointer' }}>Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                            <strong style={{ fontSize: 14, color: '#1A3560' }}>{b.title}</strong>
+                            <span style={{ fontSize: 11, color: '#9CA3AF', flexShrink: 0 }}>{bcAgo(b.createdAt)}</span>
+                          </div>
+                          <p style={{ fontSize: 13, color: '#6B7280', marginTop: 6, whiteSpace: 'pre-wrap' }}>{b.message}</p>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 11, color: '#9CA3AF', flexWrap: 'wrap' }}>
+                            <span style={{ textTransform: 'capitalize', fontWeight: 600 }}>{b.type}</span>
+                            <span>-</span>
+                            <span>{b.deliveries} delivered</span>
+                            <span>-</span>
+                            <span>{b.reads} read</span>
+                            <span>-</span>
+                            <span>{b.tenants.join(', ')}</span>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                            <button onClick={() => startEdit(b)} style={{ padding: '7px 16px', borderRadius: 8, background: '#fff', color: '#1A3560', fontSize: 12, fontWeight: 600, border: '1px solid #E2E8F0', cursor: 'pointer' }}>Edit</button>
+                            <button onClick={() => removeBroadcast(b)} disabled={bcBusy === b.broadcastId + ':del'} style={{ padding: '7px 16px', borderRadius: 8, background: '#fff', color: '#DC2626', fontSize: 12, fontWeight: 600, border: '1px solid #FECACA', cursor: 'pointer' }}>{bcBusy === b.broadcastId + ':del' ? 'Removing...' : 'Withdraw'}</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}

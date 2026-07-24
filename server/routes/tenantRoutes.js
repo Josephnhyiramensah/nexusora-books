@@ -7,6 +7,7 @@ const {
   getPricing, suspendTenant, reactivateTenant, getAdminStats,
   changeTenantPlan, getTenantUsers, resetTenantUserPassword,
   getTenantDetailStats, deleteTenant, broadcastNotification,
+  listBroadcasts, updateBroadcast, deleteBroadcast,
   unlockTenantUser, changeTenantUserRole, changeTenantUserIdentity, setTenantUserActive,
 } = require('../controllers/tenantController');
 const { platformProtect, platformOwnerOnly } = require('../middleware/platformMiddleware');
@@ -28,6 +29,12 @@ router.use(platformProtect);
 
 router.get('/', listTenants);
 router.get('/admin/stats', getAdminStats);
+
+// Declared BEFORE '/:subdomain' -- otherwise Express matches 'broadcasts' as a
+// subdomain and these never fire.
+router.get('/broadcasts', listBroadcasts);
+router.put('/broadcasts/:broadcastId', updateBroadcast);
+router.delete('/broadcasts/:broadcastId', deleteBroadcast);
 router.get('/:subdomain', getTenant);
 router.put('/:subdomain/settings', updateTenantSettings);
 router.post('/:subdomain/suspend', suspendTenant);

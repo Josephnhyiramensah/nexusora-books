@@ -645,6 +645,9 @@ const broadcastNotification = async (req, res) => {
     const filter = { status: { $nin: ['archived'] } };
     if (Array.isArray(targets) && targets.length) filter.subdomain = { $in: targets };
 
+    const { randomUUID } = require('crypto');
+    const broadcastId = randomUUID();
+
     const tenants = await Tenant.find(filter).select('subdomain databaseName companyName');
     const results = [];
 
@@ -661,6 +664,7 @@ const broadcastNotification = async (req, res) => {
           createdBy: null,
           createdByLabel: 'Nexusora Technologies',
           expiresAt: expiresAt || null,
+          broadcastId,
         });
         results.push({ subdomain: t.subdomain, ok: true });
       } catch (e) {
@@ -670,7 +674,7 @@ const broadcastNotification = async (req, res) => {
     }
 
     const sent = results.filter((r) => r.ok).length;
-    res.json({ success: true, data: { sent, failed: results.length - sent, results } });
+    res.json({ success: true, data: { sent, failed: results.length - sent, results, broadcastId } });
   } catch (error) {
     console.error('[Broadcast] Error:', error.message);
     res.status(500).json({ success: false, message: 'Broadcast failed.' });
@@ -678,3 +682,123 @@ const broadcastNotification = async (req, res) => {
 };
 
 module.exports.broadcastNotification = broadcastNotification;
+
+
+// --- Broadcast management ---------------------------------------------------
+// One broadcast lives as N documents, one per tenant database. These three walk
+// every tenant connection so the operator sees and edits it as a single item.
+const activeTenants = () => Tenant.find({ status: { $nin: ['archived'] } }).select('subdomain databaseName companyName');
+
+// Broadcasts sent before broadcastId existed have none. Derive a stable id from
+// the content so those copies group together, and write it back once.
+const legacyIdFor = (d) => {
+  const crypto = require('crypto');
+  return 'legacy-' + crypto.createHash('sha1').update(String(d.title) + '|' + String(d.message)).digest('hex').slice(0, 16);
+};
+
+const listBroadcasts = async (req, res) => {
+  try {
+    const tenants = await activeTenants();
+    const map = new Map();
+
+    for (const t of tenants) {
+      try {
+        const tenantDb = await getTenantConnection(t.databaseName);
+        const Notification = getModel(tenantDb, 'Notification');
+        const docs = await Notification.find({ source: 'platform' }).sort({ createdAt: -1 }).lean();
+
+        for (const d of docs) {
+          let bid = d.broadcastId;
+          if (!bid) {
+            bid = legacyIdFor(d);
+            await Notification.updateOne({ _id: d._id }, { $set: { broadcastId: bid } });
+          }
+          if (!map.has(bid)) {
+            map.set(bid, {
+              broadcastId: bid,
+              title: d.title,
+              message: d.message,
+              type: d.type,
+              createdAt: d.createdAt,
+              tenants: [],
+              deliveries: 0,
+              reads: 0,
+            });
+          }
+          const e = map.get(bid);
+          e.deliveries += 1;
+          e.reads += (d.readBy || []).length;
+          if (!e.tenants.includes(t.subdomain)) e.tenants.push(t.subdomain);
+          if (new Date(d.createdAt) < new Date(e.createdAt)) e.createdAt = d.createdAt;
+        }
+      } catch (e) {
+        console.error('[Broadcasts] ' + t.subdomain + ': ' + e.message);
+      }
+    }
+
+    const data = [...map.values()].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    res.json({ success: true, data, serverNow: Date.now() });
+  } catch (error) {
+    console.error('[Broadcasts] List error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to load broadcasts.' });
+  }
+};
+
+const updateBroadcast = async (req, res) => {
+  try {
+    const { title, message, type } = req.body;
+    if (!title || !message) {
+      return res.status(400).json({ success: false, message: 'Title and message are required.' });
+    }
+    const set = {
+      title: String(title).trim(),
+      message: String(message).trim(),
+      type: ['info', 'success', 'warning', 'danger'].includes(type) ? type : 'info',
+    };
+
+    const tenants = await activeTenants();
+    let updated = 0;
+    for (const t of tenants) {
+      try {
+        const tenantDb = await getTenantConnection(t.databaseName);
+        const Notification = getModel(tenantDb, 'Notification');
+        const r = await Notification.updateMany(
+          { broadcastId: req.params.broadcastId, source: 'platform' },
+          { $set: set }
+        );
+        updated += r.modifiedCount || 0;
+      } catch (e) {
+        console.error('[Broadcasts] update ' + t.subdomain + ': ' + e.message);
+      }
+    }
+    res.json({ success: true, data: { updated } });
+  } catch (error) {
+    console.error('[Broadcasts] Update error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to update broadcast.' });
+  }
+};
+
+const deleteBroadcast = async (req, res) => {
+  try {
+    const tenants = await activeTenants();
+    let removed = 0;
+    for (const t of tenants) {
+      try {
+        const tenantDb = await getTenantConnection(t.databaseName);
+        const Notification = getModel(tenantDb, 'Notification');
+        const r = await Notification.deleteMany({ broadcastId: req.params.broadcastId, source: 'platform' });
+        removed += r.deletedCount || 0;
+      } catch (e) {
+        console.error('[Broadcasts] delete ' + t.subdomain + ': ' + e.message);
+      }
+    }
+    res.json({ success: true, data: { removed } });
+  } catch (error) {
+    console.error('[Broadcasts] Delete error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to delete broadcast.' });
+  }
+};
+
+module.exports.listBroadcasts = listBroadcasts;
+module.exports.updateBroadcast = updateBroadcast;
+module.exports.deleteBroadcast = deleteBroadcast;

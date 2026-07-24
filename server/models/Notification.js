@@ -32,6 +32,10 @@ const notificationSchema = new mongoose.Schema(
     }],
 
     expiresAt: { type: Date, default: null },
+
+    // Links every tenant copy of a single console broadcast, so the operator
+    // can edit or withdraw it everywhere at once.
+    broadcastId: { type: String, default: null, index: true },
   },
   { timestamps: true }
 );
