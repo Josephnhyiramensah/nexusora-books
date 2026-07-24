@@ -46,7 +46,9 @@ const getNotifications = async (req, res) => {
       read: (d.readBy || []).some((r) => r.user && r.user.toString() === uid),
     }));
 
-    res.json({ success: true, data, count: data.length, unread: data.filter((d) => !d.read).length });
+    // serverNow lets the client measure ages against OUR clock. A device with a
+    // wrong timezone would otherwise show a fresh notification as hours old.
+    res.json({ success: true, data, count: data.length, unread: data.filter((d) => !d.read).length, serverNow: Date.now() });
   } catch (error) {
     console.error('[Notifications] List error:', error.message);
     res.status(500).json({ success: false, message: 'Failed to fetch notifications.' });

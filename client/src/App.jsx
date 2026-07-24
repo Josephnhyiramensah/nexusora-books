@@ -50,6 +50,7 @@ import GeneralLedgerPage from './modules/reports/GeneralLedgerPage';
 // Phase 5
 import DashboardFullPage from './modules/dashboard/DashboardPage';
 import NotesPage from './modules/notes/NotesPage';
+import AnnouncementsPage from './modules/announcements/AnnouncementsPage';
 import TodosPage from './modules/todos/TodosPage';
 import SettingsPage from './modules/settings/SettingsPage';
 
@@ -234,6 +235,11 @@ export default function App() {
             {/* ── Notes ── */}
             <Route element={<ProtectedRoute><ModuleShell moduleTitle="Notes" sidebarItems={g('/notes','Notes')} /></ProtectedRoute>}>
               <Route path="/notes" element={<NotesPage />} />
+            </Route>
+
+            {/* -- Announcements -- */}
+            <Route element={<ProtectedRoute><ModuleShell moduleTitle="Announcements" sidebarItems={g('/announcements','Announcements')} /></ProtectedRoute>}>
+              <Route path="/announcements" element={<AnnouncementsPage />} />
             </Route>
 
             {/* ── To-Do ── */}
