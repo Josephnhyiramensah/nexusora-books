@@ -11,3 +11,8 @@ Thumbs.db
 coverage/
 dist/
 build/
+# Operational files that live only on the server
+server/.env.backup-*
+server/.env.bak.*
+server/reset2fa.js
+server/scripts/

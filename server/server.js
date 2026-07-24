@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 
 console.log('🔑 ANTHROPIC KEY LOADED:', process.env.ANTHROPIC_API_KEY
   ? process.env.ANTHROPIC_API_KEY.substring(0, 20) + '...'

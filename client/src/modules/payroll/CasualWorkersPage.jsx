@@ -58,6 +58,7 @@ export default function CasualWorkersPage() {
     e.preventDefault();
     setSaving(true);
     const payload = { ...wForm, defaultRate: Number(wForm.defaultRate || 0) };
+    if (editingWorker) payload.isActive = editingWorker.isActive !== false;
     try {
       if (editingWorker) { await api.put(`/payroll/casual/workers/${editingWorker._id}`, payload); showToast('Worker updated'); }
       else { await api.post('/payroll/casual/workers', payload); showToast('Worker added'); }
