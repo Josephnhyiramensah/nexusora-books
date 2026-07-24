@@ -49,6 +49,9 @@ router.get('/:subdomain/detail-stats', getTenantDetailStats);
 // whichever single tenant the hostname resolved to, and never reached the bell.
 router.post('/broadcast', broadcastNotification);
 
+const { updateTenantDetails } = require('../controllers/tenantController');
+router.put('/:subdomain/details', updateTenantDetails);
+
 // Per-user operator controls (all inherit platformProtect from router.use above).
 router.post('/:subdomain/users/:userId/unlock', unlockTenantUser);
 router.put('/:subdomain/users/:userId/role', changeTenantUserRole);

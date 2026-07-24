@@ -802,3 +802,47 @@ const deleteBroadcast = async (req, res) => {
 module.exports.listBroadcasts = listBroadcasts;
 module.exports.updateBroadcast = updateBroadcast;
 module.exports.deleteBroadcast = deleteBroadcast;
+
+
+// --- Platform: edit a tenant's identity -------------------------------------
+// Owner/company/contact are a real business's legal identity. Edited through an
+// authenticated console action with an audit trail -- never a hand-run script.
+// The Tenant schema nests owner as { name, email, phone }; email is required.
+const updateTenantDetails = async (req, res) => {
+  try {
+    const { companyName, ownerName, ownerEmail, ownerPhone } = req.body;
+    const tenant = await Tenant.findOne({ subdomain: req.params.subdomain });
+    if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found.' });
+
+    // owner.email is required -- reject a blanking edit rather than throw on save.
+    if (ownerEmail !== undefined && !String(ownerEmail).trim()) {
+      return res.status(400).json({ success: false, message: 'Owner email cannot be empty.' });
+    }
+
+    if (!tenant.owner) tenant.owner = {};
+    const before = { companyName: tenant.companyName, name: tenant.owner.name, email: tenant.owner.email, phone: tenant.owner.phone };
+
+    if (companyName !== undefined) tenant.companyName = String(companyName).trim();
+    if (ownerName !== undefined) tenant.owner.name = String(ownerName).trim();
+    if (ownerEmail !== undefined) tenant.owner.email = String(ownerEmail).trim().toLowerCase();
+    if (ownerPhone !== undefined) tenant.owner.phone = String(ownerPhone).trim();
+    await tenant.save();
+
+    try {
+      const tenantDb = await getTenantConnection(tenant.databaseName);
+      const AuditLog = getModel(tenantDb, 'AuditLog');
+      await AuditLog.create({
+        actorLabel: 'Platform: ' + (req.platformAdmin?.email || 'console admin'),
+        action: 'update', module: 'settings', entityType: 'Tenant',
+        description: 'Tenant identity updated via console. Before: ' + JSON.stringify(before),
+      });
+    } catch (e) { console.error('[Tenant] audit failed:', e.message); }
+
+    res.json({ success: true, message: 'Tenant details updated.', data: tenant });
+  } catch (error) {
+    console.error('[Tenant] update details:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to update tenant details.' });
+  }
+};
+
+module.exports.updateTenantDetails = updateTenantDetails;

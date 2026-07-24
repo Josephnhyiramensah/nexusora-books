@@ -142,6 +142,32 @@ function TenantDetailModal({ tenant, onClose, onRefresh }) {
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [detailStats, setDetailStats] = useState(null);
   const [activeSection, setActiveSection] = useState('info');
+  const [editingInfo, setEditingInfo] = useState(false);
+  const [savingInfo, setSavingInfo] = useState(false);
+  const [infoDraft, setInfoDraft] = useState({ companyName: '', ownerName: '', ownerEmail: '', ownerPhone: '' });
+
+  const startEditInfo = () => {
+    setInfoDraft({
+      companyName: tenant.companyName || '',
+      ownerName: tenant.owner?.name || '',
+      ownerEmail: tenant.owner?.email || '',
+      ownerPhone: tenant.owner?.phone || '',
+    });
+    setEditingInfo(true);
+  };
+
+  const saveInfo = async () => {
+    if (!infoDraft.companyName.trim() || !infoDraft.ownerName.trim() || !infoDraft.ownerEmail.trim()) {
+      alert('Company name, owner name and owner email are required.'); return;
+    }
+    setSavingInfo(true);
+    try {
+      const { data } = await platformApi.put(`/tenants/${tenant.subdomain}/details`, infoDraft);
+      if (data.success) { setEditingInfo(false); onRefresh(); }
+      else alert('Update failed.');
+    } catch (e) { alert(e.response?.data?.message || 'Update failed.'); }
+    finally { setSavingInfo(false); }
+  };
   const [resetEmail, setResetEmail] = useState('');
   const [resetPassword, setResetPassword] = useState('');
   const [resetting, setResetting] = useState(false);
@@ -304,6 +330,32 @@ function TenantDetailModal({ tenant, onClose, onRefresh }) {
           {/* INFO */}
           {activeSection === 'info' && (
             <div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+                {!editingInfo ? (
+                  <button onClick={startEditInfo} style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', fontSize: 12, fontWeight: 600, color: '#1A3560', cursor: 'pointer' }}>Edit details</button>
+                ) : (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={saveInfo} disabled={savingInfo} style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#C9A227', color: '#1A3560', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{savingInfo ? 'Saving...' : 'Save'}</button>
+                    <button onClick={() => setEditingInfo(false)} style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', fontSize: 12, fontWeight: 600, color: '#6B7280', cursor: 'pointer' }}>Cancel</button>
+                  </div>
+                )}
+              </div>
+              {editingInfo && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
+                  {[
+                    ['Company Name *', 'companyName'],
+                    ['Owner Name *', 'ownerName'],
+                    ['Owner Email *', 'ownerEmail'],
+                    ['Phone', 'ownerPhone'],
+                  ].map(([lab, key]) => (
+                    <div key={key}>
+                      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6B7280', marginBottom: 5, letterSpacing: 0.3 }}>{lab.toUpperCase()}</label>
+                      <input value={infoDraft[key]} onChange={(e) => setInfoDraft((p) => ({ ...p, [key]: e.target.value }))} style={{ width: '100%', padding: '9px 12px', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!editingInfo && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
                 {[
                   { label: 'Owner', value: tenant.owner?.name },
@@ -321,6 +373,7 @@ function TenantDetailModal({ tenant, onClose, onRefresh }) {
                   </div>
                 ))}
               </div>
+              )}
 
               {/* Usage Stats */}
               {detailStats && (
