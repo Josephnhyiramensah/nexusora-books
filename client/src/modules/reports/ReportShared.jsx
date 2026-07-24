@@ -74,7 +74,7 @@ export function printReport(node, title) {
   win.document.write(`<html><head><title>${title || 'Report'}</title><style>
 @page { size: A4; margin: 0; }
 * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-sizing: border-box; }
-body { font-family: 'Inter', Arial, Helvetica, sans-serif; color: #1A3560; margin: 0; padding: 14mm; } }
+body { font-family: 'Inter', Arial, Helvetica, sans-serif; color: #1A3560; margin: 0; padding: 14mm; }
 img { max-width: 100%; }
 table { width: 100%; border-collapse: collapse; font-size: 12px; }
 th, td { padding: 7px 10px; border-bottom: 1px solid #E2E8F0; }
