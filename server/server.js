@@ -39,6 +39,7 @@ const aiRoutes           = require('./routes/aiRoutes');
 const inventoryRoutes    = require('./routes/inventoryRoutes');
 const uploadRoutes       = require('./routes/uploadRoutes');
 const auditRoutes        = require('./routes/auditRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 const apiKeyRoutes       = require('./routes/apiKeyRoutes');
 const externalApiRoutes  = require('./routes/externalApiRoutes');
 const platformRoutes     = require('./routes/platformRoutes');
@@ -180,6 +181,7 @@ app.use('/api/tax',              tm, es,   taxRoutes);
 app.use('/api/ai',               tm, es,   aiRoutes);
 app.use('/api/inventory',        tm, es,   inventoryRoutes);
 app.use('/api/audit',            tm, es,   auditRoutes);
+app.use('/api/notifications',    tm, es,   notificationRoutes);
 app.use('/api/upload',           tm,       uploadRoutes);
 app.use('/api/platform', platformRoutes);
 

@@ -6,7 +6,7 @@ const {
   provisionTenant, listTenants, getTenant, getTenantPublic, updateTenantSettings,
   getPricing, suspendTenant, reactivateTenant, getAdminStats,
   changeTenantPlan, getTenantUsers, resetTenantUserPassword,
-  getTenantDetailStats, deleteTenant,
+  getTenantDetailStats, deleteTenant, broadcastNotification,
   unlockTenantUser, changeTenantUserRole, changeTenantUserIdentity, setTenantUserActive,
 } = require('../controllers/tenantController');
 const { platformProtect, platformOwnerOnly } = require('../middleware/platformMiddleware');
@@ -36,6 +36,11 @@ router.put('/:subdomain/plan', changeTenantPlan);
 router.get('/:subdomain/users', getTenantUsers);
 router.post('/:subdomain/reset-password', resetTenantUserPassword);
 router.get('/:subdomain/detail-stats', getTenantDetailStats);
+
+// Console broadcast. Writes a real Notification document into every targeted
+// tenant database -- the old client-side loop posted N copies of a Note into
+// whichever single tenant the hostname resolved to, and never reached the bell.
+router.post('/broadcast', broadcastNotification);
 
 // Per-user operator controls (all inherit platformProtect from router.use above).
 router.post('/:subdomain/users/:userId/unlock', unlockTenantUser);

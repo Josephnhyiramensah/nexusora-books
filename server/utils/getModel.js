@@ -16,6 +16,7 @@ const bankAccountSchema = require('../models/BankAccount');
 const budgetSchema = require('../models/Budget');
 const inventoryItemSchema = require('../models/InventoryItem');
 const apiKeySchema = require('../models/ApiKey');
+const notificationSchema = require('../models/Notification');
 
 
 const schemas = {
@@ -27,6 +28,7 @@ const schemas = {
   BankAccount: bankAccountSchema, Budget: budgetSchema,
   InventoryItem: inventoryItemSchema,
   ApiKey: apiKeySchema,
+  Notification: notificationSchema,
 };
 
 function getModel(tenantDb, modelName, schema) {

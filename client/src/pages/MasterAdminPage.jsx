@@ -658,10 +658,22 @@ export default function MasterAdminPage() {
     if (!window.confirm(`Send to ALL ${tenants.length} tenants?`)) return;
     setAnnounceSending(true);
     try {
-      await Promise.all(tenants.map((t) => api.post('/notes', { title: announcement.title, content: announcement.message, type: 'announcement' }).catch(() => {})));
-      setAnnouncement({ title: '', message: '', type: 'info' });
-      alert(`✅ Sent to ${tenants.length} tenants`);
-    } catch {} finally { setAnnounceSending(false); }
+      const { data } = await platformApi.post('/tenants/broadcast', {
+        title: announcement.title,
+        message: announcement.message,
+        type: announcement.type || 'info',
+      });
+      if (data.success) {
+        setAnnouncement({ title: '', message: '', type: 'info' });
+        alert('Sent to ' + data.data.sent + ' tenant(s)'
+          + (data.data.failed ? ' -- ' + data.data.failed + ' failed, see console' : ''));
+        if (data.data.failed) console.warn('[Broadcast] failures:', data.data.results.filter((r) => !r.ok));
+      } else {
+        alert('Broadcast failed.');
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || 'Broadcast failed.');
+    } finally { setAnnounceSending(false); }
   };
 
   const planColor = { trial: '#6B7280', starter: '#2563EB', professional: '#C9A227', enterprise: '#1A3560', founding: '#16A34A' };

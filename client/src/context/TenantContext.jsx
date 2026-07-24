@@ -26,7 +26,11 @@ export function TenantProvider({ children }) {
       if (data.success) {
         setCompanyName(data.data.companyName || '');
         setPlan(data.data.plan || 'trial');
-        setSettings(data.data.settings || {});
+        // Merge as DEFAULTS, never as a replacement. This endpoint exposes only
+        // logo + whiteLabel; the full settings (letterhead, address, TIN) arrive
+        // separately from AuthContext. Replacing here wiped them whenever this
+        // request happened to resolve second.
+        setSettings((prev) => ({ ...(data.data.settings || {}), ...prev }));
       } else {
         setNotFound(true);
       }

@@ -12,6 +12,7 @@ const PERMISSIONS = [
   { key: 'budget.view',    label: 'Budget',              description: 'Budgets and variance analysis',                                impliedBy: ['super_admin', 'admin', 'accountant'] },
   { key: 'tax.view',       label: 'Tax',                 description: 'VAT, PAYE and corporate tax summaries',                        impliedBy: ['super_admin', 'admin', 'accountant'] },
   { key: 'audit.view',     label: 'Audit Log',           description: 'Security and activity trail',                                  impliedBy: ['super_admin', 'admin'] },
+  { key: 'notifications.send', label: 'Send Notifications', description: 'Send notifications to staff in this workspace',            impliedBy: ['super_admin', 'admin'] },
 ];
 
 const PERMISSION_KEYS = PERMISSIONS.map((p) => p.key);

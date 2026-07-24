@@ -631,3 +631,50 @@ module.exports = {
   changeTenantUserIdentity,
   setTenantUserActive,
 };
+
+// --- Platform broadcast -----------------------------------------------------
+// Fans a single announcement out across tenant databases. One failing tenant is
+// recorded and skipped rather than aborting the whole broadcast.
+const broadcastNotification = async (req, res) => {
+  try {
+    const { title, message, type = 'info', targets = 'all', expiresAt = null } = req.body;
+    if (!title || !message) {
+      return res.status(400).json({ success: false, message: 'Title and message are required.' });
+    }
+
+    const filter = { status: { $nin: ['archived'] } };
+    if (Array.isArray(targets) && targets.length) filter.subdomain = { $in: targets };
+
+    const tenants = await Tenant.find(filter).select('subdomain databaseName companyName');
+    const results = [];
+
+    for (const t of tenants) {
+      try {
+        const tenantDb = await getTenantConnection(t.databaseName);
+        const Notification = getModel(tenantDb, 'Notification');
+        await Notification.create({
+          title: String(title).trim(),
+          message: String(message).trim(),
+          type: ['info','success','warning','danger'].includes(type) ? type : 'info',
+          source: 'platform',
+          audience: 'all',
+          createdBy: null,
+          createdByLabel: 'Nexusora Technologies',
+          expiresAt: expiresAt || null,
+        });
+        results.push({ subdomain: t.subdomain, ok: true });
+      } catch (e) {
+        console.error('[Broadcast] ' + t.subdomain + ' failed: ' + e.message);
+        results.push({ subdomain: t.subdomain, ok: false, error: e.message });
+      }
+    }
+
+    const sent = results.filter((r) => r.ok).length;
+    res.json({ success: true, data: { sent, failed: results.length - sent, results } });
+  } catch (error) {
+    console.error('[Broadcast] Error:', error.message);
+    res.status(500).json({ success: false, message: 'Broadcast failed.' });
+  }
+};
+
+module.exports.broadcastNotification = broadcastNotification;
