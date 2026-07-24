@@ -45,7 +45,7 @@ const getEmployees = async (req, res) => {
 const createEmployee = async (req, res) => {
   try {
     const Employee = getModel(req.tenantDb, 'Employee');
-    const { firstName, lastName, email, phone, position, department, hireDate, basicSalary, allowances, ssnitNumber, taxId, bankName, bankAccountNumber } = req.body;
+    const { firstName, lastName, email, phone, position, department, hireDate, basicSalary, allowances, ssnitNumber, taxId, bankName, bankAccountNumber, providentFund, loan } = req.body;
 
     if (!firstName || !lastName || !basicSalary) {
       return res.status(400).json({ success: false, message: 'Required: firstName, lastName, basicSalary.' });
@@ -58,6 +58,8 @@ const createEmployee = async (req, res) => {
       employeeId, firstName, lastName, email, phone, position, department,
       hireDate, basicSalary: Number(basicSalary),
       allowances: allowances || [], ssnitNumber, taxId,
+      providentFund: providentFund || { mode: 'none', value: 0 },
+      loan: loan || { balance: 0, deductPerMonth: 0 },
       bankName, bankAccountNumber, createdBy: req.user._id,
     });
 
@@ -73,7 +75,7 @@ const updateEmployee = async (req, res) => {
     const employee = await Employee.findById(req.params.id);
     if (!employee) return res.status(404).json({ success: false, message: 'Employee not found.' });
 
-    const fields = ['firstName', 'lastName', 'email', 'phone', 'position', 'department', 'basicSalary', 'allowances', 'ssnitNumber', 'taxId', 'bankName', 'bankAccountNumber'];
+    const fields = ['firstName', 'lastName', 'email', 'phone', 'position', 'department', 'basicSalary', 'allowances', 'ssnitNumber', 'taxId', 'bankName', 'bankAccountNumber', 'providentFund', 'loan'];
     fields.forEach((f) => { if (req.body[f] !== undefined) employee[f] = req.body[f]; });
     await employee.save();
 
@@ -99,18 +101,37 @@ const runPayroll = async (req, res) => {
     const employees = await Employee.find({ isActive: true }).lean();
     if (employees.length === 0) return res.status(400).json({ success: false, message: 'No active employees.' });
 
+    const r2 = (n) => Math.round(n * 100) / 100;
+
     const entries = employees.map((emp) => {
       const totalAllowances = (emp.allowances || []).reduce((s, a) => s + (a.amount || 0), 0);
-      const grossPay = emp.basicSalary + totalAllowances;
-      const employeeSsnit = Math.round(emp.basicSalary * 0.055 * 100) / 100;
-      const employerSsnit = Math.round(emp.basicSalary * 0.13 * 100) / 100;
-      const taxableIncome = grossPay - employeeSsnit;
+      const grossPay = r2(emp.basicSalary + totalAllowances);
+      const employeeSsnit = r2(emp.basicSalary * 0.055);
+      const employerSsnit = r2(emp.basicSalary * 0.13);
+
+      const pf = emp.providentFund || {};
+      const providentFund = pf.mode === 'fixed' ? r2(pf.value || 0)
+        : pf.mode === 'percent' ? r2(emp.basicSalary * ((pf.value || 0) / 100)) : 0;
+
+      // SSNIT and provident fund both come off BEFORE tax.
+      const deductionBeforeTax = r2(employeeSsnit + providentFund);
+      const taxableIncome = r2(grossPay - deductionBeforeTax);
       const paye = calculatePAYE(taxableIncome);
-      const netPay = Math.round((grossPay - employeeSsnit - paye) * 100) / 100;
+
+      // Never recover more loan than is still outstanding.
+      const loan = emp.loan || {};
+      const loanDeduction = r2(Math.min(loan.deductPerMonth || 0, loan.balance || 0));
+
+      const totalDeduction = r2(paye + loanDeduction);
+      const netPay = r2(taxableIncome - totalDeduction);
 
       return {
-        employee: emp._id, basicSalary: emp.basicSalary,
-        totalAllowances, grossPay, paye, employeeSsnit, employerSsnit,
+        employee: emp._id,
+        employeeName: (emp.firstName || '') + ' ' + (emp.lastName || ''),
+        basicSalary: emp.basicSalary,
+        totalAllowances, grossPay, employeeSsnit, employerSsnit,
+        providentFund, deductionBeforeTax, taxableIncome, paye,
+        loanDeduction, totalDeduction,
         otherDeductions: 0, netPay,
       };
     });
@@ -120,6 +141,9 @@ const runPayroll = async (req, res) => {
     const totalPaye = Math.round(entries.reduce((s, e) => s + e.paye, 0) * 100) / 100;
     const totalEmployeeSsnit = Math.round(entries.reduce((s, e) => s + e.employeeSsnit, 0) * 100) / 100;
     const totalEmployerSsnit = Math.round(entries.reduce((s, e) => s + e.employerSsnit, 0) * 100) / 100;
+    const totalProvidentFund = r2(entries.reduce((s, e) => s + e.providentFund, 0));
+    const totalLoanDeduction = r2(entries.reduce((s, e) => s + e.loanDeduction, 0));
+    const totalDeduction = r2(entries.reduce((s, e) => s + e.totalDeduction, 0));
 
     const payrollNumber = `PR-${year}-${String(month).padStart(2, '0')}`;
 
@@ -127,6 +151,9 @@ const runPayroll = async (req, res) => {
       payrollNumber, period: { month: Number(month), year: Number(year) },
       runDate: new Date(), entries,
       totalGross, totalNet, totalPaye, totalEmployeeSsnit, totalEmployerSsnit,
+      totalProvidentFund, totalLoanDeduction, totalDeduction,
+      payeBands: PAYE_BANDS.map((b) => ({ upTo: Number.isFinite(b.upTo) ? b.upTo : null, rate: b.rate })),
+      payeBandsLabel: 'GRA 2026 monthly bands',
       status: 'draft', createdBy: req.user._id,
     });
 
@@ -188,6 +215,22 @@ const approvePayroll = async (req, res) => {
       { account: cashAcct._id, accountCode: '1020', accountName: cashAcct.name, debit: 0, credit: payroll.totalNet, description: `Net Pay ${payroll.payrollNumber}` },
     ];
 
+    // PF and staff loan need their own accounts; created on first use so
+    // existing charts need no re-seeding.
+    const mkAcct = async (code, name, type, cat, nb, desc) => {
+      let a = await Account.findOne({ code });
+      if (!a) a = await Account.create({ code, name, type, category: cat, normalBalance: nb, isSystemAccount: true, isActive: true, balance: 0, description: desc });
+      return a;
+    };
+    if (payroll.totalProvidentFund > 0) {
+      const pf = await mkAcct('2510', 'Provident Fund Payable', 'liability', 'Current Liability', 'credit', 'Tier-3 provident fund withheld from staff');
+      journalLines.push({ account: pf._id, accountCode: '2510', accountName: pf.name, debit: 0, credit: payroll.totalProvidentFund, description: `Provident Fund ${payroll.payrollNumber}` });
+    }
+    if (payroll.totalLoanDeduction > 0) {
+      const la = await mkAcct('1150', 'Staff Loan Receivable', 'asset', 'Current Asset', 'debit', 'Loans to staff recovered via payroll');
+      journalLines.push({ account: la._id, accountCode: '1150', accountName: la.name, debit: 0, credit: payroll.totalLoanDeduction, description: `Loan recovery ${payroll.payrollNumber}` });
+    }
+
     const entryNumber = await generateEntryNumber(JournalEntry);
     await JournalEntry.create({
       entryNumber, date: new Date(), journalType: 'general',
@@ -203,6 +246,19 @@ const approvePayroll = async (req, res) => {
         const change = calculateBalanceChange(acct.normalBalance, line.debit, line.credit);
         acct.balance = Math.round((acct.balance + change) * 100) / 100;
         await acct.save();
+      }
+    }
+
+    if (payroll.totalLoanDeduction > 0) {
+      const Emp = getModel(req.tenantDb, 'Employee');
+      for (const e of payroll.entries) {
+        if (e.loanDeduction > 0 && e.employee) {
+          const emp = await Emp.findById(e.employee);
+          if (emp && emp.loan) {
+            emp.loan.balance = Math.max(0, Math.round((emp.loan.balance - e.loanDeduction) * 100) / 100);
+            await emp.save();
+          }
+        }
       }
     }
 
