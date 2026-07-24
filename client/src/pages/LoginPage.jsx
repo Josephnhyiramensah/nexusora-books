@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { getSubdomain } from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FiMail, FiLock, FiEye, FiEyeOff } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
@@ -470,12 +471,17 @@ export default function LoginPage() {
                 transition={{ delay: 1.0 }}
                 style={{ textAlign: 'center', marginTop: 22 }}
               >
-                <p style={{ fontSize: 13, color: '#6B7280' }}>
-                  Don't have an account?{' '}
-                  <Link to="/register" style={{ color: '#2563EB', fontWeight: 600, textDecoration: 'none' }}>
-                    Start free trial →
-                  </Link>
-                </p>
+                {/* Trial signup is for NEW companies only -- hidden on every
+                    tenant subdomain (getSubdomain() is null only on the public
+                    apex domain). Existing clients like KGR never see it. */}
+                {!getSubdomain() && (
+                  <p style={{ fontSize: 13, color: '#6B7280' }}>
+                    Don't have an account?{' '}
+                    <Link to="/register" style={{ color: '#2563EB', fontWeight: 600, textDecoration: 'none' }}>
+                      Start free trial →
+                    </Link>
+                  </p>
+                )}
               </motion.div>
 
               <motion.p
