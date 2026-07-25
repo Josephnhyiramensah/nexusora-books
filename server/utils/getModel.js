@@ -18,6 +18,7 @@ const inventoryItemSchema = require('../models/InventoryItem');
 const apiKeySchema = require('../models/ApiKey');
 const notificationSchema = require('../models/Notification');
 const casualWorkerSchema = require('../models/CasualWorker');
+const reconciliationSessionSchema = require('../models/ReconciliationSession');
 const casualPaymentSheetSchema = require('../models/CasualPaymentSheet');
 
 
@@ -32,6 +33,7 @@ const schemas = {
   ApiKey: apiKeySchema,
   Notification: notificationSchema,
   CasualWorker: casualWorkerSchema,
+  ReconciliationSession: reconciliationSessionSchema,
   CasualPaymentSheet: casualPaymentSheetSchema,
 };
 
