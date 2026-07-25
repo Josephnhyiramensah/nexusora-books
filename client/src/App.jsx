@@ -38,6 +38,7 @@ import FixedAssetsPage from './modules/fixed-assets/FixedAssetsPage';
 import PayrollPage from './modules/payroll/PayrollPage';
 import CasualWorkersPage from './modules/payroll/CasualWorkersPage';
 import BankingPage from './modules/banking/BankingPage';
+import ReconciliationPage from './modules/banking/ReconciliationPage';
 import BudgetPage from './modules/budget/BudgetPage';
 import TaxPage from './modules/tax/TaxPage';
 
@@ -213,8 +214,9 @@ export default function App() {
             </Route>
 
             {/* ── Banking ── */}
-            <Route element={<ProtectedRoute permission="banking.view" roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Banking" sidebarItems={g('/banking','Bank Accounts')} /></ProtectedRoute>}>
+            <Route element={<ProtectedRoute permission="banking.view" roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Banking" sidebarItems={[{ path: '/banking', label: 'Bank Accounts', icon: FiCreditCard, exact: true }, { path: '/banking/reconciliation', label: 'Reconciliation', icon: FiRefreshCw, exact: true }]} /></ProtectedRoute>}>
               <Route path="/banking" element={<BankingPage />} />
+              <Route path="/banking/reconciliation" element={<ReconciliationPage />} />
             </Route>
 
             {/* ── Budget ── */}
