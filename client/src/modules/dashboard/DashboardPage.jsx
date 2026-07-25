@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
+import { FiLock,
   FiDollarSign, FiTrendingUp, FiTrendingDown, FiCreditCard,
   FiSend, FiFileText, FiUsers, FiShoppingBag, FiCheckSquare, FiAlertCircle,
 } from 'react-icons/fi';
@@ -10,8 +10,29 @@ import { useTenant } from '../../context/TenantContext';
 import { useBreakpoint } from '../../hooks/useBreakpoint';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 
-function StatCard({ label, value, icon: Icon, color, subtitle, onClick }) {
+function StatCard({ label, value, icon: Icon, color, subtitle, onClick, locked }) {
   const { isMobile } = useBreakpoint();
+  // Locked = the viewer lacks financial-reports access. Show the category so the
+  // layout is intact, but replace the figure with a lock -- matching how the AI
+  // withholds data the user may not see.
+  if (locked) {
+    return (
+      <div style={{
+        background: '#fff', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)',
+        padding: isMobile ? '14px 16px' : '20px 24px', borderLeft: '4px solid #CBD5E1',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ minWidth: 0 }}>
+            <p style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</p>
+            <p style={{ fontSize: isMobile ? 14 : 16, fontWeight: 600, color: '#94A3B8' }}>Restricted</p>
+          </div>
+          <div style={{ width: 38, height: 38, borderRadius: 10, background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <FiLock size={16} color="#94A3B8" />
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div onClick={onClick} style={{
       background: '#fff', borderRadius: 'var(--radius-md)',
@@ -41,6 +62,11 @@ export default function DashboardPage() {
   const { companyName } = useTenant();
   const navigate = useNavigate();
   const { isMobile } = useBreakpoint();
+
+  // Financial summary is visible to finance roles, or to anyone explicitly
+  // granted reports.view -- mirrors ProtectedRoute / the server's allow().
+  const canSeeFinancials = ['super_admin', 'admin', 'accountant'].includes(user?.role)
+    || (Array.isArray(user?.permissions) && user.permissions.includes('reports.view'));
 
   useEffect(() => {
     dashboardService.getSummary()
@@ -81,14 +107,14 @@ export default function DashboardPage() {
         gap: isMobile ? 10 : 16,
         marginBottom: isMobile ? 16 : 28,
       }}>
-        <StatCard label="Cash Balance"     value={formatCurrency(data.cashBalance)}    icon={FiDollarSign}  color="#16A34A" />
-        <StatCard label="Total Revenue"    value={formatCurrency(data.totalRevenue)}   icon={FiTrendingUp}  color="#2563EB" />
-        <StatCard label="Total Expenses"   value={formatCurrency(data.totalExpenses)}  icon={FiTrendingDown} color="#DC2626" />
-        <StatCard label="Net Income"       value={formatCurrency(data.netIncome)}      icon={FiDollarSign}  color={data.netIncome >= 0 ? '#16A34A' : '#DC2626'} />
+        <StatCard label="Cash Balance"     value={formatCurrency(data.cashBalance)}    icon={FiDollarSign}  color="#16A34A" locked={!canSeeFinancials} />
+        <StatCard label="Total Revenue"    value={formatCurrency(data.totalRevenue)}   icon={FiTrendingUp}  color="#2563EB" locked={!canSeeFinancials} />
+        <StatCard label="Total Expenses"   value={formatCurrency(data.totalExpenses)}  icon={FiTrendingDown} color="#DC2626" locked={!canSeeFinancials} />
+        <StatCard label="Net Income"       value={formatCurrency(data.netIncome)}      icon={FiDollarSign}  color={data.netIncome >= 0 ? '#16A34A' : '#DC2626'} locked={!canSeeFinancials} />
         <StatCard label="Receivables (AR)" value={formatCurrency(data.outstandingAR)} icon={FiSend}        color="#D97706"
-          subtitle={`${data.overdueInvoices} overdue`} onClick={() => navigate('/invoicing/invoices')} />
+          subtitle={`${data.overdueInvoices} overdue`} onClick={() => navigate('/invoicing/invoices')} locked={!canSeeFinancials} />
         <StatCard label="Payables (AP)"    value={formatCurrency(data.outstandingAP)} icon={FiCreditCard}  color="#7C3AED"
-          subtitle={`${data.overdueBills} overdue`}   onClick={() => navigate('/bills/list')} />
+          subtitle={`${data.overdueBills} overdue`}   onClick={() => navigate('/bills/list')} locked={!canSeeFinancials} />
       </div>
 
       {/* Quick Stats */}
