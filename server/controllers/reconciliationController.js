@@ -1,6 +1,7 @@
 const { getModel } = require('../utils/getModel');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { parseMomoStatement } = require('../utils/momoParser');
+const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -124,4 +125,119 @@ const deleteSession = async (req, res) => {
   }
 };
 
-module.exports = { importStatement, getSessions, getSession, deleteSession };
+
+// Ensure the Mobile Money wallet ledger account exists (1015). Created on first
+// post so no manual setup is needed -- same approach as casual wages (6010).
+async function ensureMomoWallet(Account) {
+  let wallet = await Account.findOne({ code: '1015' });
+  if (!wallet) {
+    wallet = await Account.create({
+      code: '1015', name: 'Mobile Money Wallet', type: 'asset',
+      category: 'Current Asset', normalBalance: 'debit',
+      isSystemAccount: true, isActive: true, balance: 0,
+      description: 'Mobile Money wallet balance (reconciled against MoMo statements)',
+    });
+  }
+  return wallet;
+}
+
+// Post ONE statement line to the ledger. This is the primary reconciliation
+// action: a MoMo statement is usually imported precisely because these
+// transactions were not recorded yet, so posting -- not matching -- is the
+// common path.
+//
+// Outgoing (money left the wallet):  DR category, DR fees(6800), CR wallet(1015)
+// Incoming (money into the wallet):   DR wallet(1015), CR category
+const postLine = async (req, res) => {
+  try {
+    const { lineId, categoryAccountId } = req.body;
+    if (!lineId || !categoryAccountId) {
+      return res.status(400).json({ success: false, message: 'Line and category account are required.' });
+    }
+
+    const Session = getModel(req.tenantDb, 'ReconciliationSession');
+    const Account = getModel(req.tenantDb, 'Account');
+    const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
+
+    const session = await Session.findById(req.params.id);
+    if (!session) return res.status(404).json({ success: false, message: 'Session not found.' });
+
+    const line = session.lines.id(lineId);
+    if (!line) return res.status(404).json({ success: false, message: 'Statement line not found.' });
+    if (line.matchStatus === 'matched') {
+      return res.status(400).json({ success: false, message: 'This line is already reconciled.' });
+    }
+
+    const category = await Account.findById(categoryAccountId);
+    if (!category) return res.status(404).json({ success: false, message: 'Category account not found.' });
+
+    const wallet = await ensureMomoWallet(Account);
+    const feeAcct = await Account.findOne({ code: '6800' });
+
+    const amount = r2(line.amount);
+    const fee = r2((line.fee || 0) + (line.eLevy || 0));
+    const lines = [];
+
+    if (line.direction === 'out') {
+      // money left the wallet
+      lines.push({ account: category._id, accountCode: category.code, accountName: category.name, debit: amount, credit: 0, description: line.description || line.type });
+      if (fee > 0 && feeAcct) {
+        lines.push({ account: feeAcct._id, accountCode: feeAcct.code, accountName: feeAcct.name, debit: fee, credit: 0, description: 'MoMo fee' });
+      }
+      lines.push({ account: wallet._id, accountCode: wallet.code, accountName: wallet.name, debit: 0, credit: r2(amount + fee), description: 'MoMo wallet' });
+    } else {
+      // money into the wallet
+      lines.push({ account: wallet._id, accountCode: wallet.code, accountName: wallet.name, debit: amount, credit: 0, description: 'MoMo wallet' });
+      lines.push({ account: category._id, accountCode: category.code, accountName: category.name, debit: 0, credit: amount, description: line.description || line.type });
+      // an incoming transfer rarely carries a fee, but if it does, expense it
+      if (fee > 0 && feeAcct) {
+        lines.push({ account: feeAcct._id, accountCode: feeAcct.code, accountName: feeAcct.name, debit: fee, credit: 0, description: 'MoMo fee' });
+        lines.push({ account: wallet._id, accountCode: wallet.code, accountName: wallet.name, debit: 0, credit: fee, description: 'MoMo fee deducted' });
+      }
+    }
+
+    const totalDebit = r2(lines.reduce((t, l) => t + l.debit, 0));
+    const totalCredit = r2(lines.reduce((t, l) => t + l.credit, 0));
+
+    const entryNumber = await generateEntryNumber(JournalEntry);
+    const journal = await JournalEntry.create({
+      entryNumber, date: line.date || new Date(), journalType: 'general',
+      description: 'MoMo ' + line.type + ' — ' + (line.counterparty || '') + ' (' + session.sessionNumber + ')',
+      reference: line.externalId || session.sessionNumber,
+      lines, totalDebit, totalCredit,
+      status: 'posted', postedBy: req.user._id, postedAt: new Date(), createdBy: req.user._id,
+    });
+
+    for (const jl of lines) {
+      const acct = await Account.findById(jl.account);
+      if (acct) { acct.balance = r2(acct.balance + calculateBalanceChange(acct.normalBalance, jl.debit, jl.credit)); await acct.save(); }
+    }
+
+    line.matchStatus = 'matched';
+    line.journalEntry = journal._id;
+    await session.save();
+
+    res.json({ success: true, message: 'Posted ' + entryNumber + '.', data: { lineId, journalEntry: journal._id, entryNumber } });
+  } catch (error) {
+    console.error('[Reconciliation] Post line error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to post: ' + error.message });
+  }
+};
+
+// Ignore a line (not relevant to the books).
+const ignoreLine = async (req, res) => {
+  try {
+    const Session = getModel(req.tenantDb, 'ReconciliationSession');
+    const session = await Session.findById(req.params.id);
+    if (!session) return res.status(404).json({ success: false, message: 'Session not found.' });
+    const line = session.lines.id(req.body.lineId);
+    if (!line) return res.status(404).json({ success: false, message: 'Line not found.' });
+    if (line.matchStatus === 'matched') return res.status(400).json({ success: false, message: 'Already reconciled.' });
+    line.matchStatus = line.matchStatus === 'ignored' ? 'unmatched' : 'ignored';
+    await session.save();
+    res.json({ success: true, data: { lineId: line._id, matchStatus: line.matchStatus } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to update line.' });
+  }
+};
+module.exports = { importStatement, getSessions, getSession, deleteSession, postLine, ignoreLine };
