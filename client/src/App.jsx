@@ -6,7 +6,7 @@ import LoginPage from './pages/LoginPage';
 import HomeScreen from './pages/HomeScreen';
 import ModuleShell from './components/layout/ModuleShell';
 import AuditLogPage from './modules/audit/AuditLogPage';
-import { FiShield } from 'react-icons/fi';
+import { FiRefreshCw, FiShield } from 'react-icons/fi';
 
 import FinancialAnalyticsPage from './modules/accounts/FinancialAnalyticsPage';
 

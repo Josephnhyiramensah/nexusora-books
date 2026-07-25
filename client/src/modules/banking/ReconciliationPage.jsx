@@ -1,0 +1,236 @@
+import { useState, useEffect, useRef } from 'react';
+import { FiUpload, FiArrowLeft, FiArrowDownLeft, FiArrowUpRight, FiTrash2, FiLock, FiFileText } from 'react-icons/fi';
+import { useToast } from '../../hooks/useToast';
+import { useTenant } from '../../context/TenantContext';
+import ResponsiveTable from '../../components/common/ResponsiveTable';
+import api from '../../services/api';
+
+const PAID = ['starter', 'professional', 'enterprise', 'founding'];
+const n2 = (v) => Number(v || 0).toFixed(2);
+const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
+const fmtDateTime = (d) => (d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
+
+export default function ReconciliationPage() {
+  const { plan } = useTenant();
+  const { showToast, ToastComponent } = useToast();
+  const [sessions, setSessions] = useState([]);
+  const [detail, setDetail] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef(null);
+
+  const isPaid = PAID.includes(plan);
+
+  const fetchSessions = async () => {
+    try { const { data } = await api.get('/reconciliation'); if (data.success) setSessions(data.data); }
+    catch {} finally { setLoading(false); }
+  };
+  useEffect(() => { if (isPaid) fetchSessions(); else setLoading(false); }, [isPaid]);
+
+  const handleFile = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) { showToast('File must be under 8MB', 'error'); return; }
+    setUploading(true);
+    showToast('Reading and importing statement...');
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const { data } = await api.post('/reconciliation/import', {
+        fileBase64: base64,
+        fileName: file.name,
+        source: 'momo',
+      });
+      if (data.success) {
+        showToast(data.message);
+        fetchSessions();
+        if (data.data?._id) openSession(data.data._id);
+      } else {
+        showToast(data.message || 'Import failed', 'error');
+      }
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Could not import statement', 'error');
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  const openSession = async (id) => {
+    try { const { data } = await api.get(`/reconciliation/${id}`); if (data.success) setDetail(data.data); }
+    catch { showToast('Could not load session', 'error'); }
+  };
+
+  const deleteSession = async (id) => {
+    if (!window.confirm('Delete this imported statement? This cannot be undone.')) return;
+    try {
+      const { data } = await api.delete(`/reconciliation/${id}`);
+      if (data.success) { showToast('Deleted'); setDetail(null); fetchSessions(); }
+    } catch (err) { showToast(err.response?.data?.message || 'Delete failed', 'error'); }
+  };
+
+  // ─── Paywall for trial ──────────────────────────────────────────────────────
+  if (!isPaid) {
+    return (
+      <div style={{ maxWidth: 520, margin: '40px auto', textAlign: 'center', background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '48px 36px' }}>
+        <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#FEF3C7', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
+          <FiLock size={26} color="#C9A227" />
+        </div>
+        <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 10 }}>Bank & MoMo Reconciliation</h2>
+        <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 24 }}>
+          Import your Mobile Money and bank statements, auto-match them against your books, and post the gaps to your ledger — all in one place. Available on the Starter plan and above.
+        </p>
+        <a href="/settings" style={{ display: 'inline-block', padding: '11px 24px', background: 'var(--nexusora-gold)', color: 'var(--deep-navy)', borderRadius: 'var(--radius-md)', fontSize: 14, fontWeight: 600, textDecoration: 'none' }}>Upgrade your plan</a>
+      </div>
+    );
+  }
+
+  // ─── Session detail ─────────────────────────────────────────────────────────
+  if (detail) {
+    const lines = detail.lines || [];
+    return (
+      <div>
+        {ToastComponent}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+          <button onClick={() => setDetail(null)} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}>
+            <FiArrowLeft size={16} /> Back to statements
+          </button>
+          {detail.status === 'draft' && (
+            <button onClick={() => deleteSession(detail._id)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 15px', borderRadius: 'var(--radius-sm)', border: '1px solid #FECACA', background: '#fff', fontSize: 12.5, fontWeight: 600, color: 'var(--danger)', cursor: 'pointer' }}>
+              <FiTrash2 size={14} /> Delete
+            </button>
+          )}
+        </div>
+
+        <div style={{ background: '#fff', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: '20px 22px', marginBottom: 16 }}>
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: 18, fontWeight: 700, color: 'var(--deep-navy)' }}>{detail.sessionNumber} · {detail.source === 'momo' ? 'Mobile Money' : 'Bank'} Statement</h2>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
+            {detail.accountHolder} {detail.accountMsisdn ? `(${detail.accountMsisdn})` : ''} · {fmtDate(detail.periodStart)} – {fmtDate(detail.periodEnd)}
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginTop: 16 }}>
+            {[
+              ['Transactions', lines.length, 'var(--deep-navy)'],
+              ['Money In', 'GHS ' + n2(detail.totalIn), '#16A34A'],
+              ['Money Out', 'GHS ' + n2(detail.totalOut), '#DC2626'],
+              ['Fees + E-Levy', 'GHS ' + n2(detail.totalFees), '#D97706'],
+              ['Closing Balance', 'GHS ' + n2(detail.closingBalance), 'var(--deep-navy)'],
+            ].map(([label, val, color]) => (
+              <div key={label} style={{ background: 'var(--bg-app)', borderRadius: 'var(--radius-sm)', padding: '12px 14px' }}>
+                <p style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>{label}</p>
+                <p style={{ fontSize: 16, fontWeight: 700, color }}>{val}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ background: '#fff', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+          <ResponsiveTable minWidth={860}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ background: 'var(--bg-app)', borderBottom: '2px solid var(--deep-navy)' }}>
+                  <th style={{ padding: '11px 12px', textAlign: 'left' }}>Date</th>
+                  <th style={{ padding: '11px 12px', textAlign: 'left' }}>Type</th>
+                  <th style={{ padding: '11px 12px', textAlign: 'left' }}>Counterparty</th>
+                  <th style={{ padding: '11px 12px', textAlign: 'right' }}>Amount</th>
+                  <th style={{ padding: '11px 12px', textAlign: 'right' }}>Fee</th>
+                  <th style={{ padding: '11px 12px', textAlign: 'right' }}>Balance</th>
+                  <th style={{ padding: '11px 12px', textAlign: 'center' }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((l, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid var(--border)', background: i % 2 === 0 ? '#fff' : '#FAFBFC' }}>
+                    <td style={{ padding: '9px 12px', whiteSpace: 'nowrap' }}>{fmtDateTime(l.date)}</td>
+                    <td style={{ padding: '9px 12px' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        {l.direction === 'in'
+                          ? <FiArrowDownLeft size={13} color="#16A34A" />
+                          : <FiArrowUpRight size={13} color="#DC2626" />}
+                        {l.type}
+                      </span>
+                    </td>
+                    <td style={{ padding: '9px 12px' }}>{l.counterparty || '—'}</td>
+                    <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: l.direction === 'in' ? '#16A34A' : '#DC2626' }}>
+                      {l.direction === 'in' ? '+' : '−'}{n2(l.amount)}
+                    </td>
+                    <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{l.fee ? n2(l.fee) : '—'}</td>
+                    <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{n2(l.balanceAfter)}</td>
+                    <td style={{ padding: '9px 12px', textAlign: 'center' }}>
+                      <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: '#F1F5F9', color: '#64748B' }}>
+                        {l.matchStatus === 'matched' ? 'Matched' : l.matchStatus === 'ignored' ? 'Ignored' : 'Unmatched'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ResponsiveTable>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── List + upload ──────────────────────────────────────────────────────────
+  return (
+    <div>
+      {ToastComponent}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 22, fontWeight: 600, color: 'var(--text-primary)' }}>Reconciliation</h1>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>Import MoMo or bank statements and reconcile them against your books.</p>
+        </div>
+        <div>
+          <input ref={fileRef} type="file" id="stmt-upload" accept=".xls,.xlsx,.csv" style={{ display: 'none' }} onChange={handleFile} />
+          <label htmlFor="stmt-upload" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: 'var(--nexusora-gold)', color: 'var(--deep-navy)', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 600, cursor: uploading ? 'wait' : 'pointer' }}>
+            <FiUpload size={15} /> {uploading ? 'Importing...' : 'Import Statement'}
+          </label>
+        </div>
+      </div>
+
+      <div style={{ background: '#fff', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+        {loading ? (
+          <p style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</p>
+        ) : sessions.length === 0 ? (
+          <div style={{ padding: '48px 24px', textAlign: 'center' }}>
+            <FiFileText size={32} color="var(--text-muted)" style={{ marginBottom: 12 }} />
+            <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>No statements imported yet</p>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 6 }}>Import a MoMo or bank statement (.xls, .xlsx or .csv) to get started.</p>
+          </div>
+        ) : (
+          <ResponsiveTable minWidth={820}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: 'var(--bg-app)', borderBottom: '1px solid var(--border)' }}>
+                  <th style={{ padding: '11px 12px', textAlign: 'left' }}>Statement</th>
+                  <th style={{ padding: '11px 12px', textAlign: 'left' }}>Period</th>
+                  <th style={{ padding: '11px 12px', textAlign: 'right' }}>In</th>
+                  <th style={{ padding: '11px 12px', textAlign: 'right' }}>Out</th>
+                  <th style={{ padding: '11px 12px', textAlign: 'center' }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sessions.map((s, i) => (
+                  <tr key={s._id} onClick={() => openSession(s._id)} style={{ borderBottom: '1px solid var(--border)', background: i % 2 === 0 ? '#fff' : '#FAFBFC', cursor: 'pointer' }}>
+                    <td style={{ padding: '10px 12px', fontWeight: 600, fontFamily: 'monospace' }}>{s.sessionNumber}
+                      <span style={{ fontFamily: 'inherit', fontWeight: 400, color: 'var(--text-muted)', marginLeft: 8 }}>{s.source === 'momo' ? 'MoMo' : 'Bank'}</span>
+                    </td>
+                    <td style={{ padding: '10px 12px' }}>{fmtDate(s.periodStart)} – {fmtDate(s.periodEnd)}</td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: '#16A34A' }}>{n2(s.totalIn)}</td>
+                    <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'monospace', color: '#DC2626' }}>{n2(s.totalOut)}</td>
+                    <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: s.status === 'reconciled' ? '#D1FAE5' : '#FEF3C7', color: s.status === 'reconciled' ? '#065F46' : '#92400E', textTransform: 'capitalize' }}>{s.status}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ResponsiveTable>
+        )}
+      </div>
+    </div>
+  );
+}
