@@ -36,6 +36,21 @@ const invoiceSchema = new mongoose.Schema(
     },
     journalEntry: { type: mongoose.Schema.Types.ObjectId, ref: 'JournalEntry' },
     notes: String,
+    // --- Recurring ---
+    // A recurring invoice is a TEMPLATE: it auto-generates draft invoices on a
+    // schedule. The template itself is not sent; each generated child is a normal
+    // draft that a person reviews and sends. isRecurringTemplate marks the parent;
+    // generatedFrom links a child back to its template.
+    isRecurringTemplate: { type: Boolean, default: false },
+    recurring: {
+      active: { type: Boolean, default: true },
+      frequency: { type: String, enum: ['weekly', 'monthly', 'quarterly', 'yearly'] },
+      nextRun: Date,          // when the next child should be generated
+      endDate: Date,          // optional stop date
+      lastGenerated: Date,    // when the last child was created
+      count: { type: Number, default: 0 }, // how many children generated
+    },
+    generatedFrom: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', default: null },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: true }
@@ -45,5 +60,6 @@ invoiceSchema.index({ status: 1 });
 invoiceSchema.index({ customer: 1 });
 invoiceSchema.index({ dueDate: 1 });
 invoiceSchema.index({ invoiceNumber: 1 });
+invoiceSchema.index({ isRecurringTemplate: 1, 'recurring.active': 1, 'recurring.nextRun': 1 });
 
 module.exports = invoiceSchema;

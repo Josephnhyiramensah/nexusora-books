@@ -3,10 +3,16 @@ const router = express.Router();
 const { protect, authorise } = require('../middleware/authMiddleware');
 const {
   getInvoices, getInvoice, createInvoice, updateInvoice, sendInvoice, deleteInvoice, downloadInvoicePDF,
+  markRecurring, getRecurringTemplates, stopRecurring, runDueRecurring,
 } = require('../controllers/invoiceController');
 router.use(protect);
 
 router.get('/', getInvoices);
+// Recurring — declared before '/:id' so 'recurring' is not read as an id.
+router.get('/recurring/templates', getRecurringTemplates);
+router.post('/recurring/run', authorise('super_admin', 'admin', 'accountant'), runDueRecurring);
+router.post('/:id/recurring', authorise('super_admin', 'admin', 'accountant'), markRecurring);
+router.post('/:id/recurring/stop', authorise('super_admin', 'admin', 'accountant'), stopRecurring);
 router.get('/:id', getInvoice);
 router.post('/', authorise('super_admin', 'admin', 'accountant'), createInvoice);
 router.put('/:id', authorise('super_admin', 'admin', 'accountant'), updateInvoice);

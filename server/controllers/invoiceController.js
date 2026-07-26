@@ -254,4 +254,131 @@ const downloadInvoicePDF = async (req, res) => {
   }
 };
 
-module.exports = { getInvoices, getInvoice, createInvoice, updateInvoice, sendInvoice, deleteInvoice, downloadInvoicePDF };
+
+// ---- Recurring invoices ------------------------------------------------------
+// Advance a date by a frequency.
+function advanceDate(from, frequency) {
+  const d = new Date(from);
+  if (frequency === 'weekly') d.setDate(d.getDate() + 7);
+  else if (frequency === 'monthly') d.setMonth(d.getMonth() + 1);
+  else if (frequency === 'quarterly') d.setMonth(d.getMonth() + 3);
+  else if (frequency === 'yearly') d.setFullYear(d.getFullYear() + 1);
+  return d;
+}
+
+// Turn an existing invoice into a recurring TEMPLATE.
+const markRecurring = async (req, res) => {
+  try {
+    const Invoice = getModel(req.tenantDb, 'Invoice');
+    const { frequency, startDate, endDate } = req.body;
+    if (!['weekly','monthly','quarterly','yearly'].includes(frequency)) {
+      return res.status(400).json({ success: false, message: 'Valid frequency required.' });
+    }
+    const invoice = await Invoice.findById(req.params.id);
+    if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found.' });
+
+    invoice.isRecurringTemplate = true;
+    invoice.recurring = {
+      active: true, frequency,
+      nextRun: startDate ? new Date(startDate) : advanceDate(invoice.date, frequency),
+      endDate: endDate ? new Date(endDate) : null,
+      lastGenerated: null, count: 0,
+    };
+    await invoice.save();
+    await logAudit(req.tenantDb, {
+      userId: req.user._id, action: 'update', module: 'invoices',
+      entityId: invoice._id, entityType: 'Invoice',
+      description: 'Made invoice ' + invoice.invoiceNumber + ' recurring (' + frequency + ')',
+    }, req);
+    res.json({ success: true, message: 'Invoice set to recur ' + frequency + '.', data: invoice });
+  } catch (error) {
+    console.error('[Invoices] markRecurring error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to set recurring.' });
+  }
+};
+
+// List active recurring templates.
+const getRecurringTemplates = async (req, res) => {
+  try {
+    const Invoice = getModel(req.tenantDb, 'Invoice');
+    const templates = await Invoice.find({ isRecurringTemplate: true })
+      .populate('customer', 'name').sort({ 'recurring.nextRun': 1 }).lean();
+    res.json({ success: true, data: templates });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to fetch templates.' });
+  }
+};
+
+// Stop a template recurring (keeps the invoice, just deactivates the schedule).
+const stopRecurring = async (req, res) => {
+  try {
+    const Invoice = getModel(req.tenantDb, 'Invoice');
+    const invoice = await Invoice.findById(req.params.id);
+    if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found.' });
+    invoice.recurring = invoice.recurring || {};
+    invoice.recurring.active = false;
+    await invoice.save();
+    res.json({ success: true, message: 'Recurring stopped.', data: invoice });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to stop recurring.' });
+  }
+};
+
+// The generator: find due templates and create a draft child from each. Called
+// on invoice-page load. Safe to call often — it only acts on templates whose
+// nextRun has passed, and advances nextRun so it won't double-generate.
+const runDueRecurring = async (req, res) => {
+  try {
+    const Invoice = getModel(req.tenantDb, 'Invoice');
+    const now = new Date();
+    const due = await Invoice.find({
+      isRecurringTemplate: true,
+      'recurring.active': true,
+      'recurring.nextRun': { $lte: now },
+    });
+
+    const created = [];
+    for (const tmpl of due) {
+      // stop if past end date
+      if (tmpl.recurring.endDate && tmpl.recurring.nextRun > tmpl.recurring.endDate) {
+        tmpl.recurring.active = false; await tmpl.save(); continue;
+      }
+      // guard against a runaway loop: generate at most a few catch-up cycles
+      let cycles = 0;
+      while (tmpl.recurring.active && tmpl.recurring.nextRun <= now && cycles < 24) {
+        cycles += 1;
+        const invDate = new Date(tmpl.recurring.nextRun);
+        const dueDate = new Date(invDate);
+        // keep the same gap the template had between date and dueDate
+        const gap = Math.max(0, Math.round((new Date(tmpl.dueDate) - new Date(tmpl.date)) / 86400000)) || 30;
+        dueDate.setDate(dueDate.getDate() + gap);
+
+        const invoiceNumber = await generateInvoiceNumber(Invoice);
+        const child = await Invoice.create({
+          invoiceNumber, customer: tmpl.customer, date: invDate, dueDate,
+          lines: tmpl.lines.map((l) => ({ description: l.description, quantity: l.quantity, unitPrice: l.unitPrice, amount: l.amount, account: l.account })),
+          subtotal: tmpl.subtotal, taxRate: tmpl.taxRate, taxAmount: tmpl.taxAmount,
+          total: tmpl.total, amountPaid: 0, balance: tmpl.total,
+          status: 'draft', notes: tmpl.notes,
+          generatedFrom: tmpl._id, createdBy: tmpl.createdBy,
+        });
+        created.push(child.invoiceNumber);
+
+        tmpl.recurring.lastGenerated = new Date();
+        tmpl.recurring.count = (tmpl.recurring.count || 0) + 1;
+        tmpl.recurring.nextRun = advanceDate(tmpl.recurring.nextRun, tmpl.recurring.frequency);
+        if (tmpl.recurring.endDate && tmpl.recurring.nextRun > tmpl.recurring.endDate) {
+          tmpl.recurring.active = false;
+        }
+      }
+      await tmpl.save();
+    }
+
+    res.json({ success: true, message: created.length ? ('Generated ' + created.length + ' invoice(s).') : 'Nothing due.', data: { created } });
+  } catch (error) {
+    console.error('[Invoices] runDueRecurring error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to generate recurring invoices.' });
+  }
+};
+
+module.exports = { getInvoices, getInvoice, createInvoice, updateInvoice, sendInvoice, deleteInvoice, downloadInvoicePDF , markRecurring, getRecurringTemplates, stopRecurring, runDueRecurring };
