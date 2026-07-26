@@ -392,4 +392,86 @@ const confirmMatch = async (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to confirm match.' });
   }
 };
-module.exports = { importStatement, getSessions, getSession, deleteSession, postLine, ignoreLine, autoMatch, postBatch, confirmMatch };
+
+// Verify and (optionally) close a session. This is the reconciliation PROOF:
+// once every line is posted/matched/ignored, the Mobile Money Wallet ledger
+// balance should reflect the posted transactions, and the statement's own
+// opening->closing movement should equal in - out - fees. We surface all three
+// figures so a difference is explained, not just flagged red.
+const reconcileSession = async (req, res) => {
+  try {
+    const Session = getModel(req.tenantDb, 'ReconciliationSession');
+    const Account = getModel(req.tenantDb, 'Account');
+
+    const session = await Session.findById(req.params.id);
+    if (!session) return res.status(404).json({ success: false, message: 'Session not found.' });
+
+    const lines = session.lines || [];
+    const unmatched = lines.filter((l) => l.matchStatus === 'unmatched').length;
+    const matched = lines.filter((l) => l.matchStatus === 'matched').length;
+    const ignored = lines.filter((l) => l.matchStatus === 'ignored').length;
+
+    // Movement the statement itself reports.
+    const statementMovement = r2((session.closingBalance || 0) - (session.openingBalance || 0));
+    // Movement implied by the transactions we parsed.
+    const parsedMovement = r2((session.totalIn || 0) - (session.totalOut || 0) - (session.totalFees || 0));
+    // Does the statement's own maths hold? (Should always, since the parser
+    // reconciled every line — this is a sanity check on the import.)
+    const statementConsistent = Math.abs(statementMovement - parsedMovement) < 0.01;
+
+    // The live ledger wallet balance.
+    const wallet = await Account.findOne({ code: '1015' });
+    const ledgerWalletBalance = wallet ? r2(wallet.balance) : 0;
+
+    // Only the POSTED lines (not matched-to-existing, not ignored) moved the
+    // wallet via our journals. Sum their net effect.
+    const postedMovement = r2(lines
+      .filter((l) => l.matchStatus === 'matched' && l.journalEntry)
+      .reduce((sum, l) => {
+        const gross = l.direction === 'in' ? (l.amount || 0) : -((l.amount || 0) + (l.fee || 0) + (l.eLevy || 0));
+        return sum + gross;
+      }, 0));
+
+    const allHandled = unmatched === 0;
+    const ties = statementConsistent; // the parse-level proof
+
+    // If the caller asked to finalise and everything is handled, mark reconciled.
+    let finalised = false;
+    if (req.body.finalise && allHandled) {
+      session.status = 'reconciled';
+      session.reconciledBy = req.user._id;
+      await session.save();
+      finalised = true;
+      await logAudit(req.tenantDb, {
+        userId: req.user._id, action: 'reconcile_bank', module: 'banking',
+        entityId: session._id, entityType: 'ReconciliationSession',
+        description: 'Reconciled ' + session.sessionNumber + ' — ' + matched + ' posted/matched, ' + ignored + ' ignored',
+      }, req);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        sessionNumber: session.sessionNumber,
+        status: session.status,
+        finalised,
+        counts: { total: lines.length, matched, ignored, unmatched },
+        openingBalance: r2(session.openingBalance),
+        closingBalance: r2(session.closingBalance),
+        statementMovement,
+        parsedMovement,
+        statementConsistent,
+        postedMovement,
+        ledgerWalletBalance,
+        allHandled,
+        ties,
+        // difference between the statement's declared movement and what we posted
+        postedVsStatement: r2(postedMovement - statementMovement),
+      },
+    });
+  } catch (error) {
+    console.error('[Reconciliation] Reconcile error:', error.message);
+    res.status(500).json({ success: false, message: 'Reconcile failed: ' + error.message });
+  }
+};
+module.exports = { importStatement, getSessions, getSession, deleteSession, postLine, ignoreLine, autoMatch, postBatch, confirmMatch, reconcileSession };
