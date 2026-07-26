@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiPlus, FiEye, FiCornerDownLeft, FiSearch } from 'react-icons/fi';
 import journalService from '../../services/journalService';
+import EntryDetailsModal from '../../components/common/EntryDetailsModal';
+import api from '../../services/api';
 import { formatCurrency, formatDate, getStatusColor } from '../../utils/formatters';
 import { useToast } from '../../hooks/useToast';
 
@@ -12,6 +14,7 @@ export default function JournalListPage() {
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('');
   const [filterType, setFilterType] = useState('');
+  const [viewEntry, setViewEntry] = useState(null);
   const navigate = useNavigate();
   const { showToast, ToastComponent } = useToast();
 
@@ -31,6 +34,13 @@ export default function JournalListPage() {
   };
 
   useEffect(() => { fetchEntries(); }, [filterStatus, filterType]);
+
+  const openView = async (id) => {
+    try {
+      const { data } = await api.get('/journals/' + id);
+      if (data.success) setViewEntry(data.data);
+    } catch { showToast('Could not load entry', 'error'); }
+  };
 
   const handlePost = async (id) => {
     if (!window.confirm('Post this journal entry? This will update account balances and cannot be undone (only reversed).')) return;
@@ -74,6 +84,20 @@ export default function JournalListPage() {
   return (
     <div>
       {ToastComponent}
+      <EntryDetailsModal
+        open={!!viewEntry}
+        onClose={() => setViewEntry(null)}
+        title={viewEntry ? viewEntry.entryNumber : ''}
+        subtitle={viewEntry ? (viewEntry.journalType || '').replace('_',' ') + ' · ' + new Date(viewEntry.date).toLocaleDateString('en-GB') : ''}
+        record={viewEntry || {}}
+        rows={viewEntry ? [
+          ['Description', viewEntry.description || '—'],
+          ['Total Debit', 'GHS ' + Number(viewEntry.totalDebit||0).toFixed(2)],
+          ['Total Credit', 'GHS ' + Number(viewEntry.totalCredit||0).toFixed(2)],
+          ['Status', viewEntry.status],
+          ['Lines', String((viewEntry.lines||[]).length) + ' account line(s)'],
+        ] : []}
+      />
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
@@ -122,27 +146,28 @@ export default function JournalListPage() {
               <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Description</th>
               <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--text-secondary)' }}>Debit</th>
               <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--text-secondary)' }}>Credit</th>
-              <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Created by</th>
               <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)' }}>Status</th>
               <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</td></tr>
+              <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</td></tr>
             ) : entries.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>No journal entries yet.</td></tr>
+              <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>No journal entries yet.</td></tr>
             ) : entries.map((entry, i) => {
               const sc = getStatusColor(entry.status);
               return (
                 <tr key={entry._id} style={{ borderBottom: '1px solid var(--border)', background: i % 2 === 0 ? '#fff' : '#FAFBFC' }}>
-                  <td style={{ padding: '11px 16px', fontWeight: 600, fontFamily: 'monospace' }}>{entry.entryNumber}</td>
+                  <td style={{ padding: '11px 16px', fontWeight: 600, fontFamily: 'monospace' }}>
+                    <button onClick={() => openView(entry._id)} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--tech-blue)', fontWeight: 600, fontFamily: 'monospace', cursor: 'pointer', textDecoration: 'underline' }}>{entry.entryNumber}</button>
+                  </td>
                   <td style={{ padding: '11px 16px' }}>{formatDate(entry.date)}</td>
                   <td style={{ padding: '11px 16px', textTransform: 'capitalize' }}>{entry.journalType?.replace('_', ' ')}</td>
                   <td style={{ padding: '11px 16px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.description || '—'}</td>
                   <td style={{ padding: '11px 16px', textAlign: 'right', fontFamily: 'monospace' }}>{formatCurrency(entry.totalDebit)}</td>
                   <td style={{ padding: '11px 16px', textAlign: 'right', fontFamily: 'monospace' }}>{formatCurrency(entry.totalCredit)}</td>
-                  <td style={{ padding: '11px 16px', fontSize: 12.5 }}>{entry.createdBy ? (entry.createdBy.firstName || '') + ' ' + (entry.createdBy.lastName || '') : '—'}</td>
+
                   <td style={{ padding: '11px 16px', textAlign: 'center' }}>
                     <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: sc.bg, color: sc.text, border: `1px solid ${sc.border}` }}>
                       {entry.status}
