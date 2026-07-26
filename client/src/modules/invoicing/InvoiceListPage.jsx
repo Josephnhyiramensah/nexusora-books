@@ -59,6 +59,7 @@ export default function InvoiceListPage() {
 
   const getActionItems = (inv) => {
     const items = [];
+    items.push({ icon: '👁️', label: 'View details', onClick: () => openView(inv._id) });
 
     if (inv.status === 'draft') {
       items.push({
