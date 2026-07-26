@@ -237,20 +237,19 @@ export default function CustomerListPage() {
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Tax ID</th>
                 <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--text-secondary)' }}>Credit Limit</th>
                 <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--text-secondary)' }}>Outstanding</th>
-                <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)' }}>Status</th>
                 <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
                     Loading...
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
                     {search ? `No customers matching "${search}"` : 'No customers yet. Click "New Customer" to add one.'}
                   </td>
                 </tr>
@@ -284,15 +283,6 @@ export default function CustomerListPage() {
                     color: c.outstandingBalance > 0 ? 'var(--warning)' : 'var(--text-primary)',
                   }}>
                     {formatCurrency(c.outstandingBalance)}
-                  </td>
-                  <td style={{ padding: '11px 16px', textAlign: 'center' }}>
-                    <span style={{
-                      padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
-                      background: c.isActive ? '#D1FAE5' : '#FEE2E2',
-                      color: c.isActive ? '#065F46' : '#991B1B',
-                    }}>
-                      {c.isActive ? 'Active' : 'Inactive'}
-                    </span>
                   </td>
                   <td style={{ padding: '11px 16px', textAlign: 'center' }}>
                     <ActionMenu items={[
