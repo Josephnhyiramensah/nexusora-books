@@ -99,10 +99,11 @@ export default function ReconciliationPage() {
             ...sg,
             line,
             chosen: sg.kind === 'suggest' && sg.suggestedAccount ? sg.suggestedAccount.accountId : '',
-            include: sg.kind !== 'none',
+            include: true,
           };
         });
         setAutoReview({ rows, summary: data.data.summary });
+        showToast('Found ' + rows.length + ' lines to review');
       } else showToast(data.message || 'Auto-match failed', 'error');
     } catch (err) { showToast(err.response?.data?.message || 'Auto-match failed', 'error'); }
     finally { setAutoRunning(false); }
