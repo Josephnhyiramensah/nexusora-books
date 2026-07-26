@@ -15,7 +15,7 @@ const getInvoices = async (req, res) => {
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
     if (req.query.customer) filter.customer = req.query.customer;
-    const invoices = await Invoice.find(filter)
+    const invoices = await Invoice.find(filter).populate('createdBy', 'firstName lastName')
       .populate('customer', 'name email phone')
       .sort({ date: -1 }).lean();
     res.json({ success: true, data: invoices, count: invoices.length });

@@ -16,7 +16,7 @@ const getPayments = async (req, res) => {
     const Payment = getModel(req.tenantDb, 'Payment');
     const filter = {};
     if (req.query.type) filter.type = req.query.type;
-    const payments = await Payment.find(filter)
+    const payments = await Payment.find(filter).populate('createdBy', 'firstName lastName')
       .populate('customer', 'name')
       .populate('vendor', 'name')
       .populate('invoice', 'invoiceNumber')

@@ -15,7 +15,7 @@ const getBills = async (req, res) => {
     const filter = {};
     if (req.query.status) filter.status = req.query.status;
     if (req.query.vendor) filter.vendor = req.query.vendor;
-    const bills = await Bill.find(filter).populate('vendor', 'name email phone').sort({ date: -1 }).lean();
+    const bills = await Bill.find(filter).populate('vendor', 'name email phone').populate('createdBy', 'firstName lastName').sort({ date: -1 }).lean();
     res.json({ success: true, data: bills, count: bills.length });
   } catch (error) {
     console.error('[Bills] getBills failed:', error.message);
