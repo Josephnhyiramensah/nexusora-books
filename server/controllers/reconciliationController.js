@@ -1,6 +1,6 @@
 const { getModel } = require('../utils/getModel');
 const { logAudit } = require('../middleware/auditMiddleware');
-const { parseMomoStatement } = require('../utils/momoParser');
+const { parseStatement } = require('../utils/momoParser');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -24,7 +24,7 @@ const importStatement = async (req, res) => {
 
     let parsed;
     try {
-      parsed = parseMomoStatement(buffer);
+      parsed = await parseStatement(buffer, fileName);
     } catch (e) {
       return res.status(422).json({ success: false, message: 'Could not read statement: ' + e.message });
     }

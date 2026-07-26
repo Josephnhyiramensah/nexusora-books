@@ -409,7 +409,7 @@ export default function ReconciliationPage() {
           <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>Import MoMo or bank statements and reconcile them against your books.</p>
         </div>
         <div>
-          <input ref={fileRef} type="file" id="stmt-upload" accept=".xls,.xlsx,.csv" style={{ display: 'none' }} onChange={handleFile} />
+          <input ref={fileRef} type="file" id="stmt-upload" accept=".xls,.xlsx,.csv,.pdf" style={{ display: 'none' }} onChange={handleFile} />
           <label htmlFor="stmt-upload" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: 'var(--nexusora-gold)', color: 'var(--deep-navy)', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 600, cursor: uploading ? 'wait' : 'pointer' }}>
             <FiUpload size={15} /> {uploading ? 'Importing...' : 'Import Statement'}
           </label>
