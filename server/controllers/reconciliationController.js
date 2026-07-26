@@ -240,4 +240,156 @@ const ignoreLine = async (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to update line.' });
   }
 };
-module.exports = { importStatement, getSessions, getSession, deleteSession, postLine, ignoreLine };
+
+// Suggestion engine — the "Auto" action. Runs over every UNMATCHED line and,
+// for each, returns a suggestion WITHOUT posting anything. Two passes:
+//   1. reconcile: is there already a posted journal for this exact transaction?
+//      (same amount, date within +/-3 days, referencing this externalId or
+//       touching the MoMo wallet) -> suggest 'match'.
+//   2. categorise: has this counterparty been posted before? -> suggest that
+//      same account, learned from history.
+// The user reviews and approves; nothing reaches the ledger here.
+const autoMatch = async (req, res) => {
+  try {
+    const Session = getModel(req.tenantDb, 'ReconciliationSession');
+    const Account = getModel(req.tenantDb, 'Account');
+    const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
+
+    const session = await Session.findById(req.params.id);
+    if (!session) return res.status(404).json({ success: false, message: 'Session not found.' });
+
+    const wallet = await Account.findOne({ code: '1015' });
+    const walletId = wallet ? String(wallet._id) : null;
+
+    // Pull recent posted journals once, to search in memory (small datasets).
+    const journals = await JournalEntry.find({ status: 'posted' })
+      .sort({ date: -1 }).limit(1000).lean();
+
+    // Build a counterparty -> category-account history map from prior MoMo posts.
+    // A MoMo post always credits/debits the wallet plus a category line; the
+    // category is the non-wallet, non-fee line. Key by the externalId's stored
+    // reference is not enough, so we learn from description text + amount.
+    const DAY = 24 * 60 * 60 * 1000;
+    const within3 = (a, b) => Math.abs(new Date(a) - new Date(b)) <= 3 * DAY;
+
+    // history: counterparty number/name -> { accountId, accountCode, accountName, count }
+    const history = {};
+    for (const j of journals) {
+      if (!j.reference) continue;
+      // MoMo posts use reference = externalId; find the category line
+      const cat = (j.lines || []).find((l) => l.accountCode !== '1015' && l.accountCode !== '6800');
+      if (!cat) continue;
+      // learn keyed on the journal description (which contains the counterparty)
+      const key = (j.description || '').toLowerCase();
+      if (!key) continue;
+      history[key] = history[key] || {};
+    }
+
+    const suggestions = session.lines
+      .filter((l) => l.matchStatus === 'unmatched')
+      .map((l) => {
+        const amt = r2(l.amount);
+        const fee = r2((l.fee || 0) + (l.eLevy || 0));
+        const gross = l.direction === 'out' ? r2(amt + fee) : amt;
+
+        // --- pass 1: already recorded? ---
+        let matchEntry = null;
+        for (const j of journals) {
+          if (l.externalId && j.reference === l.externalId) { matchEntry = j; break; }
+        }
+        if (!matchEntry && walletId) {
+          matchEntry = journals.find((j) => within3(j.date, l.date)
+            && (j.lines || []).some((ln) => String(ln.account) === walletId
+              && (Math.abs((ln.debit || 0) - gross) < 0.01 || Math.abs((ln.credit || 0) - gross) < 0.01)));
+        }
+        if (matchEntry) {
+          return { lineId: l._id, kind: 'match', entryId: matchEntry._id,
+            entryNumber: matchEntry.entryNumber,
+            note: 'Already recorded as ' + matchEntry.entryNumber };
+        }
+
+        // --- pass 2: suggest an account from history of this counterparty ---
+        let suggestAcct = null;
+        if (l.counterparty) {
+          const cpKey = l.counterparty.toLowerCase();
+          const prior = journals.find((j) => (j.description || '').toLowerCase().includes(cpKey)
+            && j.reference !== l.externalId);
+          if (prior) {
+            const cat = (prior.lines || []).find((ln) => ln.accountCode !== '1015' && ln.accountCode !== '6800');
+            if (cat) suggestAcct = { accountId: cat.account, accountCode: cat.accountCode, accountName: cat.accountName };
+          }
+        }
+
+        return {
+          lineId: l._id, kind: suggestAcct ? 'suggest' : 'none',
+          suggestedAccount: suggestAcct,
+          note: suggestAcct
+            ? 'You posted ' + l.counterparty + ' to ' + suggestAcct.accountCode + ' before'
+            : 'No history — choose an account',
+        };
+      });
+
+    res.json({
+      success: true,
+      data: {
+        suggestions,
+        summary: {
+          total: suggestions.length,
+          matches: suggestions.filter((x) => x.kind === 'match').length,
+          suggested: suggestions.filter((x) => x.kind === 'suggest').length,
+          manual: suggestions.filter((x) => x.kind === 'none').length,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('[Reconciliation] Auto-match error:', error.message);
+    res.status(500).json({ success: false, message: 'Auto-match failed: ' + error.message });
+  }
+};
+
+// Post an approved batch. Each item is { lineId, categoryAccountId } — matches
+// are confirmed separately via confirmMatch. Reuses postLine's ledger logic by
+// looping; a failure on one line does not roll back the others already posted,
+// so we report per-line results.
+const postBatch = async (req, res) => {
+  try {
+    const { items } = req.body;   // [{ lineId, categoryAccountId }]
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: 'No lines to post.' });
+    }
+    const results = { posted: 0, failed: 0, errors: [] };
+    for (const it of items) {
+      req.body.lineId = it.lineId;
+      req.body.categoryAccountId = it.categoryAccountId;
+      // call postLine's core by faking res capture
+      const fakeRes = { _s: 200, status(c){ this._s = c; return this; }, json(p){ this._p = p; } };
+      await postLine(req, fakeRes);
+      if (fakeRes._p && fakeRes._p.success) results.posted += 1;
+      else { results.failed += 1; results.errors.push({ lineId: it.lineId, message: fakeRes._p ? fakeRes._p.message : 'unknown' }); }
+    }
+    res.json({ success: true, message: 'Posted ' + results.posted + ' of ' + items.length + '.', data: results });
+  } catch (error) {
+    console.error('[Reconciliation] Batch post error:', error.message);
+    res.status(500).json({ success: false, message: 'Batch post failed.' });
+  }
+};
+
+// Confirm a 'match' suggestion — link the line to the existing journal without
+// creating a new one (it's already in the books).
+const confirmMatch = async (req, res) => {
+  try {
+    const { lineId, entryId } = req.body;
+    const Session = getModel(req.tenantDb, 'ReconciliationSession');
+    const session = await Session.findById(req.params.id);
+    if (!session) return res.status(404).json({ success: false, message: 'Session not found.' });
+    const line = session.lines.id(lineId);
+    if (!line) return res.status(404).json({ success: false, message: 'Line not found.' });
+    line.matchStatus = 'matched';
+    line.matchedEntry = entryId || null;
+    await session.save();
+    res.json({ success: true, data: { lineId, matchStatus: 'matched' } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to confirm match.' });
+  }
+};
+module.exports = { importStatement, getSessions, getSession, deleteSession, postLine, ignoreLine, autoMatch, postBatch, confirmMatch };
