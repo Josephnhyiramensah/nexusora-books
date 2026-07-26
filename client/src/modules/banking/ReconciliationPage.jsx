@@ -25,6 +25,8 @@ export default function ReconciliationPage() {
   const [autoReview, setAutoReview] = useState(null);
   const [autoRunning, setAutoRunning] = useState(false);
   const [batchPosting, setBatchPosting] = useState(false);
+  const [reconcileResult, setReconcileResult] = useState(null);
+  const [reconciling, setReconciling] = useState(false);
 
   const isPaid = PAID.includes(plan);
 
@@ -141,6 +143,18 @@ export default function ReconciliationPage() {
     finally { setBatchPosting(false); }
   };
 
+  const checkReconcile = async (finalise = false) => {
+    setReconciling(true);
+    try {
+      const { data } = await api.post(`/reconciliation/${detail._id}/reconcile`, { finalise });
+      if (data.success) {
+        setReconcileResult(data.data);
+        if (data.data.finalised) { showToast('Session reconciled and closed'); openSession(detail._id); }
+      } else showToast(data.message || 'Reconcile failed', 'error');
+    } catch (err) { showToast(err.response?.data?.message || 'Reconcile failed', 'error'); }
+    finally { setReconciling(false); }
+  };
+
   const toggleIgnore = async (line) => {
     try {
       const { data } = await api.post(`/reconciliation/${detail._id}/ignore-line`, { lineId: line._id });
@@ -184,6 +198,9 @@ export default function ReconciliationPage() {
           </button>
           <button onClick={runAutoMatch} disabled={autoRunning} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--tech-blue)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: autoRunning ? 'wait' : 'pointer', marginRight: 8 }}>
             <FiRefreshCw size={14} /> {autoRunning ? 'Matching...' : 'Auto-match'}
+          </button>
+          <button onClick={() => checkReconcile(false)} disabled={reconciling} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--deep-navy)', background: '#fff', color: 'var(--deep-navy)', fontSize: 12.5, fontWeight: 600, cursor: reconciling ? 'wait' : 'pointer', marginRight: 8 }}>
+            <FiCheck size={14} /> {reconciling ? 'Checking...' : 'Reconcile'}
           </button>
           {detail.status === 'draft' && (
             <button onClick={() => deleteSession(detail._id)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 15px', borderRadius: 'var(--radius-sm)', border: '1px solid #FECACA', background: '#fff', fontSize: 12.5, fontWeight: 600, color: 'var(--danger)', cursor: 'pointer' }}>
@@ -265,6 +282,59 @@ export default function ReconciliationPage() {
             </table>
           </ResponsiveTable>
         </div>
+
+        {reconcileResult && (() => {
+          const rr = reconcileResult;
+          const tie = rr.statementConsistent;
+          return (
+          <div onClick={() => setReconcileResult(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1001, padding: 16 }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 'var(--radius-md)', width: 520, maxWidth: '96vw', padding: '26px 28px' }}>
+              <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: 19, fontWeight: 700, color: 'var(--deep-navy)', marginBottom: 4 }}>Reconciliation Check</h3>
+              <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 18 }}>{rr.sessionNumber}</p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
+                {[
+                  ['Opening Balance', 'GHS ' + n2(rr.openingBalance)],
+                  ['Closing Balance', 'GHS ' + n2(rr.closingBalance)],
+                  ['Statement Movement', 'GHS ' + n2(rr.statementMovement)],
+                  ['Parsed Movement', 'GHS ' + n2(rr.parsedMovement)],
+                ].map(([l, v]) => (
+                  <div key={l} style={{ background: 'var(--bg-app)', borderRadius: 8, padding: '10px 12px' }}>
+                    <p style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 3 }}>{l}</p>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--deep-navy)' }}>{v}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ padding: '14px 16px', borderRadius: 8, background: tie ? '#D1FAE5' : '#FEE2E2', marginBottom: 16 }}>
+                <p style={{ fontSize: 14, fontWeight: 700, color: tie ? '#065F46' : '#991B1B', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {tie ? <><FiCheck size={17} /> Statement balances tie — parse verified</> : <>Statement movement and parsed transactions differ by GHS {n2(Math.abs(rr.statementMovement - rr.parsedMovement))}</>}
+                </p>
+              </div>
+
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 18, lineHeight: 1.6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Posted / matched</span><strong>{rr.counts.matched}</strong></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Ignored</span><strong>{rr.counts.ignored}</strong></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: rr.counts.unmatched > 0 ? '#D97706' : 'inherit' }}><span>Still unmatched</span><strong>{rr.counts.unmatched}</strong></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--border)' }}><span>MoMo Wallet ledger balance</span><strong>GHS {n2(rr.ledgerWalletBalance)}</strong></div>
+              </div>
+
+              {!rr.allHandled && (
+                <p style={{ fontSize: 12, color: '#92400E', background: '#FEF3C7', padding: '10px 12px', borderRadius: 8, marginBottom: 16 }}>
+                  {rr.counts.unmatched} transaction(s) still need posting or ignoring before this session can be finalised.
+                </p>
+              )}
+
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button onClick={() => setReconcileResult(null)} style={{ padding: '10px 20px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: '#fff', fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>Close</button>
+                {rr.allHandled && rr.status !== 'reconciled' && (
+                  <button onClick={() => checkReconcile(true)} disabled={reconciling} style={{ padding: '10px 22px', borderRadius: 'var(--radius-sm)', background: 'var(--nexusora-gold)', color: 'var(--deep-navy)', fontSize: 13, fontWeight: 700, border: 'none', cursor: 'pointer' }}>{reconciling ? 'Finalising...' : 'Finalise & Close'}</button>
+                )}
+              </div>
+            </div>
+          </div>
+          );
+        })()}
 
         {autoReview && (
           <div onClick={() => !batchPosting && setAutoReview(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
