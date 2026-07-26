@@ -109,15 +109,16 @@ export default function BillListPage() {
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Due</th>
                 <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--text-secondary)' }}>Total</th>
                 <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--text-secondary)' }}>Balance</th>
+                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Created by</th>
                 <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)' }}>Status</th>
                 <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</td></tr>
+                <tr><td colSpan={9} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</td></tr>
               ) : bills.length === 0 ? (
-                <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>No bills yet.</td></tr>
+                <tr><td colSpan={9} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>No bills yet.</td></tr>
               ) : bills.map((b, i) => {
                 const sc = getStatusColor(b.status);
                 return (
@@ -131,7 +132,8 @@ export default function BillListPage() {
                     <td style={{ padding: '11px 16px', textAlign: 'right', fontFamily: 'monospace' }}>{formatCurrency(b.total)}</td>
                     <td style={{ padding: '11px 16px', textAlign: 'right', fontFamily: 'monospace', color: b.balance > 0 ? 'var(--danger)' : 'var(--success)' }}>
                       {formatCurrency(b.balance)}
-                    </td>
+                    </td>                    <td style={{ padding: '11px 16px', fontSize: 12.5 }}>{b.createdBy ? (b.createdBy.firstName || '') + ' ' + (b.createdBy.lastName || '') : '—'}</td>
+
                     <td style={{ padding: '11px 16px', textAlign: 'center' }}>
                       <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: sc.bg, color: sc.text, border: `1px solid ${sc.border}` }}>
                         {b.status.replace('_', ' ')}
