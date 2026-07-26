@@ -17,6 +17,10 @@ export default function InvoiceListPage() {
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('');
   const [viewInvoice, setViewInvoice] = useState(null);
+  const [recurringInvoice, setRecurringInvoice] = useState(null);
+  const [recurFreq, setRecurFreq] = useState('monthly');
+  const [recurEnd, setRecurEnd] = useState('');
+  const [recurSaving, setRecurSaving] = useState(false);
   const navigate = useNavigate();
   const { showToast, ToastComponent } = useToast();
 
@@ -34,7 +38,31 @@ export default function InvoiceListPage() {
     }
   };
 
+  const runRecurring = async () => {
+    try {
+      const { data } = await api.post('/invoices/recurring/run');
+      if (data.success && data.data?.created?.length) {
+        showToast('Generated ' + data.data.created.length + ' recurring invoice(s)');
+        fetchInvoices();
+      }
+    } catch { /* silent — generation is best-effort on load */ }
+  };
   useEffect(() => { fetchInvoices(); }, [filterStatus]);
+  useEffect(() => { runRecurring(); }, []);
+
+  const submitRecurring = async () => {
+    if (!recurringInvoice) return;
+    setRecurSaving(true);
+    try {
+      const { data } = await api.post('/invoices/' + recurringInvoice._id + '/recurring', {
+        frequency: recurFreq,
+        endDate: recurEnd || undefined,
+      });
+      if (data.success) { showToast(data.message); setRecurringInvoice(null); setRecurEnd(''); fetchInvoices(); }
+      else showToast(data.message || 'Failed', 'error');
+    } catch (err) { showToast(err.response?.data?.message || 'Failed to set recurring', 'error'); }
+    finally { setRecurSaving(false); }
+  };
 
   const handleSend = async (id) => {
     if (!window.confirm('Send this invoice? This creates a journal entry and updates account balances.')) return;
@@ -88,6 +116,11 @@ export default function InvoiceListPage() {
     });
 
     items.push({
+      icon: '🔁', label: inv.isRecurringTemplate ? 'Recurring: ' + (inv.recurring?.frequency || 'on') : 'Make recurring',
+      onClick: () => { setRecurringInvoice(inv); setRecurFreq(inv.recurring?.frequency || 'monthly'); },
+      dividerBefore: true,
+    });
+    items.push({
       icon: '🖨️', label: 'Print Invoice',
       onClick: () => openAuthedPdf(`/api/invoices/${inv._id}/pdf`, `${inv.invoiceNumber}.pdf`)
         .catch((e) => showToast(e.message, 'error')),
@@ -107,6 +140,27 @@ export default function InvoiceListPage() {
   return (
     <div>
       {ToastComponent}
+      {recurringInvoice && (
+        <div onClick={() => !recurSaving && setRecurringInvoice(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 'var(--radius-md)', width: 440, maxWidth: '94vw', padding: '24px 26px' }}>
+            <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: 17, fontWeight: 700, color: 'var(--deep-navy)', marginBottom: 6 }}>Make Invoice Recurring</h3>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 18 }}>{recurringInvoice.invoiceNumber} · {recurringInvoice.customer?.name || ''}. A fresh draft invoice will be created automatically each period for you to review and send.</p>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Frequency</label>
+            <select value={recurFreq} onChange={(e) => setRecurFreq(e.target.value)} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 14, marginBottom: 16 }}>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="quarterly">Quarterly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>End date <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span></label>
+            <input type="date" value={recurEnd} onChange={(e) => setRecurEnd(e.target.value)} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 14, marginBottom: 22 }} />
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setRecurringInvoice(null)} style={{ padding: '9px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: '#fff', fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={submitRecurring} disabled={recurSaving} style={{ padding: '9px 18px', borderRadius: 'var(--radius-sm)', background: 'var(--nexusora-gold)', color: 'var(--deep-navy)', fontSize: 13, fontWeight: 700, border: 'none', cursor: 'pointer' }}>{recurSaving ? 'Saving...' : 'Set Recurring'}</button>
+            </div>
+          </div>
+        </div>
+      )}
       <EntryDetailsModal
         open={!!viewInvoice}
         onClose={() => setViewInvoice(null)}
