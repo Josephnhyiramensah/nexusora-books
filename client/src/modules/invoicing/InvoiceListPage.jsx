@@ -151,6 +151,7 @@ export default function InvoiceListPage() {
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Due Date</th>
                 <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--text-secondary)' }}>Total</th>
                 <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--text-secondary)' }}>Balance</th>
+                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Created by</th>
                 <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)' }}>Status</th>
                 <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)' }}>Actions</th>
               </tr>
@@ -158,13 +159,13 @@ export default function InvoiceListPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={9} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
                     Loading invoices...
                   </td>
                 </tr>
               ) : invoices.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={9} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
                     No invoices yet. Click "New Invoice" to create one.
                   </td>
                 </tr>
@@ -198,6 +199,7 @@ export default function InvoiceListPage() {
                     }}>
                       {formatCurrency(inv.balance)}
                     </td>
+                    <td style={{ padding: '11px 16px', fontSize: 12.5 }}>{inv.createdBy ? (inv.createdBy.firstName || '') + ' ' + (inv.createdBy.lastName || '') : '—'}</td>
                     <td style={{ padding: '11px 16px', textAlign: 'center' }}>
                       <span style={{
                         padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
