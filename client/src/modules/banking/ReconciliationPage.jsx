@@ -18,6 +18,10 @@ export default function ReconciliationPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef(null);
+  const [accounts, setAccounts] = useState([]);
+  const [postingLine, setPostingLine] = useState(null);
+  const [pickAccount, setPickAccount] = useState('');
+  const [posting, setPosting] = useState(false);
 
   const isPaid = PAID.includes(plan);
 
@@ -61,8 +65,30 @@ export default function ReconciliationPage() {
   };
 
   const openSession = async (id) => {
-    try { const { data } = await api.get(`/reconciliation/${id}`); if (data.success) setDetail(data.data); }
-    catch { showToast('Could not load session', 'error'); }
+    try {
+      const { data } = await api.get(`/reconciliation/${id}`);
+      if (data.success) setDetail(data.data);
+      const ac = await api.get('/accounts?isActive=true');
+      if (ac.data.success) setAccounts(ac.data.data);
+    } catch { showToast('Could not load session', 'error'); }
+  };
+
+  const submitPost = async () => {
+    if (!pickAccount) { showToast('Choose an account', 'error'); return; }
+    setPosting(true);
+    try {
+      const { data } = await api.post(`/reconciliation/${detail._id}/post-line`, { lineId: postingLine._id, categoryAccountId: pickAccount });
+      if (data.success) { showToast(data.message); setPostingLine(null); setPickAccount(''); openSession(detail._id); }
+      else showToast(data.message || 'Post failed', 'error');
+    } catch (err) { showToast(err.response?.data?.message || 'Post failed', 'error'); }
+    finally { setPosting(false); }
+  };
+
+  const toggleIgnore = async (line) => {
+    try {
+      const { data } = await api.post(`/reconciliation/${detail._id}/ignore-line`, { lineId: line._id });
+      if (data.success) openSession(detail._id);
+    } catch (err) { showToast(err.response?.data?.message || 'Failed', 'error'); }
   };
 
   const deleteSession = async (id) => {
@@ -139,6 +165,7 @@ export default function ReconciliationPage() {
                   <th style={{ padding: '11px 12px', textAlign: 'right' }}>Fee</th>
                   <th style={{ padding: '11px 12px', textAlign: 'right' }}>Balance</th>
                   <th style={{ padding: '11px 12px', textAlign: 'center' }}>Status</th>
+                  <th style={{ padding: '11px 12px', textAlign: 'center' }}>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -160,9 +187,17 @@ export default function ReconciliationPage() {
                     <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{l.fee ? n2(l.fee) : '—'}</td>
                     <td style={{ padding: '9px 12px', textAlign: 'right', fontFamily: 'monospace' }}>{n2(l.balanceAfter)}</td>
                     <td style={{ padding: '9px 12px', textAlign: 'center' }}>
-                      <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: '#F1F5F9', color: '#64748B' }}>
-                        {l.matchStatus === 'matched' ? 'Matched' : l.matchStatus === 'ignored' ? 'Ignored' : 'Unmatched'}
+                      <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: l.matchStatus === 'matched' ? '#D1FAE5' : l.matchStatus === 'ignored' ? '#F1F5F9' : '#FEF3C7', color: l.matchStatus === 'matched' ? '#065F46' : l.matchStatus === 'ignored' ? '#94A3B8' : '#92400E' }}>
+                        {l.matchStatus === 'matched' ? 'Posted' : l.matchStatus === 'ignored' ? 'Ignored' : 'Unmatched'}
                       </span>
+                    </td>
+                    <td style={{ padding: '9px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      {l.matchStatus === 'matched' ? <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>—</span> : (
+                        <span style={{ display: 'inline-flex', gap: 6 }}>
+                          <button onClick={() => { setPostingLine(l); setPickAccount(''); }} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid var(--tech-blue)', background: '#fff', color: 'var(--tech-blue)', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Post</button>
+                          <button onClick={() => toggleIgnore(l)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: '#fff', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer' }}>{l.matchStatus === 'ignored' ? 'Unignore' : 'Ignore'}</button>
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -170,6 +205,24 @@ export default function ReconciliationPage() {
             </table>
           </ResponsiveTable>
         </div>
+
+        {postingLine && (
+          <div onClick={() => setPostingLine(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 'var(--radius-md)', padding: '24px 26px', width: 440, maxWidth: '92vw' }}>
+              <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: 17, fontWeight: 700, color: 'var(--deep-navy)', marginBottom: 6 }}>Post to Ledger</h3>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 4 }}>{postingLine.direction === 'in' ? 'Received' : 'Paid'} <strong>GHS {n2(postingLine.amount)}</strong>{postingLine.fee ? ' + GHS ' + n2(postingLine.fee) + ' fee' : ''} {postingLine.direction === 'in' ? 'from' : 'to'} {postingLine.counterparty || 'unknown'}</p>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>{postingLine.direction === 'in' ? 'Which income/source account?' : 'Which expense/category account?'} MoMo wallet and fees are handled automatically.</p>
+              <select value={pickAccount} onChange={(e) => setPickAccount(e.target.value)} style={{ width: '100%', padding: '10px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 14, marginBottom: 20 }}>
+                <option value="">— select account —</option>
+                {accounts.filter((a) => a.code !== '1015' && a.code !== '6800').map((a) => <option key={a._id} value={a._id}>{a.code} — {a.name}</option>)}
+              </select>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button onClick={() => setPostingLine(null)} style={{ padding: '9px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: '#fff', fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>Cancel</button>
+                <button onClick={submitPost} disabled={posting} style={{ padding: '9px 18px', borderRadius: 'var(--radius-sm)', background: 'var(--nexusora-gold)', color: 'var(--deep-navy)', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer' }}>{posting ? 'Posting...' : 'Post Entry'}</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
