@@ -53,7 +53,7 @@ export default function InvoiceListPage() {
   };
 
   const openView = async (id) => {
-    try { const { data } = await api.get('/invoicing/invoices/' + id); if (data.success) setViewInvoice(data.data); }
+    try { const { data } = await api.get('/invoices/' + id); if (data.success) setViewInvoice(data.data); }
     catch { showToast('Could not load invoice', 'error'); }
   };
 
