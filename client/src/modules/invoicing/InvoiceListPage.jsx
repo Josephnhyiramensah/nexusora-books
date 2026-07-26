@@ -7,6 +7,7 @@ import invoiceService from '../../services/invoiceService';
 import { formatCurrency, formatDate, getStatusColor } from '../../utils/formatters';
 import { useToast } from '../../hooks/useToast';
 import ActionMenu from '../../components/common/ActionMenu';
+import EntryDetailsModal from '../../components/common/EntryDetailsModal';
 import api from '../../services/api';
 import ResponsiveTable from '../../components/common/ResponsiveTable';
 import { openAuthedPdf } from '../../utils/openAuthedPdf';
@@ -15,6 +16,7 @@ export default function InvoiceListPage() {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('');
+  const [viewInvoice, setViewInvoice] = useState(null);
   const navigate = useNavigate();
   const { showToast, ToastComponent } = useToast();
 
@@ -48,6 +50,11 @@ export default function InvoiceListPage() {
       const { data } = await api.delete(`/invoices/${id}`);
       if (data.success) { showToast('Invoice deleted'); fetchInvoices(); }
     } catch (err) { showToast(err.response?.data?.message || 'Cannot delete — only drafts can be deleted', 'error'); }
+  };
+
+  const openView = async (id) => {
+    try { const { data } = await api.get('/invoicing/invoices/' + id); if (data.success) setViewInvoice(data.data); }
+    catch { showToast('Could not load invoice', 'error'); }
   };
 
   const getActionItems = (inv) => {
@@ -99,6 +106,21 @@ export default function InvoiceListPage() {
   return (
     <div>
       {ToastComponent}
+      <EntryDetailsModal
+        open={!!viewInvoice}
+        onClose={() => setViewInvoice(null)}
+        title={viewInvoice ? viewInvoice.invoiceNumber : ''}
+        subtitle={viewInvoice ? (viewInvoice.customer?.name || '') : ''}
+        record={viewInvoice || {}}
+        rows={viewInvoice ? [
+          ['Customer', viewInvoice.customer?.name || '—'],
+          ['Date', new Date(viewInvoice.date).toLocaleDateString('en-GB')],
+          ['Due Date', new Date(viewInvoice.dueDate).toLocaleDateString('en-GB')],
+          ['Total', 'GHS ' + Number(viewInvoice.total||0).toFixed(2)],
+          ['Balance', 'GHS ' + Number(viewInvoice.balance||0).toFixed(2)],
+          ['Status', viewInvoice.status],
+        ] : []}
+      />
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
@@ -151,7 +173,6 @@ export default function InvoiceListPage() {
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Due Date</th>
                 <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--text-secondary)' }}>Total</th>
                 <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--text-secondary)' }}>Balance</th>
-                <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Created by</th>
                 <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)' }}>Status</th>
                 <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 600, color: 'var(--text-secondary)' }}>Actions</th>
               </tr>
@@ -159,13 +180,13 @@ export default function InvoiceListPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={9} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
                     Loading invoices...
                   </td>
                 </tr>
               ) : invoices.length === 0 ? (
                 <tr>
-                  <td colSpan={9} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
                     No invoices yet. Click "New Invoice" to create one.
                   </td>
                 </tr>
@@ -199,7 +220,6 @@ export default function InvoiceListPage() {
                     }}>
                       {formatCurrency(inv.balance)}
                     </td>
-                    <td style={{ padding: '11px 16px', fontSize: 12.5 }}>{inv.createdBy ? (inv.createdBy.firstName || '') + ' ' + (inv.createdBy.lastName || '') : '—'}</td>
                     <td style={{ padding: '11px 16px', textAlign: 'center' }}>
                       <span style={{
                         padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
