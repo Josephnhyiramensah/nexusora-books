@@ -22,6 +22,9 @@ export default function ReconciliationPage() {
   const [postingLine, setPostingLine] = useState(null);
   const [pickAccount, setPickAccount] = useState('');
   const [posting, setPosting] = useState(false);
+  const [autoReview, setAutoReview] = useState(null);
+  const [autoRunning, setAutoRunning] = useState(false);
+  const [batchPosting, setBatchPosting] = useState(false);
 
   const isPaid = PAID.includes(plan);
 
@@ -84,6 +87,59 @@ export default function ReconciliationPage() {
     finally { setPosting(false); }
   };
 
+  const runAutoMatch = async () => {
+    setAutoRunning(true);
+    try {
+      const { data } = await api.post(`/reconciliation/${detail._id}/auto-match`);
+      if (data.success) {
+        // seed each suggestion with an editable chosen account
+        const rows = (data.data.suggestions || []).map((sg) => {
+          const line = detail.lines.find((l) => String(l._id) === String(sg.lineId));
+          return {
+            ...sg,
+            line,
+            chosen: sg.kind === 'suggest' && sg.suggestedAccount ? sg.suggestedAccount.accountId : '',
+            include: sg.kind !== 'none',
+          };
+        });
+        setAutoReview({ rows, summary: data.data.summary });
+      } else showToast(data.message || 'Auto-match failed', 'error');
+    } catch (err) { showToast(err.response?.data?.message || 'Auto-match failed', 'error'); }
+    finally { setAutoRunning(false); }
+  };
+
+  const setReviewRow = (lineId, patch) => setAutoReview((prev) => ({
+    ...prev,
+    rows: prev.rows.map((r) => (String(r.lineId) === String(lineId) ? { ...r, ...patch } : r)),
+  }));
+
+  const submitBatch = async () => {
+    const rows = autoReview.rows.filter((r) => r.include);
+    const matches = rows.filter((r) => r.kind === 'match');
+    const posts = rows.filter((r) => r.kind !== 'match' && r.chosen);
+    const missing = rows.filter((r) => r.kind !== 'match' && !r.chosen);
+    if (missing.length) { showToast(missing.length + ' selected line(s) have no account chosen', 'error'); return; }
+    if (matches.length + posts.length === 0) { showToast('Nothing selected to post', 'error'); return; }
+    setBatchPosting(true);
+    try {
+      // confirm matches first
+      for (const m of matches) {
+        await api.post(`/reconciliation/${detail._id}/confirm-match`, { lineId: m.lineId, entryId: m.entryId });
+      }
+      // then post the categorised ones as a batch
+      if (posts.length) {
+        const { data } = await api.post(`/reconciliation/${detail._id}/post-batch`, {
+          items: posts.map((p) => ({ lineId: p.lineId, categoryAccountId: p.chosen })),
+        });
+        if (!data.success) throw new Error(data.message);
+      }
+      showToast('Reconciled ' + (matches.length + posts.length) + ' transactions');
+      setAutoReview(null);
+      openSession(detail._id);
+    } catch (err) { showToast(err.response?.data?.message || err.message || 'Batch failed', 'error'); }
+    finally { setBatchPosting(false); }
+  };
+
   const toggleIgnore = async (line) => {
     try {
       const { data } = await api.post(`/reconciliation/${detail._id}/ignore-line`, { lineId: line._id });
@@ -124,6 +180,9 @@ export default function ReconciliationPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
           <button onClick={() => setDetail(null)} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}>
             <FiArrowLeft size={16} /> Back to statements
+          </button>
+          <button onClick={runAutoMatch} disabled={autoRunning} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 'var(--radius-sm)', border: 'none', background: 'var(--tech-blue)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: autoRunning ? 'wait' : 'pointer', marginRight: 8 }}>
+            <FiRefreshCw size={14} /> {autoRunning ? 'Matching...' : 'Auto-match'}
           </button>
           {detail.status === 'draft' && (
             <button onClick={() => deleteSession(detail._id)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 15px', borderRadius: 'var(--radius-sm)', border: '1px solid #FECACA', background: '#fff', fontSize: 12.5, fontWeight: 600, color: 'var(--danger)', cursor: 'pointer' }}>
@@ -205,6 +264,48 @@ export default function ReconciliationPage() {
             </table>
           </ResponsiveTable>
         </div>
+
+        {autoReview && (
+          <div onClick={() => !batchPosting && setAutoReview(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 'var(--radius-md)', width: 720, maxWidth: '96vw', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)' }}>
+                <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: 18, fontWeight: 700, color: 'var(--deep-navy)' }}>Auto-match review</h3>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
+                  {autoReview.summary.matches} already recorded · {autoReview.summary.suggested} suggested · {autoReview.summary.manual} need a choice. Review and approve — nothing posts until you do.
+                </p>
+              </div>
+              <div style={{ overflowY: 'auto', padding: '8px 0', flex: 1 }}>
+                {autoReview.rows.length === 0 ? (
+                  <p style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>No unmatched lines to review.</p>
+                ) : autoReview.rows.map((r) => (
+                  <div key={r.lineId} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 24px', borderBottom: '1px solid #F1F5F9', opacity: r.include ? 1 : 0.5 }}>
+                    <input type="checkbox" checked={r.include} onChange={(e) => setReviewRow(r.lineId, { include: e.target.checked })} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {r.line?.direction === 'in' ? '+' : '−'}GHS {n2(r.line?.amount)} · {r.line?.counterparty || r.line?.type}
+                      </div>
+                      <div style={{ fontSize: 11, color: r.kind === 'match' ? '#16A34A' : r.kind === 'suggest' ? '#D97706' : 'var(--text-muted)' }}>{r.note}</div>
+                    </div>
+                    {r.kind === 'match' ? (
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#16A34A', display: 'flex', alignItems: 'center', gap: 4 }}><FiCheck size={13} /> Match</span>
+                    ) : (
+                      <select value={r.chosen} onChange={(e) => setReviewRow(r.lineId, { chosen: e.target.value })} style={{ width: 220, padding: '7px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12.5 }}>
+                        <option value="">— choose account —</option>
+                        {accounts.filter((a) => a.code !== '1015' && a.code !== '6800').map((a) => <option key={a._id} value={a._id}>{a.code} — {a.name}</option>)}
+                      </select>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button onClick={() => setAutoReview(null)} disabled={batchPosting} style={{ padding: '10px 20px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: '#fff', fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>Cancel</button>
+                <button onClick={submitBatch} disabled={batchPosting} style={{ padding: '10px 22px', borderRadius: 'var(--radius-sm)', background: 'var(--nexusora-gold)', color: 'var(--deep-navy)', fontSize: 13, fontWeight: 700, border: 'none', cursor: 'pointer' }}>
+                  {batchPosting ? 'Posting...' : 'Post approved (' + autoReview.rows.filter((r) => r.include).length + ')'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {postingLine && (
           <div onClick={() => setPostingLine(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
