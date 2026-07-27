@@ -136,6 +136,21 @@ const sendInvoice = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Only draft invoices can be sent.' });
     }
 
+    // Maker-checker: accountant sends need approval when the tenant requires it.
+    // Route to awaiting_approval WITHOUT creating the journal entry or moving
+    // balances — the real posting happens on approval.
+    const needsApproval = req.tenant && req.tenant.settings && req.tenant.settings.requireApproval === true && req.user.role === 'accountant';
+    if (needsApproval) {
+      invoice.status = 'awaiting_approval';
+      await invoice.save();
+      await logAudit(req.tenantDb, {
+        userId: req.user._id, action: 'submit_for_approval', module: 'invoices',
+        entityId: invoice._id, entityType: 'Invoice',
+        description: 'Submitted invoice for approval: ' + invoice.invoiceNumber,
+      }, req);
+      return res.json({ success: true, message: 'Invoice ' + invoice.invoiceNumber + ' submitted for approval.', data: invoice });
+    }
+
     const arAccount = await Account.findOne({ code: '1100' });
     const taxAccount = await Account.findOne({ code: '2400' });
     if (!arAccount) return res.status(500).json({ success: false, message: 'Accounts Receivable (1100) not found.' });
@@ -381,4 +396,50 @@ const runDueRecurring = async (req, res) => {
   }
 };
 
-module.exports = { getInvoices, getInvoice, createInvoice, updateInvoice, sendInvoice, deleteInvoice, downloadInvoicePDF , markRecurring, getRecurringTemplates, stopRecurring, runDueRecurring };
+
+const approveInvoice = async (req, res) => {
+  try {
+    const Invoice = getModel(req.tenantDb, 'Invoice');
+    const invoice = await Invoice.findById(req.params.id);
+    if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found.' });
+    if (invoice.status !== 'awaiting_approval') {
+      return res.status(400).json({ success: false, message: 'Only invoices awaiting approval can be approved.' });
+    }
+    if (invoice.createdBy && String(invoice.createdBy) === String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'You cannot approve an invoice you created. A different admin must approve it.' });
+    }
+    invoice.status = 'draft';
+    invoice.approvedBy = req.user._id;
+    invoice.approvedAt = new Date();
+    await invoice.save();
+    return sendInvoice(req, res);
+  } catch (error) {
+    console.error('[Invoices] Approve error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to approve invoice.' });
+  }
+};
+
+const rejectInvoice = async (req, res) => {
+  try {
+    const Invoice = getModel(req.tenantDb, 'Invoice');
+    const invoice = await Invoice.findById(req.params.id);
+    if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found.' });
+    if (invoice.status !== 'awaiting_approval') {
+      return res.status(400).json({ success: false, message: 'Only invoices awaiting approval can be rejected.' });
+    }
+    invoice.status = 'draft';
+    invoice.rejectionReason = (req.body.reason || '').trim() || 'No reason given';
+    await invoice.save();
+    await logAudit(req.tenantDb, {
+      userId: req.user._id, action: 'reject', module: 'invoices',
+      entityId: invoice._id, entityType: 'Invoice',
+      description: 'Rejected invoice ' + invoice.invoiceNumber + ': ' + invoice.rejectionReason,
+    }, req);
+    res.json({ success: true, message: 'Invoice ' + invoice.invoiceNumber + ' rejected and returned to draft.', data: invoice });
+  } catch (error) {
+    console.error('[Invoices] Reject error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to reject invoice.' });
+  }
+};
+
+module.exports = { getInvoices, getInvoice, createInvoice, updateInvoice, sendInvoice, deleteInvoice, downloadInvoicePDF , markRecurring, getRecurringTemplates, stopRecurring, runDueRecurring, approveInvoice, rejectInvoice };

@@ -4,6 +4,7 @@ const { protect, authorise } = require('../middleware/authMiddleware');
 const {
   getInvoices, getInvoice, createInvoice, updateInvoice, sendInvoice, deleteInvoice, downloadInvoicePDF,
   markRecurring, getRecurringTemplates, stopRecurring, runDueRecurring,
+  approveInvoice, rejectInvoice,
 } = require('../controllers/invoiceController');
 router.use(protect);
 
@@ -17,6 +18,8 @@ router.get('/:id', getInvoice);
 router.post('/', authorise('super_admin', 'admin', 'accountant'), createInvoice);
 router.put('/:id', authorise('super_admin', 'admin', 'accountant'), updateInvoice);
 router.post('/:id/send', authorise('super_admin', 'admin', 'accountant'), sendInvoice);
+router.post('/:id/approve', authorise('super_admin', 'admin'), approveInvoice);
+router.post('/:id/reject', authorise('super_admin', 'admin'), rejectInvoice);
 router.delete('/:id', authorise('super_admin', 'admin'), deleteInvoice);
 router.get('/:id/pdf', downloadInvoicePDF);
 module.exports = router;

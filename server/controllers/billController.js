@@ -95,6 +95,20 @@ const approveBill = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Only draft bills can be approved.' });
     }
 
+    // Maker-checker: an accountant approving a bill needs a manager's sign-off
+    // when the tenant requires it. Route to awaiting_approval WITHOUT posting.
+    const needsApproval = req.tenant && req.tenant.settings && req.tenant.settings.requireApproval === true && req.user.role === 'accountant';
+    if (needsApproval) {
+      bill.status = 'awaiting_approval';
+      await bill.save();
+      await logAudit(req.tenantDb, {
+        userId: req.user._id, action: 'submit_for_approval', module: 'bills',
+        entityId: bill._id, entityType: 'Bill',
+        description: 'Submitted bill for approval: ' + bill.billNumber,
+      }, req);
+      return res.json({ success: true, message: 'Bill ' + bill.billNumber + ' submitted for approval.', data: bill });
+    }
+
     const apAccount = await Account.findOne({ code: '2000' });
     if (!apAccount) return res.status(500).json({ success: false, message: 'Accounts Payable (2000) not found.' });
 
@@ -190,4 +204,50 @@ const deleteBill = async (req, res) => {
   }
 };
 
-module.exports = { getBills, getBill, createBill, approveBill, deleteBill };
+
+const confirmBill = async (req, res) => {
+  try {
+    const Bill = getModel(req.tenantDb, 'Bill');
+    const bill = await Bill.findById(req.params.id);
+    if (!bill) return res.status(404).json({ success: false, message: 'Bill not found.' });
+    if (bill.status !== 'awaiting_approval') {
+      return res.status(400).json({ success: false, message: 'Only bills awaiting approval can be confirmed.' });
+    }
+    if (bill.createdBy && String(bill.createdBy) === String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'You cannot approve a bill you created. A different admin must approve it.' });
+    }
+    bill.status = 'draft';
+    bill.approvedBy = req.user._id;
+    bill.approvedAt = new Date();
+    await bill.save();
+    return approveBill(req, res);
+  } catch (error) {
+    console.error('[Bills] Confirm error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to confirm bill.' });
+  }
+};
+
+const rejectBill = async (req, res) => {
+  try {
+    const Bill = getModel(req.tenantDb, 'Bill');
+    const bill = await Bill.findById(req.params.id);
+    if (!bill) return res.status(404).json({ success: false, message: 'Bill not found.' });
+    if (bill.status !== 'awaiting_approval') {
+      return res.status(400).json({ success: false, message: 'Only bills awaiting approval can be rejected.' });
+    }
+    bill.status = 'draft';
+    bill.rejectionReason = (req.body.reason || '').trim() || 'No reason given';
+    await bill.save();
+    await logAudit(req.tenantDb, {
+      userId: req.user._id, action: 'reject', module: 'bills',
+      entityId: bill._id, entityType: 'Bill',
+      description: 'Rejected bill ' + bill.billNumber + ': ' + bill.rejectionReason,
+    }, req);
+    res.json({ success: true, message: 'Bill ' + bill.billNumber + ' rejected and returned to draft.', data: bill });
+  } catch (error) {
+    console.error('[Bills] Reject error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to reject bill.' });
+  }
+};
+
+module.exports = { getBills, getBill, createBill, approveBill, deleteBill, confirmBill, rejectBill };
