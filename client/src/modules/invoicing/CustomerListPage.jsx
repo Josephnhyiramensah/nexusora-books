@@ -195,9 +195,6 @@ export default function CustomerListPage() {
             {customers.length} customers
           </p>
         </div>
-        <button onClick={() => exportCustomers(customers, companyName)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--nexusora-gold, #C9A227)', background: '#fff', color: '#B8860B', fontSize: 14, fontWeight: 600, cursor: 'pointer', marginRight: 10 }}>
-          <FiDownload size={15} /> Export Excel
-        </button>
         <button
           onClick={() => { setEditing(null); setModalOpen(true); }}
           style={{
@@ -229,6 +226,9 @@ export default function CustomerListPage() {
             fontSize: 13, color: 'var(--text-primary)', width: '100%',
           }}
         />
+        <button onClick={() => exportCustomers(customers, companyName)} style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--nexusora-gold, #C9A227)', background: '#fff', color: '#B8860B', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          <FiDownload size={15} /> Export Excel
+        </button>
       </div>
 
       {/* 👇 CHANGED: outer div – removed border and overflow, added ResponsiveTable wrapper */}

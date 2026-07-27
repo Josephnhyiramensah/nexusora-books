@@ -189,9 +189,6 @@ export default function InvoiceListPage() {
             {invoices.length} total invoices
           </p>
         </div>
-        <button onClick={() => exportInvoices(invoices, companyName)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--nexusora-gold, #C9A227)', background: '#fff', color: '#B8860B', fontSize: 13, fontWeight: 600, cursor: 'pointer', marginRight: 10 }}>
-            <FiDownload size={15} /> Export Excel
-          </button>
           <button
           onClick={() => navigate('/invoicing/new')}
           style={{
@@ -221,6 +218,9 @@ export default function InvoiceListPage() {
           <option value="paid">Paid</option>
           <option value="overdue">Overdue</option>
         </select>
+        <button onClick={() => exportInvoices(invoices, companyName)} style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--nexusora-gold, #C9A227)', background: '#fff', color: '#B8860B', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          <FiDownload size={15} /> Export Excel
+        </button>
       </div>
 
       <div style={{ background: '#fff', borderRadius: 'var(--radius-md)' }}>

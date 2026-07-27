@@ -108,9 +108,6 @@ export default function JournalListPage() {
           <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 22, fontWeight: 600, color: 'var(--text-primary)' }}>Journal Entries</h1>
           <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>{entries.length} entries</p>
         </div>
-        <button onClick={() => exportJournals(entries, companyName)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--nexusora-gold, #C9A227)', background: '#fff', color: '#B8860B', fontSize: 13, fontWeight: 600, cursor: 'pointer', marginRight: 10 }}>
-            <FiDownload size={15} /> Export Excel
-          </button>
           <button onClick={() => navigate('/journals/new')} style={{
           display: 'flex', alignItems: 'center', gap: 8,
           padding: '10px 20px', background: 'var(--nexusora-gold)',
@@ -122,7 +119,7 @@ export default function JournalListPage() {
       </div>
 
       {/* Filters */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
         <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}
           style={{ padding: '9px 14px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 13, background: '#fff' }}>
           <option value="">All statuses</option>
@@ -139,6 +136,9 @@ export default function JournalListPage() {
           <option value="cash_receipts">Cash Receipts</option>
           <option value="cash_payments">Cash Payments</option>
         </select>
+        <button onClick={() => exportJournals(entries, companyName)} style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--nexusora-gold, #C9A227)', background: '#fff', color: '#B8860B', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          <FiDownload size={15} /> Export Excel
+        </button>
       </div>
 
       {/* Table */}
