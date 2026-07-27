@@ -9,6 +9,7 @@ import EntryDetailsModal from '../../components/common/EntryDetailsModal';
 import api from '../../services/api';
 import { formatCurrency, formatDate, getStatusColor } from '../../utils/formatters';
 import { useToast } from '../../hooks/useToast';
+import { useAuth } from '../../context/AuthContext';
 import { useTenant } from '../../context/TenantContext';
 
 export default function JournalListPage() {
@@ -19,6 +20,8 @@ export default function JournalListPage() {
   const [viewEntry, setViewEntry] = useState(null);
   const navigate = useNavigate();
   const { showToast, ToastComponent } = useToast();
+  const { user } = useAuth();
+  const canApprove = ['super_admin', 'admin'].includes(user?.role);
   const { companyName } = useTenant();
 
   const fetchEntries = async () => {
@@ -43,6 +46,25 @@ export default function JournalListPage() {
       const { data } = await api.get('/journals/' + id);
       if (data.success) setViewEntry(data.data);
     } catch { showToast('Could not load entry', 'error'); }
+  };
+
+  const handleApprove = async (id) => {
+    if (!window.confirm('Approve and post this entry? This will update account balances.')) return;
+    try {
+      const { data: result } = await api.post('/journals/' + id + '/approve');
+      if (result.success) { showToast(result.message || 'Approved and posted'); fetchEntries(); }
+      else showToast(result.message || 'Approve failed', 'error');
+    } catch (err) { showToast(err.response?.data?.message || 'Approve failed', 'error'); }
+  };
+
+  const handleReject = async (id) => {
+    const reason = window.prompt('Reason for rejection (sent back to draft):');
+    if (reason === null) return;
+    try {
+      const { data } = await api.post('/journals/' + id + '/reject', { reason });
+      if (data.success) { showToast(data.message || 'Rejected'); fetchEntries(); }
+      else showToast(data.message || 'Reject failed', 'error');
+    } catch (err) { showToast(err.response?.data?.message || 'Reject failed', 'error'); }
   };
 
   const handlePost = async (id) => {
@@ -124,6 +146,7 @@ export default function JournalListPage() {
           style={{ padding: '9px 14px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 13, background: '#fff' }}>
           <option value="">All statuses</option>
           <option value="draft">Draft</option>
+          <option value="awaiting_approval">Awaiting Approval</option>
           <option value="posted">Posted</option>
           <option value="reversed">Reversed</option>
         </select>
@@ -166,9 +189,9 @@ export default function JournalListPage() {
                 <tr key={entry._id} style={{ borderBottom: '1px solid var(--border)', background: i % 2 === 0 ? '#fff' : '#FAFBFC' }}>
                   <td style={{ padding: '11px 16px', fontWeight: 600, fontFamily: 'monospace' }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                      <span title={entry.status === 'posted' ? 'Posted' : entry.status === 'reversed' ? 'Reversed' : 'Draft'}
+                      <span title={entry.status === 'posted' ? 'Posted' : entry.status === 'reversed' ? 'Reversed' : entry.status === 'awaiting_approval' ? 'Awaiting approval' : 'Draft'}
                         style={{ flexShrink: 0, fontSize: 12,
-                          color: entry.status === 'posted' ? '#059669' : entry.status === 'reversed' ? '#DC2626' : '#D97706' }}>
+                          color: entry.status === 'posted' ? '#059669' : entry.status === 'reversed' ? '#DC2626' : entry.status === 'awaiting_approval' ? '#EA580C' : '#D97706' }}>
                         {'●'}
                       </span>
                       <button onClick={() => openView(entry._id)} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--tech-blue)', fontWeight: 600, fontFamily: 'monospace', cursor: 'pointer', textDecoration: 'underline' }}>{entry.entryNumber}</button>
@@ -187,6 +210,15 @@ export default function JournalListPage() {
                           <button onClick={() => handlePost(entry._id)} title="Post" style={{ padding: '4px 8px', borderRadius: 'var(--radius-sm)', color: 'var(--success)', fontSize: 11, fontWeight: 600, border: '1px solid var(--success)' }}>Post</button>
                           <button onClick={() => handleDelete(entry._id)} title="Delete" style={{ padding: '4px 8px', borderRadius: 'var(--radius-sm)', color: 'var(--danger)', fontSize: 11 }}>Del</button>
                         </>
+                      )}
+                      {entry.status === 'awaiting_approval' && canApprove && (
+                        <>
+                          <button onClick={() => handleApprove(entry._id)} title="Approve & post" style={{ padding: '4px 8px', borderRadius: 'var(--radius-sm)', color: 'var(--success)', fontSize: 11, fontWeight: 600, border: '1px solid var(--success)' }}>Approve</button>
+                          <button onClick={() => handleReject(entry._id)} title="Reject" style={{ padding: '4px 8px', borderRadius: 'var(--radius-sm)', color: 'var(--danger)', fontSize: 11, fontWeight: 600, border: '1px solid var(--danger)' }}>Reject</button>
+                        </>
+                      )}
+                      {entry.status === 'awaiting_approval' && !canApprove && (
+                        <span style={{ fontSize: 11, color: '#EA580C', fontWeight: 600 }}>Awaiting approval</span>
                       )}
                       {entry.status === 'posted' && (
                         <button onClick={() => handleReverse(entry._id)} title="Reverse" style={{ padding: '4px 8px', borderRadius: 'var(--radius-sm)', color: 'var(--warning)', fontSize: 11, fontWeight: 600, border: '1px solid var(--warning)' }}>
