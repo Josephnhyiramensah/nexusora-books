@@ -158,15 +158,22 @@ export default function JournalListPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</td></tr>
+              <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</td></tr>
             ) : entries.length === 0 ? (
-              <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>No journal entries yet.</td></tr>
+              <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>No journal entries yet.</td></tr>
             ) : entries.map((entry, i) => {
               const sc = getStatusColor(entry.status);
               return (
                 <tr key={entry._id} style={{ borderBottom: '1px solid var(--border)', background: i % 2 === 0 ? '#fff' : '#FAFBFC' }}>
                   <td style={{ padding: '11px 16px', fontWeight: 600, fontFamily: 'monospace' }}>
-                    <button onClick={() => openView(entry._id)} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--tech-blue)', fontWeight: 600, fontFamily: 'monospace', cursor: 'pointer', textDecoration: 'underline' }}>{entry.entryNumber}</button>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                      <span title={entry.status === 'posted' ? 'Posted' : entry.status === 'reversed' ? 'Reversed' : 'Draft'}
+                        style={{ flexShrink: 0, fontSize: 12,
+                          color: entry.status === 'posted' ? '#059669' : entry.status === 'reversed' ? '#DC2626' : '#D97706' }}>
+                        {'●'}
+                      </span>
+                      <button onClick={() => openView(entry._id)} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--tech-blue)', fontWeight: 600, fontFamily: 'monospace', cursor: 'pointer', textDecoration: 'underline' }}>{entry.entryNumber}</button>
+                    </span>
                   </td>
                   <td style={{ padding: '11px 16px' }}>{formatDate(entry.date)}</td>
                   <td style={{ padding: '11px 16px', textTransform: 'capitalize' }}>{entry.journalType?.replace('_', ' ')}</td>
