@@ -14,6 +14,7 @@ export default function ModuleShell({ moduleTitle, sidebarItems }) {
   const navigate = useNavigate();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [daysLeft, setDaysLeft] = useState(null);
 
   const showMobileNav = isMobile || isTablet;
@@ -31,6 +32,13 @@ export default function ModuleShell({ moduleTitle, sidebarItems }) {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
+      {!showMobileNav && (
+        <button onClick={() => setSidebarCollapsed((v) => !v)}
+          title={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+          style={{ position: 'fixed', top: 16, left: sidebarCollapsed ? 12 : 'calc(var(--sidebar-width) - 16px)', zIndex: 200, width: 32, height: 32, borderRadius: '50%', border: '1px solid var(--border)', background: '#fff', color: 'var(--deep-navy)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.12)', transition: 'left 0.25s ease' }}>
+          {sidebarCollapsed ? <FiChevronRight size={17} /> : <FiChevronLeft size={17} />}
+        </button>
+      )}
 
       {/* Desktop Sidebar — hidden on mobile/tablet */}
       {!showMobileNav && (
@@ -56,7 +64,8 @@ export default function ModuleShell({ moduleTitle, sidebarItems }) {
       {/* Main content area */}
       <div style={{
         flex: 1,
-        marginLeft: showMobileNav ? 0 : 'var(--sidebar-width)',
+        marginLeft: (showMobileNav || sidebarCollapsed) ? 0 : 'var(--sidebar-width)',
+        transition: 'margin-left 0.25s ease',
         display: 'flex',
         flexDirection: 'column',
         minHeight: '100vh',
