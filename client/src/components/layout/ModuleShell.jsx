@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import TopBar from './TopBar';
 import ModuleSidebar from './ModuleSidebar';
 import MobileDrawer from './MobileDrawer';
