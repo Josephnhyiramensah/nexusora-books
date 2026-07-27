@@ -6,6 +6,7 @@ const { protect, authorise } = require('../middleware/authMiddleware');
 const {
   getJournals, getJournal, createJournal,
   updateJournal, postJournal, reverseJournal, deleteJournal,
+  approveJournal, rejectJournal,
 } = require('../controllers/journalController');
 
 router.use(protect);
@@ -15,6 +16,8 @@ router.get('/:id', getJournal);
 router.post('/', authorise('super_admin', 'admin', 'accountant'), createJournal);
 router.put('/:id', authorise('super_admin', 'admin', 'accountant'), updateJournal);
 router.post('/:id/post', authorise('super_admin', 'admin', 'accountant'), postJournal);
+router.post('/:id/approve', authorise('super_admin', 'admin'), approveJournal);
+router.post('/:id/reject', authorise('super_admin', 'admin'), rejectJournal);
 router.post('/:id/reverse', authorise('super_admin', 'admin', 'accountant'), reverseJournal);
 router.delete('/:id', authorise('super_admin', 'admin'), deleteJournal);
 

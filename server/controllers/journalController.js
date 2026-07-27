@@ -173,6 +173,20 @@ const postJournal = async (req, res) => {
       return res.status(400).json({ success: false, message: `Cannot post: ${validation.error}` });
     }
 
+    // Maker-checker: when the tenant requires approval, an accountant post goes
+    // to awaiting_approval instead of the ledger. Admins post directly.
+    const needsApproval = req.tenant && req.tenant.settings && req.tenant.settings.requireApproval === true && req.user.role === 'accountant';
+    if (needsApproval) {
+      entry.status = 'awaiting_approval';
+      await entry.save();
+      await logAudit(req.tenantDb, {
+        userId: req.user._id, action: 'submit_for_approval', module: 'journals',
+        entityId: entry._id, entityType: 'JournalEntry',
+        description: 'Submitted journal entry for approval: ' + entry.entryNumber,
+      }, req);
+      return res.json({ success: true, message: 'Journal entry ' + entry.entryNumber + ' submitted for approval.', data: entry });
+    }
+
     for (const line of entry.lines) {
       const account = await Account.findById(line.account);
       if (!account) {
@@ -280,7 +294,80 @@ const deleteJournal = async (req, res) => {
   }
 };
 
+
+// Approve an awaiting_approval entry: this performs the ACTUAL posting (the
+// same ledger work postJournal does), records the approver, and enforces that
+// the approver is not the same person who created it (segregation of duties).
+const approveJournal = async (req, res) => {
+  try {
+    const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
+    const Account = getModel(req.tenantDb, 'Account');
+    const entry = await JournalEntry.findById(req.params.id);
+    if (!entry) return res.status(404).json({ success: false, message: 'Journal entry not found.' });
+    if (entry.status !== 'awaiting_approval') {
+      return res.status(400).json({ success: false, message: 'Only entries awaiting approval can be approved.' });
+    }
+    // Segregation of duties: the maker cannot approve their own entry.
+    if (entry.createdBy && String(entry.createdBy) === String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'You cannot approve an entry you created. A different admin must approve it.' });
+    }
+    const validation = validateDoubleEntry(entry.lines);
+    if (!validation.valid) {
+      return res.status(400).json({ success: false, message: `Cannot approve: ${validation.error}` });
+    }
+    for (const line of entry.lines) {
+      const account = await Account.findById(line.account);
+      if (!account) {
+        return res.status(400).json({ success: false, message: `Account ${line.accountCode} no longer exists. Cannot post.` });
+      }
+      const balanceChange = calculateBalanceChange(account.normalBalance, line.debit, line.credit);
+      account.balance = Math.round((account.balance + balanceChange) * 100) / 100;
+      await account.save();
+    }
+    entry.status = 'posted';
+    entry.postedBy = req.user._id;
+    entry.postedAt = new Date();
+    entry.approvedBy = req.user._id;
+    entry.approvedAt = new Date();
+    await entry.save();
+    await logAudit(req.tenantDb, {
+      userId: req.user._id, action: 'approve_journal', module: 'journals',
+      entityId: entry._id, entityType: 'JournalEntry',
+      description: `Approved and posted journal entry: ${entry.entryNumber}`,
+    }, req);
+    res.json({ success: true, message: `Journal entry ${entry.entryNumber} approved and posted.`, data: entry });
+  } catch (error) {
+    console.error('[Journals] Approve error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to approve journal entry.' });
+  }
+};
+
+// Reject an awaiting_approval entry: back to draft, with a reason recorded.
+const rejectJournal = async (req, res) => {
+  try {
+    const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
+    const entry = await JournalEntry.findById(req.params.id);
+    if (!entry) return res.status(404).json({ success: false, message: 'Journal entry not found.' });
+    if (entry.status !== 'awaiting_approval') {
+      return res.status(400).json({ success: false, message: 'Only entries awaiting approval can be rejected.' });
+    }
+    entry.status = 'draft';
+    entry.rejectionReason = (req.body.reason || '').trim() || 'No reason given';
+    await entry.save();
+    await logAudit(req.tenantDb, {
+      userId: req.user._id, action: 'reject_journal', module: 'journals',
+      entityId: entry._id, entityType: 'JournalEntry',
+      description: `Rejected journal entry ${entry.entryNumber}: ${entry.rejectionReason}`,
+    }, req);
+    res.json({ success: true, message: `Journal entry ${entry.entryNumber} rejected and returned to draft.`, data: entry });
+  } catch (error) {
+    console.error('[Journals] Reject error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to reject journal entry.' });
+  }
+};
+
 module.exports = {
   getJournals, getJournal, createJournal, updateJournal,
   postJournal, reverseJournal, deleteJournal,
+  approveJournal, rejectJournal,
 };
