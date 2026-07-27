@@ -5,6 +5,7 @@ import { exportBills } from '../reports/dataExports';
 import billService from '../../services/billService';
 import { formatCurrency, formatDate, getStatusColor } from '../../utils/formatters';
 import { useToast } from '../../hooks/useToast';
+import { useAuth } from '../../context/AuthContext';
 import { useTenant } from '../../context/TenantContext';
 import ActionMenu from '../../components/common/ActionMenu';
 import EntryDetailsModal from '../../components/common/EntryDetailsModal';
@@ -18,6 +19,8 @@ export default function BillListPage() {
   const [viewBill, setViewBill] = useState(null);
   const navigate = useNavigate();
   const { showToast, ToastComponent } = useToast();
+  const { user } = useAuth();
+  const canApprove = ['super_admin', 'admin'].includes(user?.role);
   const { companyName } = useTenant();
 
   const fetchBills = async () => {
@@ -54,8 +57,30 @@ export default function BillListPage() {
     catch { showToast('Could not load bill', 'error'); }
   };
 
+  const handleApproveEntry = async (id) => {
+    if (!window.confirm('Approve and post this bill?')) return;
+    try {
+      const { data } = await api.post(''/bills'/' + id + '/confirm');
+      if (data.success) { showToast(data.message || 'Approved'); fetchBills(); }
+      else showToast(data.message || 'Approve failed', 'error');
+    } catch (err) { showToast(err.response?.data?.message || 'Approve failed', 'error'); }
+  };
+  const handleRejectEntry = async (id) => {
+    const reason = window.prompt('Reason for rejection:');
+    if (reason === null) return;
+    try {
+      const { data } = await api.post(''/bills'/' + id + '/reject', { reason });
+      if (data.success) { showToast(data.message || 'Rejected'); fetchBills(); }
+      else showToast(data.message || 'Reject failed', 'error');
+    } catch (err) { showToast(err.response?.data?.message || 'Reject failed', 'error'); }
+  };
+
   const getActionItems = (b) => {
     const items = [];
+    if (b.status === 'awaiting_approval' && canApprove) {
+      items.push({ icon: '✅', label: 'Approve', onClick: () => handleApproveEntry(b._id), variant: 'success' });
+      items.push({ icon: '❌', label: 'Reject', onClick: () => handleRejectEntry(b._id), variant: 'danger' });
+    }
 
     if (b.status === 'draft') {
       items.push({ icon: '✏️', label: 'Edit Bill', onClick: () => navigate(`/bills/edit/${b._id}`) });

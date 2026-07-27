@@ -7,6 +7,7 @@ import { motion } from 'framer-motion';
 import invoiceService from '../../services/invoiceService';
 import { formatCurrency, formatDate, getStatusColor } from '../../utils/formatters';
 import { useToast } from '../../hooks/useToast';
+import { useAuth } from '../../context/AuthContext';
 import { useTenant } from '../../context/TenantContext';
 import ActionMenu from '../../components/common/ActionMenu';
 import EntryDetailsModal from '../../components/common/EntryDetailsModal';
@@ -25,6 +26,8 @@ export default function InvoiceListPage() {
   const [recurSaving, setRecurSaving] = useState(false);
   const navigate = useNavigate();
   const { showToast, ToastComponent } = useToast();
+  const { user } = useAuth();
+  const canApprove = ['super_admin', 'admin'].includes(user?.role);
   const { companyName } = useTenant();
 
   const fetchInvoices = async () => {
@@ -88,8 +91,30 @@ export default function InvoiceListPage() {
     catch { showToast('Could not load invoice', 'error'); }
   };
 
+  const handleApproveEntry = async (id) => {
+    if (!window.confirm('Approve and post this invoice?')) return;
+    try {
+      const { data } = await api.post(''/invoices'/' + id + '/approve');
+      if (data.success) { showToast(data.message || 'Approved'); fetchInvoices(); }
+      else showToast(data.message || 'Approve failed', 'error');
+    } catch (err) { showToast(err.response?.data?.message || 'Approve failed', 'error'); }
+  };
+  const handleRejectEntry = async (id) => {
+    const reason = window.prompt('Reason for rejection:');
+    if (reason === null) return;
+    try {
+      const { data } = await api.post(''/invoices'/' + id + '/reject', { reason });
+      if (data.success) { showToast(data.message || 'Rejected'); fetchInvoices(); }
+      else showToast(data.message || 'Reject failed', 'error');
+    } catch (err) { showToast(err.response?.data?.message || 'Reject failed', 'error'); }
+  };
+
   const getActionItems = (inv) => {
     const items = [];
+    if (inv.status === 'awaiting_approval' && canApprove) {
+      items.push({ icon: '✅', label: 'Approve', onClick: () => handleApproveEntry(inv._id), variant: 'success' });
+      items.push({ icon: '❌', label: 'Reject', onClick: () => handleRejectEntry(inv._id), variant: 'danger' });
+    }
     items.push({ icon: '👁️', label: 'View details', onClick: () => openView(inv._id) });
 
     if (inv.status === 'draft') {
