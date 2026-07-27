@@ -42,7 +42,7 @@ export default function ModuleShell({ moduleTitle, sidebarItems }) {
       )}
 
       {/* Desktop Sidebar — hidden on mobile/tablet */}
-      {!showMobileNav && (
+      {!showMobileNav && !sidebarCollapsed && (
         <motion.div
           initial={{ x: -280, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
