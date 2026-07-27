@@ -31,7 +31,7 @@ const billSchema = new mongoose.Schema(
     balance: { type: Number, default: 0 },
     status: {
       type: String,
-      enum: ['draft', 'approved', 'partially_paid', 'paid', 'overdue', 'cancelled'],
+      enum: ['draft', 'awaiting_approval', 'approved', 'partially_paid', 'paid', 'overdue', 'cancelled'],
       default: 'draft',
     },
     approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -39,6 +39,9 @@ const billSchema = new mongoose.Schema(
     journalEntry: { type: mongoose.Schema.Types.ObjectId, ref: 'JournalEntry' },
     notes: String,
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    approvedAt: Date,
+    rejectionReason: String,
   },
   { timestamps: true }
 );

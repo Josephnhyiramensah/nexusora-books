@@ -28,6 +28,9 @@ const tenantSchema = new mongoose.Schema(
       fiscalYearStart: { type: Number, default: 1, min: 1, max: 12 },
       baseCurrency: { type: String, default: 'GHS' },
       dateFormat: { type: String, default: 'DD/MM/YYYY' },
+      // Maker-checker: when true, entries created by accountants need admin
+      // approval before they post. Default off — tenants opt in.
+      requireApproval: { type: Boolean, default: false },
       logo: String,
       letterheadImage: String,
       address: String,

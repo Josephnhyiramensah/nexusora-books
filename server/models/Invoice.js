@@ -31,7 +31,7 @@ const invoiceSchema = new mongoose.Schema(
     balance: { type: Number, default: 0 },
     status: {
       type: String,
-      enum: ['draft', 'sent', 'partially_paid', 'paid', 'overdue', 'cancelled'],
+      enum: ['draft', 'awaiting_approval', 'sent', 'partially_paid', 'paid', 'overdue', 'cancelled'],
       default: 'draft',
     },
     journalEntry: { type: mongoose.Schema.Types.ObjectId, ref: 'JournalEntry' },
@@ -52,6 +52,9 @@ const invoiceSchema = new mongoose.Schema(
     },
     generatedFrom: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice', default: null },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    approvedAt: Date,
+    rejectionReason: String,
   },
   { timestamps: true }
 );

@@ -52,7 +52,7 @@ const journalEntrySchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['draft', 'posted', 'reversed'],
+      enum: ['draft', 'awaiting_approval', 'posted', 'reversed'],
       default: 'draft',
     },
     isRecurring: { type: Boolean, default: false },
@@ -71,6 +71,9 @@ const journalEntrySchema = new mongoose.Schema(
     postedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     postedAt: Date,
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    approvedAt: Date,
+    rejectionReason: String,
   },
   { timestamps: true }
 );
