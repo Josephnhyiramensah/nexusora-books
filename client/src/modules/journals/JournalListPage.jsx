@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiPlus, FiEye, FiCornerDownLeft, FiSearch } from 'react-icons/fi';
+import { FiDownload, FiPlus, FiEye, FiCornerDownLeft, FiSearch } from 'react-icons/fi';
+import { exportJournals } from '../reports/dataExports';
 import journalService from '../../services/journalService';
 import EntryDetailsModal from '../../components/common/EntryDetailsModal';
 import api from '../../services/api';
 import { formatCurrency, formatDate, getStatusColor } from '../../utils/formatters';
 import { useToast } from '../../hooks/useToast';
+import { useTenant } from '../../context/TenantContext';
 
 export default function JournalListPage() {
   const [entries, setEntries] = useState([]);
@@ -17,6 +19,7 @@ export default function JournalListPage() {
   const [viewEntry, setViewEntry] = useState(null);
   const navigate = useNavigate();
   const { showToast, ToastComponent } = useToast();
+  const { companyName } = useTenant();
 
   const fetchEntries = async () => {
     try {
@@ -105,7 +108,10 @@ export default function JournalListPage() {
           <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 22, fontWeight: 600, color: 'var(--text-primary)' }}>Journal Entries</h1>
           <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>{entries.length} entries</p>
         </div>
-        <button onClick={() => navigate('/journals/new')} style={{
+        <button onClick={() => exportJournals(entries, companyName)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--nexusora-gold, #C9A227)', background: '#fff', color: '#B8860B', fontSize: 13, fontWeight: 600, cursor: 'pointer', marginRight: 10 }}>
+            <FiDownload size={15} /> Export Excel
+          </button>
+          <button onClick={() => navigate('/journals/new')} style={{
           display: 'flex', alignItems: 'center', gap: 8,
           padding: '10px 20px', background: 'var(--nexusora-gold)',
           color: 'var(--deep-navy)', borderRadius: 'var(--radius-md)',

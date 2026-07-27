@@ -2,10 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiPlus, FiSearch } from 'react-icons/fi';
+import { FiDownload, FiPlus, FiSearch } from 'react-icons/fi';
+import { exportCustomers } from '../reports/dataExports';
 import customerService from '../../services/customerService';
 import { formatCurrency } from '../../utils/formatters';
 import { useToast } from '../../hooks/useToast';
+import { useTenant } from '../../context/TenantContext';
 import Modal from '../../components/common/Modal';
 import ActionMenu from '../../components/common/ActionMenu';
 import { getSubdomain } from '../../services/api';
@@ -139,6 +141,7 @@ export default function CustomerListPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const { showToast, ToastComponent } = useToast();
+  const { companyName } = useTenant();
 
   const fetchCustomers = async () => {
     try {
@@ -192,6 +195,9 @@ export default function CustomerListPage() {
             {customers.length} customers
           </p>
         </div>
+        <button onClick={() => exportCustomers(customers, companyName)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 18px', borderRadius: 'var(--radius-md)', border: '1px solid var(--nexusora-gold, #C9A227)', background: '#fff', color: '#B8860B', fontSize: 14, fontWeight: 600, cursor: 'pointer', marginRight: 10 }}>
+          <FiDownload size={15} /> Export Excel
+        </button>
         <button
           onClick={() => { setEditing(null); setModalOpen(true); }}
           style={{

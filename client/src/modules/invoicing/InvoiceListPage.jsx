@@ -1,11 +1,13 @@
 // client/src/modules/invoicing/InvoiceListPage.jsx
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiPlus } from 'react-icons/fi';
+import { FiDownload, FiPlus } from 'react-icons/fi';
+import { exportInvoices } from '../reports/dataExports';
 import { motion } from 'framer-motion';
 import invoiceService from '../../services/invoiceService';
 import { formatCurrency, formatDate, getStatusColor } from '../../utils/formatters';
 import { useToast } from '../../hooks/useToast';
+import { useTenant } from '../../context/TenantContext';
 import ActionMenu from '../../components/common/ActionMenu';
 import EntryDetailsModal from '../../components/common/EntryDetailsModal';
 import api from '../../services/api';
@@ -23,6 +25,7 @@ export default function InvoiceListPage() {
   const [recurSaving, setRecurSaving] = useState(false);
   const navigate = useNavigate();
   const { showToast, ToastComponent } = useToast();
+  const { companyName } = useTenant();
 
   const fetchInvoices = async () => {
     try {
@@ -186,7 +189,10 @@ export default function InvoiceListPage() {
             {invoices.length} total invoices
           </p>
         </div>
-        <button
+        <button onClick={() => exportInvoices(invoices, companyName)} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--nexusora-gold, #C9A227)', background: '#fff', color: '#B8860B', fontSize: 13, fontWeight: 600, cursor: 'pointer', marginRight: 10 }}>
+            <FiDownload size={15} /> Export Excel
+          </button>
+          <button
           onClick={() => navigate('/invoicing/new')}
           style={{
             display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px',
