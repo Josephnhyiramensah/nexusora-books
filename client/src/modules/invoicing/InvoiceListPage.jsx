@@ -94,7 +94,7 @@ export default function InvoiceListPage() {
   const handleApproveEntry = async (id) => {
     if (!window.confirm('Approve and post this invoice?')) return;
     try {
-      const { data } = await api.post(''/invoices'/' + id + '/approve');
+      const { data } = await api.post('/invoices/' + id + '/approve');
       if (data.success) { showToast(data.message || 'Approved'); fetchInvoices(); }
       else showToast(data.message || 'Approve failed', 'error');
     } catch (err) { showToast(err.response?.data?.message || 'Approve failed', 'error'); }
@@ -103,7 +103,7 @@ export default function InvoiceListPage() {
     const reason = window.prompt('Reason for rejection:');
     if (reason === null) return;
     try {
-      const { data } = await api.post(''/invoices'/' + id + '/reject', { reason });
+      const { data } = await api.post('/invoices/' + id + '/reject', { reason });
       if (data.success) { showToast(data.message || 'Rejected'); fetchInvoices(); }
       else showToast(data.message || 'Reject failed', 'error');
     } catch (err) { showToast(err.response?.data?.message || 'Reject failed', 'error'); }

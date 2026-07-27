@@ -60,7 +60,7 @@ export default function BillListPage() {
   const handleApproveEntry = async (id) => {
     if (!window.confirm('Approve and post this bill?')) return;
     try {
-      const { data } = await api.post(''/bills'/' + id + '/confirm');
+      const { data } = await api.post('/bills/' + id + '/confirm');
       if (data.success) { showToast(data.message || 'Approved'); fetchBills(); }
       else showToast(data.message || 'Approve failed', 'error');
     } catch (err) { showToast(err.response?.data?.message || 'Approve failed', 'error'); }
@@ -69,7 +69,7 @@ export default function BillListPage() {
     const reason = window.prompt('Reason for rejection:');
     if (reason === null) return;
     try {
-      const { data } = await api.post(''/bills'/' + id + '/reject', { reason });
+      const { data } = await api.post('/bills/' + id + '/reject', { reason });
       if (data.success) { showToast(data.message || 'Rejected'); fetchBills(); }
       else showToast(data.message || 'Reject failed', 'error');
     } catch (err) { showToast(err.response?.data?.message || 'Reject failed', 'error'); }
