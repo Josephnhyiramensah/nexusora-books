@@ -20,6 +20,7 @@ const notificationSchema = require('../models/Notification');
 const casualWorkerSchema = require('../models/CasualWorker');
 const reconciliationSessionSchema = require('../models/ReconciliationSession');
 const casualPaymentSheetSchema = require('../models/CasualPaymentSheet');
+const exchangeRateSchema = require('../models/ExchangeRate');
 
 
 const schemas = {

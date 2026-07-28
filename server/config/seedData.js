@@ -33,6 +33,7 @@ const defaultChartOfAccounts = [
   { code: '4010', name: 'Service Revenue', type: 'revenue', category: 'Operating Revenue', normalBalance: 'credit', isSystemAccount: true, description: 'Revenue from services rendered' },
   { code: '4100', name: 'Interest Income', type: 'revenue', category: 'Other Income', normalBalance: 'credit', isSystemAccount: true, description: 'Interest earned on deposits' },
   { code: '4200', name: 'Other Income', type: 'revenue', category: 'Other Income', normalBalance: 'credit', isSystemAccount: true, description: 'Miscellaneous income' },
+  { code: '4300', name: 'Foreign Exchange Gain/Loss', type: 'revenue', category: 'Other Income', normalBalance: 'credit', isSystemAccount: true, description: 'Realised gains and losses on foreign-currency transactions' },
 
   // COST OF GOODS SOLD (5000–5999)
   { code: '5000', name: 'Purchases', type: 'cogs', category: 'Cost of Goods Sold', normalBalance: 'debit', isSystemAccount: true, description: 'Purchases of goods for resale' },
