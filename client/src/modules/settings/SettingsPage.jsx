@@ -375,6 +375,19 @@ function CompanyTab({
         />
       </div>
 
+      <div style={{ marginBottom: 16, padding: 16, background: 'var(--bg-app)', borderRadius: 8, border: '1px solid var(--border)' }}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer' }}>
+          <input type="checkbox" style={{ marginTop: 3, width: 18, height: 18, cursor: 'pointer' }}
+            checked={!!companyForm.requireApproval}
+            onChange={(e) => setCompanyForm({ ...companyForm, requireApproval: e.target.checked })} />
+          <span>
+            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Require approval before entries post</span>
+            <span style={{ display: 'block', fontSize: 12.5, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.5 }}>
+              When enabled, journal entries, invoices, and bills created by accountants must be approved by an admin before they post to the ledger. Admins and super-admins still post directly.
+            </span>
+          </span>
+        </label>
+      </div>
       {/* Letterhead */}
       <h3
         style={{
