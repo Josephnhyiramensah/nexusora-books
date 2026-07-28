@@ -209,6 +209,7 @@ const updateMyTenantSettings = async (req, res) => {
       const allowed = [
         'logo', 'letterheadImage', 'address', 'city', 'region', 'taxId',
         'letterhead', 'fiscalYearStart', 'baseCurrency', 'dateFormat', 'whiteLabel',
+        'requireApproval',
       ];
       allowed.forEach((f) => { if (settings[f] !== undefined) tenant.settings[f] = settings[f]; });
       tenant.markModified('settings');

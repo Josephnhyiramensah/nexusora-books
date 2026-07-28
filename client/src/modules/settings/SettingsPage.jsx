@@ -1295,6 +1295,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
     city: settings?.city || '',
     region: settings?.region || '',
     taxId: settings?.taxId || '',
+    requireApproval: settings?.requireApproval || false,
     // Carry whiteLabel in the form state — WhiteLabelSettings reads its initial
     // values from here, so without it the toggle always rendered as off after a
     // refresh even though the value had saved.
@@ -1318,6 +1319,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
     setCompanyForm((prev) => ({
       ...prev,
       logo: settings.logo ?? prev.logo,
+      requireApproval: settings.requireApproval ?? prev.requireApproval,
       letterheadImage: settings.letterheadImage ?? prev.letterheadImage,
       address: settings.address ?? prev.address,
       city: settings.city ?? prev.city,
