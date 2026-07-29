@@ -27,6 +27,16 @@ const invoiceSchema = new mongoose.Schema(
     taxRate: { type: Number, default: 0 },
     taxAmount: { type: Number, default: 0 },
     total: { type: Number, default: 0 },
+    // --- Multi-currency ---
+    // currency: the invoice currency (e.g. USD). Empty = base (GHS). The amount
+    // fields above are in THIS currency (what the customer sees). exchangeRate is
+    // base-per-1-unit, locked at invoice time. base* fields are the GHS the ledger
+    // actually posts, so the books stay in base currency.
+    currency: { type: String, uppercase: true, trim: true, default: '' },
+    exchangeRate: { type: Number, default: 1 },
+    baseSubtotal: { type: Number, default: 0 },
+    baseTaxAmount: { type: Number, default: 0 },
+    baseTotal: { type: Number, default: 0 },
     amountPaid: { type: Number, default: 0 },
     balance: { type: Number, default: 0 },
     status: {
