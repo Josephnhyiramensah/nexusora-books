@@ -31,7 +31,7 @@ const createCustomer = async (req, res) => {
     const Customer = getModel(req.tenantDb, 'Customer');
     const Account = getModel(req.tenantDb, 'Account');
 
-    const { name, email, phone, address, taxId, creditLimit } = req.body;
+    const { name, email, phone, address, taxId, creditLimit, currency } = req.body;
     if (!name) return res.status(400).json({ success: false, message: 'Customer name is required.' });
 
     // Default receivable account = 1100
@@ -62,7 +62,7 @@ const updateCustomer = async (req, res) => {
     const customer = await Customer.findById(req.params.id);
     if (!customer) return res.status(404).json({ success: false, message: 'Customer not found.' });
 
-    const fields = ['name', 'email', 'phone', 'address', 'taxId', 'creditLimit'];
+    const fields = ['name', 'email', 'phone', 'address', 'taxId', 'creditLimit', 'currency'];
     fields.forEach((f) => { if (req.body[f] !== undefined) customer[f] = req.body[f]; });
     await customer.save();
 
