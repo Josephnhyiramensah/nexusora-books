@@ -199,8 +199,8 @@ export default function InvoiceListPage() {
           ['Customer', viewInvoice.customer?.name || '—'],
           ['Date', new Date(viewInvoice.date).toLocaleDateString('en-GB')],
           ['Due Date', new Date(viewInvoice.dueDate).toLocaleDateString('en-GB')],
-          ['Total', 'GHS ' + Number(viewInvoice.total||0).toFixed(2)],
-          ['Balance', 'GHS ' + Number(viewInvoice.balance||0).toFixed(2)],
+          ['Total', formatCurrency(viewInvoice.total, viewInvoice.currency || undefined) + (viewInvoice.currency && viewInvoice.currency !== 'GHS' ? '  (GHS ' + Number(viewInvoice.baseTotal||0).toFixed(2) + ')' : '')],
+          ['Balance', formatCurrency(viewInvoice.balance, viewInvoice.currency || undefined)],
           ['Status', viewInvoice.status],
         ] : []}
       />
@@ -296,14 +296,14 @@ export default function InvoiceListPage() {
                       {isOverdue && <span style={{ fontSize: 10, marginLeft: 6, fontWeight: 600 }}>OVERDUE</span>}
                     </td>
                     <td style={{ padding: '11px 16px', textAlign: 'right', fontFamily: 'monospace' }}>
-                      {formatCurrency(inv.total)}
+                      {formatCurrency(inv.total, inv.currency || undefined)}
                     </td>
                     <td style={{
                       padding: '11px 16px', textAlign: 'right', fontFamily: 'monospace',
                       color: inv.balance > 0 ? 'var(--warning)' : 'var(--success)',
                       fontWeight: 600,
                     }}>
-                      {formatCurrency(inv.balance)}
+                      {formatCurrency(inv.balance, inv.currency || undefined)}
                     </td>
                     <td style={{ padding: '11px 16px', textAlign: 'center', position: 'relative' }}>
                       <ActionMenu items={getActionItems(inv)} />
