@@ -36,7 +36,7 @@ export default function InvoiceFormPage() {
   useEffect(() => {
     customerService.getAll({ isActive: 'true' }).then((r) => { if (r.success) setCustomers(r.data); }).catch(() => {});
     accountService.getAll({ isActive: 'true' }).then((r) => {
-      if (r.success) setAccounts(r.data.filter((a) => a.type === 'revenue'));
+      if (r.success) setAccounts(r.data.filter((a) => a.type === 'revenue' && a.code !== '4300'));
     }).catch(() => {});
   }, []);
 
