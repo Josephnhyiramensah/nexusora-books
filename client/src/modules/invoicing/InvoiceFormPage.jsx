@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiPlus, FiTrash2, FiSave, FiSend } from 'react-icons/fi';
 import customerService from '../../services/customerService';
+import { useTenant } from '../../context/TenantContext';
+import api from '../../services/api';
 import invoiceService from '../../services/invoiceService';
 import accountService from '../../services/accountService';
 import SmartAccountSelect from '../../components/common/SmartAccountSelect';
@@ -18,6 +20,12 @@ export default function InvoiceFormPage() {
   const [customers, setCustomers] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [saving, setSaving] = useState(false);
+  const { settings: tenantSettings } = useTenant();
+  const baseCur = (tenantSettings?.baseCurrency || 'GHS');
+  const enabledCurrencies = (tenantSettings?.currencies || []);
+  const [invCurrency, setInvCurrency] = useState('');
+  const [invRate, setInvRate] = useState(1);
+  const [rateInfo, setRateInfo] = useState(null);
 
   const [form, setForm] = useState({
     customer: '', date: new Date().toISOString().split('T')[0],
@@ -41,9 +49,28 @@ export default function InvoiceFormPage() {
     }
   }, [form.date]);
 
+  // When the selected customer has a non-base currency, adopt it and fetch the rate.
+  useEffect(() => {
+    const cust = customers.find((c) => c._id === form.customer);
+    const cur = (cust?.currency || '').toUpperCase();
+    if (cur && cur !== baseCur) {
+      setInvCurrency(cur);
+      api.get('/currencies/rates').then((r) => {
+        const found = (r.data?.data?.rates || []).find((x) => x.currency === cur);
+        if (found && found.rate) { setInvRate(found.rate); setRateInfo(found); }
+      }).catch(() => {});
+    } else {
+      setInvCurrency(''); setInvRate(1); setRateInfo(null);
+    }
+  }, [form.customer, customers]);
+
   const subtotal = form.lines.reduce((sum, l) => sum + ((parseFloat(l.quantity) || 0) * (parseFloat(l.unitPrice) || 0)), 0);
   const taxAmount = Math.round(subtotal * (parseFloat(form.taxRate) || 0) / 100 * 100) / 100;
   const total = Math.round((subtotal + taxAmount) * 100) / 100;
+  const isForeign = invCurrency && invCurrency !== baseCur;
+  const rate = Number(invRate) || 1;
+  const baseTotal = Math.round(total * rate * 100) / 100;
+  const curLabel = isForeign ? invCurrency : baseCur;
 
   const updateLine = (i, field, value) => {
     const updated = [...form.lines];
@@ -68,6 +95,8 @@ export default function InvoiceFormPage() {
       const res = await invoiceService.create({
         customer: form.customer, date: form.date, dueDate: form.dueDate,
         taxRate: parseFloat(form.taxRate) || 0, notes: form.notes,
+        currency: isForeign ? invCurrency : '',
+        exchangeRate: rate,
         lines: validLines.map((l) => ({
           description: l.description, quantity: parseFloat(l.quantity) || 1,
           unitPrice: parseFloat(l.unitPrice), account: l.account || undefined,
@@ -181,6 +210,15 @@ export default function InvoiceFormPage() {
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
           <div style={{ width: 280 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontSize: 14 }}>
+{isForeign && (
+              <div style={{ gridColumn: '1 / -1', marginBottom: 10, padding: '10px 12px', background: 'var(--bg-app)', borderRadius: 8, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Exchange rate (1 {invCurrency} = ? {baseCur})</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="number" step="0.0001" value={invRate} onChange={(e) => setInvRate(e.target.value)} style={{ width: 110, padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 6, fontFamily: 'monospace', textAlign: 'right' }} />
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{rateInfo?.source === 'live' ? '(live)' : rateInfo?.source === 'manual' ? '(manual)' : ''}</span>
+                </span>
+              </div>
+              )}
               <span style={{ color: 'var(--text-secondary)' }}>Subtotal</span>
               <span style={{ fontFamily: 'monospace', fontWeight: 500 }}>{subtotal.toFixed(2)}</span>
             </div>
@@ -191,7 +229,7 @@ export default function InvoiceFormPage() {
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', fontSize: 16, borderTop: '2px solid var(--deep-navy)', marginTop: 4 }}>
-              <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Total (GHS)</span>
+              <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Total ({curLabel})</span>{isForeign && <span style={{ display: 'block', fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>≈ {baseCur} {baseTotal.toFixed(2)} (posts to ledger)</span>}
               <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--deep-navy)' }}>{total.toFixed(2)}</span>
             </div>
           </div>
