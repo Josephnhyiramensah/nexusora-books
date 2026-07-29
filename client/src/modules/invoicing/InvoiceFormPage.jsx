@@ -208,17 +208,19 @@ export default function InvoiceFormPage() {
 
         {/* Totals */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
-          <div style={{ width: 280 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontSize: 14 }}>
-{isForeign && (
-              <div style={{ gridColumn: '1 / -1', marginBottom: 10, padding: '10px 12px', background: 'var(--bg-app)', borderRadius: 8, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Exchange rate (1 {invCurrency} = ? {baseCur})</span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="number" step="0.0001" value={invRate} onChange={(e) => setInvRate(e.target.value)} style={{ width: 110, padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 6, fontFamily: 'monospace', textAlign: 'right' }} />
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{rateInfo?.source === 'live' ? '(live)' : rateInfo?.source === 'manual' ? '(manual)' : ''}</span>
-                </span>
+          <div style={{ width: 300 }}>
+            {isForeign && (
+              <div style={{ marginBottom: 12, padding: '10px 12px', background: 'var(--bg-app)', borderRadius: 8, fontSize: 12.5 }}>
+                <div style={{ color: 'var(--text-secondary)', marginBottom: 6 }}>Exchange rate</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>1 {invCurrency} =</span>
+                  <input type="number" step="0.0001" value={invRate} onChange={(e) => setInvRate(e.target.value)} style={{ flex: 1, minWidth: 0, padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 6, fontFamily: 'monospace', textAlign: 'right' }} />
+                  <span style={{ color: 'var(--text-muted)' }}>{baseCur}</span>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{rateInfo?.source === 'live' ? '(live)' : rateInfo?.source === 'manual' ? '(manual)' : ''}</span>
+                </div>
               </div>
-              )}
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontSize: 14 }}>
               <span style={{ color: 'var(--text-secondary)' }}>Subtotal</span>
               <span style={{ fontFamily: 'monospace', fontWeight: 500 }}>{subtotal.toFixed(2)}</span>
             </div>
@@ -228,13 +230,19 @@ export default function InvoiceFormPage() {
                 <span style={{ fontFamily: 'monospace', fontWeight: 500 }}>{taxAmount.toFixed(2)}</span>
               </div>
             )}
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', fontSize: 16, borderTop: '2px solid var(--deep-navy)', marginTop: 4 }}>
-              <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Total ({curLabel})</span>{isForeign && <span style={{ display: 'block', fontSize: 11, fontWeight: 400, color: 'var(--text-muted)' }}>≈ {baseCur} {baseTotal.toFixed(2)} (posts to ledger)</span>}
-              <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--deep-navy)' }}>{total.toFixed(2)}</span>
+            <div style={{ borderTop: '2px solid var(--deep-navy)', marginTop: 4, paddingTop: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16 }}>
+                <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Total ({curLabel})</span>
+                <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--deep-navy)' }}>{total.toFixed(2)}</span>
+              </div>
+              {isForeign && (
+                <div style={{ textAlign: 'right', fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                  ≈ {baseCur} {baseTotal.toFixed(2)} (posts to ledger)
+                </div>
+              )}
             </div>
           </div>
         </div>
-
         {/* Notes */}
         <div style={{ marginBottom: 24 }}>
           <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Notes</label>
