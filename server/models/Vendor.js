@@ -9,6 +9,8 @@ const vendorSchema = new mongoose.Schema(
     phone: { type: String, trim: true },
     address: { type: String, trim: true },
     taxId: { type: String, trim: true },
+    // Default transaction currency. Empty/base = books currency (GHS).
+    currency: { type: String, uppercase: true, trim: true, default: '' },
     outstandingBalance: { type: Number, default: 0 },
     payableAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'Account' },
     isActive: { type: Boolean, default: true },

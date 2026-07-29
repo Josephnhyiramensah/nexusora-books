@@ -23,6 +23,7 @@ function CustomerForm({ customer, onSave, onCancel }) {
     address: customer?.address || '',
     taxId: customer?.taxId || '',
     creditLimit: customer?.creditLimit || 0,
+    currency: customer?.currency || '',
   });
 
   const handleSubmit = (e) => {
@@ -108,6 +109,15 @@ function CustomerForm({ customer, onSave, onCancel }) {
             onChange={(e) => setForm({ ...form, creditLimit: e.target.value })}
           />
         </div>
+        {enabledCurrencies.length > 0 && (
+          <div>
+            <label style={labelStyle}>Currency</label>
+            <select style={inputStyle} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
+              <option value="">{baseCur} (default)</option>
+              {enabledCurrencies.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>

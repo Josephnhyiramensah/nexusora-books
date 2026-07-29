@@ -9,6 +9,8 @@ const customerSchema = new mongoose.Schema(
     phone: { type: String, trim: true },
     address: { type: String, trim: true },
     taxId: { type: String, trim: true },
+    // Default transaction currency. Empty/base = books currency (GHS).
+    currency: { type: String, uppercase: true, trim: true, default: '' },
     creditLimit: { type: Number, default: 0 },
     outstandingBalance: { type: Number, default: 0 },
     receivableAccount: { type: mongoose.Schema.Types.ObjectId, ref: 'Account' },

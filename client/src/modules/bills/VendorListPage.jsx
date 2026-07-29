@@ -6,6 +6,7 @@ import { useToast } from '../../hooks/useToast';
 import Modal from '../../components/common/Modal';
 
 import ResponsiveTable from '../../components/common/ResponsiveTable';
+import { useTenant } from '../../context/TenantContext';
 
 function VendorForm({ vendor, onSave, onCancel }) {
   const [form, setForm] = useState({
@@ -13,6 +14,9 @@ function VendorForm({ vendor, onSave, onCancel }) {
     phone: vendor?.phone || '', address: vendor?.address || '',
     taxId: vendor?.taxId || '',
   });
+  const { settings: venSettings } = useTenant();
+  const enabledCurrencies = (venSettings?.currencies || []);
+  const baseCur = (venSettings?.baseCurrency || 'GHS');
   const handleSubmit = (e) => { e.preventDefault(); onSave(form); };
   const inputStyle = { width: '100%', padding: '10px 14px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 14, color: 'var(--text-primary)', outline: 'none' };
   const labelStyle = { display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6 };
@@ -35,6 +39,15 @@ function VendorForm({ vendor, onSave, onCancel }) {
         <label style={labelStyle}>Tax ID (TIN)</label>
         <input style={inputStyle} value={form.taxId} onChange={(e) => setForm({ ...form, taxId: e.target.value })} />
       </div>
+      {enabledCurrencies.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <label style={labelStyle}>Currency</label>
+          <select style={inputStyle} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
+            <option value="">{baseCur} (default)</option>
+            {enabledCurrencies.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
         <button type="button" onClick={onCancel} style={{ padding: '10px 22px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', fontSize: 14, color: 'var(--text-secondary)', background: '#fff' }}>Cancel</button>
         <button type="submit" style={{ padding: '10px 22px', borderRadius: 'var(--radius-sm)', background: 'var(--nexusora-gold)', color: 'var(--deep-navy)', fontSize: 14, fontWeight: 600 }}>{vendor ? 'Update' : 'Create'} Vendor</button>
