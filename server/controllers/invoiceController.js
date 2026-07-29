@@ -155,6 +155,9 @@ const sendInvoice = async (req, res) => {
       return res.json({ success: true, message: 'Invoice ' + invoice.invoiceNumber + ' submitted for approval.', data: invoice });
     }
 
+    // Multi-currency: post the ledger in base (GHS). For GHS invoices rate=1.
+    const fxRate = (invoice.exchangeRate && invoice.exchangeRate > 0) ? invoice.exchangeRate : 1;
+    const toBase = (amt) => Math.round((Number(amt) || 0) * fxRate * 100) / 100;
     const arAccount = await Account.findOne({ code: '1100' });
     const taxAccount = await Account.findOne({ code: '2400' });
     if (!arAccount) return res.status(500).json({ success: false, message: 'Accounts Receivable (1100) not found.' });
