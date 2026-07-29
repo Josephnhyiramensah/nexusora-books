@@ -25,6 +25,9 @@ function CustomerForm({ customer, onSave, onCancel }) {
     creditLimit: customer?.creditLimit || 0,
     currency: customer?.currency || '',
   });
+  const { settings: custSettings } = useTenant();
+  const enabledCurrencies = custSettings?.currencies || [];
+  const baseCur = custSettings?.baseCurrency || 'GHS';
 
   const handleSubmit = (e) => {
     e.preventDefault();
