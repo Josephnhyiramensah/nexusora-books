@@ -42,7 +42,7 @@ const createInvoice = async (req, res) => {
   try {
     const Invoice = getModel(req.tenantDb, 'Invoice');
     const Account = getModel(req.tenantDb, 'Account');
-    const { customer, date, dueDate, lines, taxRate, notes } = req.body;
+    const { customer, date, dueDate, lines, taxRate, notes, currency, exchangeRate } = req.body;
 
     if (!customer || !date || !dueDate || !lines || lines.length < 1) {
       return res.status(400).json({ success: false, message: 'Required: customer, date, dueDate, and at least 1 line.' });
@@ -61,6 +61,10 @@ const createInvoice = async (req, res) => {
     const subtotal = processedLines.reduce((sum, l) => sum + l.amount, 0);
     const tax = taxRate ? Math.round(subtotal * (Number(taxRate) / 100) * 100) / 100 : 0;
     const total = Math.round((subtotal + tax) * 100) / 100;
+    const fxRate = (Number(exchangeRate) > 0) ? Number(exchangeRate) : 1;
+    const baseSubtotal = Math.round(subtotal * fxRate * 100) / 100;
+    const baseTaxAmount = Math.round(tax * fxRate * 100) / 100;
+    const baseTotal = Math.round(total * fxRate * 100) / 100;
     const invoiceNumber = await generateInvoiceNumber(Invoice);
 
     const invoice = await Invoice.create({
@@ -158,14 +162,14 @@ const sendInvoice = async (req, res) => {
     const journalLines = [];
     journalLines.push({
       account: arAccount._id, accountCode: '1100', accountName: arAccount.name,
-      debit: invoice.total, credit: 0, description: `Invoice ${invoice.invoiceNumber}`,
+      debit: toBase(invoice.total), credit: 0, description: `Invoice ${invoice.invoiceNumber}`,
     });
 
     for (const line of invoice.lines) {
       const revenueAcct = line.account ? await Account.findById(line.account) : await Account.findOne({ code: '4000' });
       journalLines.push({
         account: revenueAcct._id, accountCode: revenueAcct.code, accountName: revenueAcct.name,
-        debit: 0, credit: line.amount, description: line.description,
+        debit: 0, credit: toBase(line.amount), description: line.description,
       });
     }
 
@@ -182,7 +186,7 @@ const sendInvoice = async (req, res) => {
       entryNumber, date: invoice.date, journalType: 'sales',
       description: `Invoice ${invoice.invoiceNumber} sent`,
       reference: invoice.invoiceNumber, lines: journalLines,
-      totalDebit: invoice.total, totalCredit: invoice.total,
+      totalDebit: toBase(invoice.total), totalCredit: toBase(invoice.total),
       status: 'posted', postedBy: req.user._id, postedAt: new Date(), createdBy: req.user._id,
     });
 
@@ -197,10 +201,13 @@ const sendInvoice = async (req, res) => {
 
     const customer = await Customer.findById(invoice.customer);
     if (customer) {
-      customer.outstandingBalance = Math.round((customer.outstandingBalance + invoice.total) * 100) / 100;
+      customer.outstandingBalance = Math.round((customer.outstandingBalance + toBase(invoice.total)) * 100) / 100;
       await customer.save();
     }
 
+    invoice.baseSubtotal = toBase(invoice.subtotal);
+    invoice.baseTaxAmount = toBase(invoice.taxAmount);
+    invoice.baseTotal = toBase(invoice.total);
     invoice.status = 'sent';
     invoice.journalEntry = journalEntry._id;
     await invoice.save();
