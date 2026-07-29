@@ -198,6 +198,11 @@ async function generateCustomerStatement({ customer, invoices, tenantSettings, c
 
 // ─── Invoice PDF ──────────────────────────────────────────────────────────────
 async function generateInvoicePDF({ invoice, customer, tenantSettings, companyName, plan }) {
+  const invCur = (invoice.currency || 'GHS');
+  const isForeign = invCur !== 'GHS';
+  const fxRate = invoice.exchangeRate || 1;
+  const M = (v) => invCur + ' ' + (Number(v) || 0).toFixed(2);
+  const baseTot = invoice.baseTotal || ((invoice.total || 0) * fxRate);
   const lhBuffer = await loadLetterheadBuffer(tenantSettings?.letterheadImage);
   const showBranding = (plan || 'trial') === 'trial';  return new Promise((resolve, reject) => {
     try {
@@ -259,7 +264,7 @@ async function generateInvoicePDF({ invoice, customer, tenantSettings, companyNa
       const details = [
         ['Invoice Date:', new Date(invoice.date).toLocaleDateString('en-GB')],
         ['Due Date:',     new Date(invoice.dueDate).toLocaleDateString('en-GB')],
-        ['Currency:',     'GHS (Ghana Cedis)'],
+        ['Currency:',     isForeign ? (invCur + ' (rate: 1 ' + invCur + ' = ' + fxRate + ' GHS)') : 'GHS (Ghana Cedis)'],
       ];
       doc.fillColor(COLORS.navy).fontSize(9).font('Helvetica-Bold').text('INVOICE DETAILS', 350, sY + 54);
       details.forEach(([label, value], i) => {
@@ -285,8 +290,8 @@ async function generateInvoicePDF({ invoice, customer, tenantSettings, companyNa
         doc.fillColor(COLORS.black).fontSize(9).font('Helvetica');
         doc.text(line.description || '—',             58,  y + 6, { width: 268 });
         doc.text(String(line.quantity || 0),           330, y + 6, { width: 50,  align: 'right' });
-        doc.text(`GHS ${(line.unitPrice || 0).toFixed(2)}`, 385, y + 6, { width: 70,  align: 'right' });
-        doc.text(`GHS ${(line.amount   || 0).toFixed(2)}`,  460, y + 6, { width: 80,  align: 'right' });
+        doc.text(M(line.unitPrice), 385, y + 6, { width: 70,  align: 'right' });
+        doc.text(M(line.amount),  460, y + 6, { width: 80,  align: 'right' });
         y += 20;
       });
 
@@ -312,10 +317,10 @@ async function generateInvoicePDF({ invoice, customer, tenantSettings, companyNa
 
       if (invoice.amountPaid > 0) {
         doc.fillColor(COLORS.green).fontSize(9).font('Helvetica').text('Amount Paid:', totalsX, y);
-        doc.font('Helvetica-Bold').text(`GHS ${(invoice.amountPaid || 0).toFixed(2)}`, valX, y, { width: valW, align: 'right' });
+        doc.font('Helvetica-Bold').text(M(invoice.amountPaid), valX, y, { width: valW, align: 'right' });
         y += 16;
         doc.fillColor(COLORS.red).text('Balance Due:', totalsX, y);
-        doc.font('Helvetica-Bold').text(`GHS ${(invoice.balance || 0).toFixed(2)}`, valX, y, { width: valW, align: 'right' });
+        doc.font('Helvetica-Bold').text(M(invoice.balance), valX, y, { width: valW, align: 'right' });
       }
 
       if (invoice.notes) {
