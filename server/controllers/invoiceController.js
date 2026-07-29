@@ -72,6 +72,8 @@ const createInvoice = async (req, res) => {
       lines: processedLines,
       subtotal, taxRate: taxRate || 0, taxAmount: tax,
       total, amountPaid: 0, balance: total,
+      currency: currency || '', exchangeRate: fxRate,
+      baseSubtotal, baseTaxAmount, baseTotal,
       status: 'draft', notes, createdBy: req.user._id,
     });
 
