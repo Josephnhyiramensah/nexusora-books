@@ -36,6 +36,7 @@ const schemas = {
   CasualWorker: casualWorkerSchema,
   ReconciliationSession: reconciliationSessionSchema,
   CasualPaymentSheet: casualPaymentSheetSchema,
+  ExchangeRate: exchangeRateSchema,
 };
 
 function getModel(tenantDb, modelName, schema) {
