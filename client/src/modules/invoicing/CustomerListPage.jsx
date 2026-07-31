@@ -318,7 +318,8 @@ export default function CustomerListPage() {
                            const { data } = await api.patch(`/customers/${c._id}/toggle-active`);
                            if (data.success) { showToast(data.message); fetchCustomers(); }
                           } catch (err) {
-                            showToast('Failed', 'error');
+                            console.error('TOGGLE ERROR:', err);
+                            showToast('Failed: ' + (err?.response?.data?.message || err?.message || 'unknown'), 'error');
                           }
                         },
                         variant: c.isActive ? 'danger' : 'success',
