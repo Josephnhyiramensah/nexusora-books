@@ -255,10 +255,20 @@ async function generateInvoicePDF({ invoice, customer, tenantSettings, companyNa
       doc.fillColor(COLORS.navy).fontSize(9).font('Helvetica-Bold').text('BILL TO', 50, sY + 54);
       doc.fillColor(COLORS.black).fontSize(11).font('Helvetica-Bold').text(customer?.name || '—', 50, sY + 68);
       doc.fillColor(COLORS.gray).fontSize(9).font('Helvetica');
-      if (customer?.email)   doc.text(customer.email,   50, sY + 82);
-      if (customer?.phone)   doc.text(customer.phone,   50, sY + 94);
-      if (customer?.address) doc.text(customer.address, 50, sY + 106);
-      if (customer?.taxId)   doc.text(`TIN: ${customer.taxId}`, 50, sY + 118);
+      // Running cursor so multi-line addresses push the following fields down
+      // instead of overlapping them. width caps the line so it wraps predictably.
+      let billY = sY + 82;
+      const billW = 250;
+      const billLine = (txt) => {
+        if (!txt) return;
+        const h = doc.heightOfString(String(txt), { width: billW });
+        doc.text(String(txt), 50, billY, { width: billW });
+        billY += h + 2;
+      };
+      billLine(customer?.email);
+      billLine(customer?.phone);
+      billLine(customer?.address);
+      if (customer?.taxId) billLine('TIN: ' + customer.taxId);
 
       // Invoice details right
       const details = [
