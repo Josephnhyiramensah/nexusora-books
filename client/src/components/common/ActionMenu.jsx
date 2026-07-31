@@ -31,7 +31,7 @@ export default function ActionMenu({ items = [], trigger }) {
   return (
     <div ref={menuRef} style={{ position: 'relative', display: 'inline-block' }}>
       {trigger ? (
-        <div onClick={() => setIsOpen(!isOpen)} style={{ cursor: 'pointer' }}>{trigger}</div>
+        <div onClick={toggleOpen} style={{ cursor: 'pointer' }}>{trigger}</div>
       ) : (
         <motion.button
           onClick={() => setIsOpen(!isOpen)}
