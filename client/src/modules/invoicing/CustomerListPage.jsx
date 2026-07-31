@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { FiDownload, FiPlus, FiSearch } from 'react-icons/fi';
 import { exportCustomers } from '../reports/dataExports';
 import customerService from '../../services/customerService';
+import api from '../../services/api';
 import { formatCurrency } from '../../utils/formatters';
 import { useToast } from '../../hooks/useToast';
 import { useTenant } from '../../context/TenantContext';
