@@ -5,7 +5,19 @@ import { FiMoreVertical } from 'react-icons/fi';
 
 export default function ActionMenu({ items = [], trigger }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [openUp, setOpenUp] = useState(false);
   const menuRef = useRef(null);
+
+  // Flip the menu above the button when there isn't room below (bottom rows).
+  const toggleOpen = () => {
+    if (!isOpen && menuRef.current) {
+      const rect = menuRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const estMenuHeight = Math.min(60 + items.length * 44, 360);
+      setOpenUp(spaceBelow < estMenuHeight + 20);
+    }
+    setIsOpen((v) => !v);
+  };
 
   useEffect(() => {
     const handle = (e) => {
@@ -34,7 +46,7 @@ export default function ActionMenu({ items = [], trigger }) {
         <div onClick={toggleOpen} style={{ cursor: 'pointer' }}>{trigger}</div>
       ) : (
         <motion.button
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={toggleOpen}
           whileHover={{ background: '#EBF5FF', borderColor: '#2E75B6' }}
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -51,15 +63,14 @@ export default function ActionMenu({ items = [], trigger }) {
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.93, y: -6 }}
+            initial={{ opacity: 0, scale: 0.93, y: openUp ? 6 : -6 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.93, y: -6 }}
+            exit={{ opacity: 0, scale: 0.93, y: openUp ? 6 : -6 }}
             transition={{ type: 'spring', damping: 28, stiffness: 380 }}
             style={{
               position: 'absolute',
-              top: '100%',
+              ...(openUp ? { bottom: '100%', marginBottom: 6 } : { top: '100%', marginTop: 6 }),
               right: 0,
-              marginTop: 6,
               background: '#fff',
               border: '1px solid #E2E8F0',
               borderRadius: 12,
