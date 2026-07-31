@@ -305,14 +305,14 @@ async function generateInvoicePDF({ invoice, customer, tenantSettings, companyNa
         invoice.taxRate ? [`VAT (${invoice.taxRate}%):`, invoice.taxAmount || 0] : null,
       ].filter(Boolean).forEach(([label, value]) => {
         doc.fillColor(COLORS.gray).fontSize(9).font('Helvetica').text(label, totalsX, y);
-        doc.fillColor(COLORS.black).font('Helvetica-Bold').text(`GHS ${value.toFixed(2)}`, valX, y, { width: valW, align: 'right' });
+        doc.fillColor(COLORS.black).font('Helvetica-Bold').text(M(value), valX, y, { width: valW, align: 'right' });
         y += 16;
       });
 
       drawLine(doc, y, COLORS.navy);
       y += 6;
       doc.fillColor(COLORS.navy).fontSize(12).font('Helvetica-Bold').text('TOTAL:', totalsX, y);
-      doc.fontSize(14).text(`GHS ${(invoice.total || 0).toFixed(2)}`, valX, y - 2, { width: valW, align: 'right' });
+      doc.fontSize(14).text(M(invoice.total), valX, y - 2, { width: valW, align: 'right' });
       y += 20;
 
       if (invoice.amountPaid > 0) {
