@@ -6,6 +6,9 @@ const getAuditLogs = async (req, res) => {
     const { module, action, startDate, endDate, limit = 100, page = 1 } = req.query;
 
     const filter = {};
+    // Hide platform/console actions from the tenant audit view. Those entries
+    // carry an actorLabel; tenant-user actions reference a user instead.
+    filter.actorLabel = { $exists: false };
     if (module) filter.module = module;
     if (action) filter.action = action;
     if (startDate || endDate) {
