@@ -8,9 +8,9 @@ import { getPlatformSettings } from '../services/platformService';
 
 const PLANS = [
   { key: 'trial', name: 'Free Trial', price: 'GHS 0', period: '30 days', color: '#CBD5E1', features: ['2 user accounts', '1 accountant', 'Core accounting modules', 'Journals, invoicing, reports', 'No credit card required'], cta: 'Start Free Trial', popular: false },
-  { key: 'starter', name: 'Starter', price: 'GHS 300', period: 'per month', color: '#2563EB', features: ['5 user accounts', '2 accountants', 'All core modules', 'Inventory & fixed assets', 'Payroll (PAYE + SSNIT)', 'Email support'], cta: 'Choose Starter', popular: false },
-  { key: 'professional', name: 'Professional', price: 'GHS 990', period: 'per month', color: '#C9A227', features: ['20 user accounts', '5 accountants', 'Everything in Starter', 'AI Anomaly Detection', 'AI Cash Flow Forecast', 'Smart Categorisation', 'Priority support'], cta: 'Choose Professional', popular: true },
-{ key: 'enterprise', name: 'Enterprise', price: 'GHS 2,400', period: 'per month', color: '#F0C24B', italic: true, features: ['Unlimited users', 'Unlimited accountants', 'Everything in Professional', 'API access', 'White-label option', 'Dedicated support', 'Custom onboarding'], cta: 'Contact Us', popular: false },
+  { key: 'starter', name: 'Starter', price: 'GHS 300', period: 'per month', color: '#2563EB', features: ['5 user accounts', '2 accountants', 'All core modules', 'Inventory & fixed assets', 'Payroll (PAYE + SSNIT)', 'Recurring invoices', 'Branded PDF & Excel exports', 'Email support'], cta: 'Choose Starter', popular: false },
+  { key: 'professional', name: 'Professional', price: 'GHS 990', period: 'per month', color: '#C9A227', features: ['20 user accounts', '5 accountants', 'Everything in Starter', 'AI Anomaly Detection', 'AI Cash Flow Forecast', 'Smart Categorisation', 'Multi-currency invoicing', 'Bank & MoMo reconciliation', 'Audit trail', 'Priority support'], cta: 'Choose Professional', popular: true },
+{ key: 'enterprise', name: 'Enterprise', price: 'GHS 2,400', period: 'per month', color: '#F0C24B', italic: true, features: ['Unlimited users', 'Unlimited accountants', 'Everything in Professional', 'Approval workflows (maker-checker)', 'API access', 'White-label option', 'Dedicated support', 'Custom onboarding'], cta: 'Contact Us', popular: false },
 ];
 
 export default function RegisterPage() {
