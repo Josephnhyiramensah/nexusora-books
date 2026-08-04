@@ -1,31 +1,10 @@
 'use strict';
-
-/**
- * Bank statement dispatcher
- * -------------------------
- * The single entry point the reconciliation controller calls for ANY bank
- * statement. The controller stays bank-neutral: it says "parse this bank
- * statement", and the registry resolves which bank FORMAT it is and routes to
- * the matching adapter. Every adapter returns the SAME { meta, lines, totals }
- * contract (identical to utils/momoParser.js), so downstream code never knows
- * or cares which bank produced the file.
- *
- * Adding a new bank = add one entry to ADAPTERS. No controller change.
- *
- * No DB, no ledger.
- */
-
 const { fidelityToSessionLines } = require('./fidelityToSessionLines');
+const { readTabular } = require('./genericTabularReader');
+const { applyColumnMapping } = require('./applyColumnMapping');
+const { classifyBucket } = require('./bankBucketClassifier');
+const crypto = require('crypto');
 
-/**
- * Each adapter:
- *   key       : stable format id (stored on the session as meta.format)
- *   label     : human name for UI / logs
- *   detect(buf, fileName) -> boolean : cheap signature test
- *   parse(input, opts) -> { meta, lines, totals }
- *
- * Order matters only for auto-detection: first match wins.
- */
 const ADAPTERS = [
   {
     key: 'fidelity',
@@ -37,17 +16,10 @@ const ADAPTERS = [
       return out;
     },
   },
-  // Future: { key:'gcb', label:'GCB Bank', detect:detectGcb, parse:gcbToSessionLines }, etc.
 ];
 
-/**
- * Fidelity signature: an xlsx whose sheet carries the
- * DATE / DESCRIPTION / VALUE DATE / DEBIT / CREDIT / BALANCE header row.
- * We read only the first sheet's header region — cheap, no full parse.
- */
 function detectFidelity(buffer) {
   try {
-    // eslint-disable-next-line global-require
     const XLSX = require('xlsx');
     const wb = XLSX.read(buffer, { type: 'buffer', sheetRows: 12 });
     const ws = wb.Sheets[wb.SheetNames[0]];
@@ -66,11 +38,9 @@ function detectFidelity(buffer) {
 function listFormats() {
   return ADAPTERS.map((a) => ({ key: a.key, label: a.label }));
 }
-
 function getAdapter(format) {
   return ADAPTERS.find((a) => a.key === format) || null;
 }
-
 function detectFormat(buffer, fileName) {
   const hit = ADAPTERS.find((a) => {
     try { return a.detect(buffer, fileName); } catch (e) { return false; }
@@ -78,33 +48,56 @@ function detectFormat(buffer, fileName) {
   return hit ? hit.key : null;
 }
 
-/**
- * Parse a bank statement into the ReconciliationSession contract.
- * @param {Buffer|string} input  file buffer (or path, for CLI testing)
- * @param {object} opts { fileName, format, contraMap }
- *   - format: force a specific adapter; omit to auto-detect.
- * @returns {{ meta, lines, totals }}
- */
+function toBuffer(input) {
+  if (typeof input === 'string') return require('fs').readFileSync(input);
+  return input;
+}
+
+// Known-format parse. Throws if format unknown (caller handles mapping fallback).
 function parseBankStatement(input, opts = {}) {
   const { fileName = null, format = null, contraMap = {} } = opts;
-
-  // For detection we need a buffer; if given a path, read it (CLI/testing only).
-  let buffer = input;
-  if (typeof input === 'string') {
-    // eslint-disable-next-line global-require
-    buffer = require('fs').readFileSync(input);
-  }
-
+  const buffer = toBuffer(input);
   const chosen = format || detectFormat(buffer, fileName);
   if (!chosen) {
-    throw new Error('Unrecognized bank statement format. Supported: ' +
-      ADAPTERS.map((a) => a.label).join(', ') + '.');
+    const e = new Error('UNRECOGNIZED_FORMAT');
+    e.code = 'UNRECOGNIZED_FORMAT';
+    throw e;
   }
-
   const adapter = getAdapter(chosen);
   if (!adapter) throw new Error('No adapter registered for format: ' + chosen);
-
   return adapter.parse(buffer, { filename: fileName, contraMap });
 }
 
-module.exports = { parseBankStatement, detectFormat, listFormats };
+// Return the file's columns + samples so the UI can let a user map an unknown bank.
+function previewColumns(input) {
+  const buffer = toBuffer(input);
+  const t = readTabular(buffer, { sampleCount: 4 });
+  return {
+    sheetName: t.sheetName,
+    headerRowIndex: t.headerRowIndex,
+    totalRows: t.totalRows,
+    columns: t.columns,       // [{ index, header, samples }]
+    previewRows: t.previewRows,
+  };
+}
+
+// Parse an unknown bank using a saved BankColumnMapping. Runs the balance-chain
+// safety gate (inside applyColumnMapping) and then classifies each line.
+function parseWithMapping(input, mapping, opts = {}) {
+  const { contraMap = {} } = opts;
+  const buffer = toBuffer(input);
+  const fileHash = crypto.createHash('sha256').update(buffer).digest('hex');
+  const t = readTabular(buffer);
+  const res = applyColumnMapping(t.grid, mapping, { fileHash });
+  if (!res.ok) { const e = new Error(res.error); e.code = 'MAPPING_INVALID'; throw e; }
+
+  res.lines = res.lines.map((l) => {
+    const { bucket, confidence } = classifyBucket({ type: l.description, description: l.description, signed: l.signed });
+    const suggestedContra = Object.prototype.hasOwnProperty.call(contraMap, bucket) ? contraMap[bucket] : null;
+    return Object.assign(l, { type: (l.description || 'BANK').split(';')[0].slice(0, 40), bucket, bucketConfidence: confidence, suggestedContra });
+  });
+  res.meta.fileHash = fileHash;
+  return res;
+}
+
+module.exports = { parseBankStatement, detectFormat, listFormats, previewColumns, parseWithMapping };

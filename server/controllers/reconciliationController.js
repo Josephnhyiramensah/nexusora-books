@@ -1,7 +1,7 @@
 const { getModel } = require('../utils/getModel');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { parseStatement } = require('../utils/momoParser');
-const { parseBankStatement } = require('../utils/bankStatement');
+const { parseBankStatement, previewColumns, parseWithMapping } = require('../utils/bankStatement');
 const seedContraRules = require('../utils/bankStatement/seedContraRules');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
 
@@ -40,6 +40,15 @@ const importStatement = async (req, res) => {
         parsed = await parseStatement(buffer, fileName);
       }
     } catch (e) {
+      if (source === 'bank' && e.code === 'UNRECOGNIZED_FORMAT') {
+        try {
+          const b = Buffer.from(b64, 'base64');
+          const preview = previewColumns(b);
+          return res.json({ success: true, needsMapping: true, message: 'Unrecognized bank — map its columns to import.', data: preview });
+        } catch (pe) {
+          return res.status(422).json({ success: false, message: 'Could not read file: ' + pe.message });
+        }
+      }
       return res.status(422).json({ success: false, message: 'Could not read statement: ' + e.message });
     }
 
@@ -100,6 +109,87 @@ const importStatement = async (req, res) => {
   } catch (error) {
     console.error('[Reconciliation] Import error:', error.message);
     res.status(500).json({ success: false, message: 'Failed to import statement.' });
+  }
+};
+
+// Preview the columns of an unrecognized bank file so the UI can map them.
+const previewColumnsCtrl = async (req, res) => {
+  try {
+    const { fileBase64 } = req.body;
+    if (!fileBase64) return res.status(400).json({ success: false, message: 'No file supplied.' });
+    const b64 = fileBase64.includes(',') ? fileBase64.split(',')[1] : fileBase64;
+    const buffer = Buffer.from(b64, 'base64');
+    const preview = previewColumns(buffer);
+    return res.json({ success: true, data: preview });
+  } catch (e) {
+    console.error('[Reconciliation] previewColumns error:', e.message);
+    return res.status(422).json({ success: false, message: 'Could not read file: ' + e.message });
+  }
+};
+
+// Import an unknown bank using a column mapping. Validates via the balance
+// gate, saves the mapping for next time, then creates the draft session.
+const importMapped = async (req, res) => {
+  try {
+    const { fileBase64, fileName, bankName, mapping, bankAccountId } = req.body;
+    if (!fileBase64) return res.status(400).json({ success: false, message: 'No file supplied.' });
+    if (!bankName || !mapping) return res.status(400).json({ success: false, message: 'Bank name and column mapping are required.' });
+    const b64 = fileBase64.includes(',') ? fileBase64.split(',')[1] : fileBase64;
+    const buffer = Buffer.from(b64, 'base64');
+
+    const BankContraRule = getModel(req.tenantDb, 'BankContraRule');
+    await seedContraRules(req.tenantDb);
+    const rules = await BankContraRule.find({ active: true }).lean();
+    const contraMap = {};
+    rules.forEach((r) => { contraMap[r.bucket] = r.contraAccountCode; });
+
+    const fullMapping = Object.assign({ bankName }, mapping);
+    let parsed;
+    try {
+      parsed = parseWithMapping(buffer, fullMapping, { contraMap });
+    } catch (e) {
+      // MAPPING_INVALID carries the balance-gate explanation.
+      return res.status(422).json({ success: false, message: e.message });
+    }
+
+    // Save / update the mapping for this bank (proven, since it balanced).
+    const BankColumnMapping = getModel(req.tenantDb, 'BankColumnMapping');
+    await BankColumnMapping.findOneAndUpdate(
+      { bankName },
+      { $set: { bankName, columns: fullMapping.columns, amountConvention: fullMapping.amountConvention || 'separate', dateFormat: fullMapping.dateFormat || null, headerRow: (fullMapping.headerRow != null ? fullMapping.headerRow : null), dataStartRow: (fullMapping.dataStartRow != null ? fullMapping.dataStartRow : null), sampleValidated: true, active: true, createdBy: req.user._id } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    const Session = getModel(req.tenantDb, 'ReconciliationSession');
+    const priorIds = new Set();
+    const existing = await Session.find({}, { 'lines.externalId': 1 }).lean();
+    existing.forEach((s) => (s.lines || []).forEach((l) => l.externalId && priorIds.add(l.externalId)));
+    const freshLines = parsed.lines.filter((l) => !l.externalId || !priorIds.has(l.externalId));
+    const skipped = parsed.lines.length - freshLines.length;
+    if (freshLines.length === 0) {
+      return res.status(409).json({ success: false, message: 'Every transaction in this statement has already been imported (' + skipped + ' duplicates skipped).' });
+    }
+    const count = await Session.countDocuments({});
+    const sessionNumber = 'REC-' + new Date().getFullYear() + '-' + String(count + 1).padStart(3, '0');
+    const session = await Session.create({
+      sessionNumber, source: 'bank', bankAccount: bankAccountId || null,
+      accountHolder: parsed.meta.accountHolder || null, accountMsisdn: null,
+      periodStart: parsed.meta.periodStart, periodEnd: parsed.meta.periodEnd,
+      openingBalance: r2(parsed.meta.openingBalance), closingBalance: r2(parsed.meta.closingBalance),
+      fileName: fileName || (bankName + ' statement'),
+      lines: freshLines,
+      totalIn: r2(parsed.totals.totalIn), totalOut: r2(parsed.totals.totalOut), totalFees: r2(parsed.totals.totalFees),
+      status: 'draft', importedBy: req.user._id,
+    });
+    await logAudit(req.tenantDb, {
+      userId: req.user._id, action: 'reconcile_bank', module: 'bank',
+      entityId: session._id, entityType: 'ReconciliationSession',
+      description: 'Imported mapped ' + bankName + ' statement ' + sessionNumber + ' — ' + freshLines.length + ' transactions' + (skipped ? ' (' + skipped + ' duplicates skipped)' : ''),
+    }, req);
+    return res.json({ success: true, message: 'Imported ' + sessionNumber + ' (' + freshLines.length + ' lines).', data: session });
+  } catch (e) {
+    console.error('[Reconciliation] importMapped error:', e.message);
+    return res.status(500).json({ success: false, message: 'Failed to import: ' + e.message });
   }
 };
 
@@ -545,4 +635,4 @@ const reconcileSession = async (req, res) => {
     res.status(500).json({ success: false, message: 'Reconcile failed: ' + error.message });
   }
 };
-module.exports = { importStatement, getSessions, getSession, deleteSession, postLine, ignoreLine, autoMatch, postBatch, confirmMatch, reconcileSession };
+module.exports = { importStatement, getSessions, getSession, deleteSession, postLine, ignoreLine, autoMatch, postBatch, confirmMatch, reconcileSession, previewColumnsCtrl, importMapped };
