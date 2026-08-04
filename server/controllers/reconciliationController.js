@@ -84,7 +84,7 @@ const importStatement = async (req, res) => {
     });
 
     await logAudit(req.tenantDb, {
-      userId: req.user._id, action: 'reconcile_bank', module: 'banking',
+      userId: req.user._id, action: 'reconcile_bank', module: 'bank',
       entityId: session._id, entityType: 'ReconciliationSession',
       description: 'Imported ' + source + ' statement ' + sessionNumber + ' — '
         + freshLines.length + ' transactions' + (skipped ? ' (' + skipped + ' duplicates skipped)' : ''),
@@ -514,7 +514,7 @@ const reconcileSession = async (req, res) => {
       await session.save();
       finalised = true;
       await logAudit(req.tenantDb, {
-        userId: req.user._id, action: 'reconcile_bank', module: 'banking',
+        userId: req.user._id, action: 'reconcile_bank', module: 'bank',
         entityId: session._id, entityType: 'ReconciliationSession',
         description: 'Reconciled ' + session.sessionNumber + ' — ' + matched + ' posted/matched, ' + ignored + ' ignored',
       }, req);
