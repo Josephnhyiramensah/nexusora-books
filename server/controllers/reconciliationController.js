@@ -1,6 +1,8 @@
 const { getModel } = require('../utils/getModel');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { parseStatement } = require('../utils/momoParser');
+const { parseBankStatement } = require('../utils/bankStatement');
+const seedContraRules = require('../utils/bankStatement/seedContraRules');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -24,7 +26,19 @@ const importStatement = async (req, res) => {
 
     let parsed;
     try {
-      parsed = await parseStatement(buffer, fileName);
+      if (source === 'bank') {
+        // Bank path: dispatcher auto-detects the bank format. Seed the
+        // tenant's contra rules and pass the bucket->account map so each
+        // line carries a suggestedContra for autoMatch. Draft-only; no posting.
+        const BankContraRule = getModel(req.tenantDb, 'BankContraRule');
+        await seedContraRules(req.tenantDb);
+        const rules = await BankContraRule.find({ active: true }).lean();
+        const contraMap = {};
+        rules.forEach((r) => { contraMap[r.bucket] = r.contraAccountCode; });
+        parsed = parseBankStatement(buffer, { fileName, contraMap });
+      } else {
+        parsed = await parseStatement(buffer, fileName);
+      }
     } catch (e) {
       return res.status(422).json({ success: false, message: 'Could not read statement: ' + e.message });
     }
@@ -150,14 +164,14 @@ async function ensureMomoWallet(Account) {
 // Incoming (money into the wallet):   DR wallet(1015), CR category
 const postLine = async (req, res) => {
   try {
-    const { lineId, categoryAccountId } = req.body;
-    if (!lineId || !categoryAccountId) {
-      return res.status(400).json({ success: false, message: 'Line and category account are required.' });
-    }
+    const { lineId } = req.body;
+    let { categoryAccountId } = req.body;
+    if (!lineId) return res.status(400).json({ success: false, message: 'Line is required.' });
 
     const Session = getModel(req.tenantDb, 'ReconciliationSession');
     const Account = getModel(req.tenantDb, 'Account');
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
+    const BankAccount = getModel(req.tenantDb, 'BankAccount');
 
     const session = await Session.findById(req.params.id);
     if (!session) return res.status(404).json({ success: false, message: 'Session not found.' });
@@ -168,47 +182,89 @@ const postLine = async (req, res) => {
       return res.status(400).json({ success: false, message: 'This line is already reconciled.' });
     }
 
+    const isBank = session.source === 'bank';
+
+    // Bank lines default to the classifier's suggestedContra; accountant may override.
+    if (isBank && !categoryAccountId && line.suggestedContra) {
+      const suggested = await Account.findOne({ code: line.suggestedContra });
+      if (suggested) categoryAccountId = suggested._id;
+    }
+    // Reversal lines (returned cheques, re-presentations) are a bank-side wash
+    // already reflected in the running balance. Never blind-post them: require
+    // an explicit category override, otherwise send them to Ignore/link.
+    if (isBank && line.bucket === 'reversal' && !req.body.categoryAccountId) {
+      return res.status(400).json({ success: false, message: 'This is a reversal / returned item — no journal is posted. Ignore it, or choose an account explicitly to override.' });
+    }
+
+    if (!categoryAccountId) {
+      return res.status(400).json({ success: false, message: 'Category account is required (no suggestion for this line — choose one).' });
+    }
+
     const category = await Account.findById(categoryAccountId);
     if (!category) return res.status(404).json({ success: false, message: 'Category account not found.' });
 
-    const wallet = await ensureMomoWallet(Account);
-    const feeAcct = await Account.findOne({ code: '6800' });
+    // Resolve the FIXED side of the entry: momo -> 1015 wallet; bank -> the
+    // session's own bank account (BankAccount.ledgerAccount), fallback code 1020.
+    async function resolveFixedAccount() {
+      if (!isBank) return ensureMomoWallet(Account);
+      if (session.bankAccount) {
+        const ba = await BankAccount.findById(session.bankAccount);
+        if (ba && ba.ledgerAccount) {
+          const acct = await Account.findById(ba.ledgerAccount);
+          if (acct) return acct;
+        }
+      }
+      return Account.findOne({ code: '1020' });
+    }
+    const fixed = await resolveFixedAccount();
+    if (!fixed) return res.status(400).json({ success: false, message: isBank ? 'No bank ledger account (1020) found.' : 'No wallet account.' });
 
+    const feeAcct = await Account.findOne({ code: '6800' });
     const amount = r2(line.amount);
     const fee = r2((line.fee || 0) + (line.eLevy || 0));
-    const lines = [];
+    const jlines = [];
 
-    if (line.direction === 'out') {
-      // money left the wallet
-      lines.push({ account: category._id, accountCode: category.code, accountName: category.name, debit: amount, credit: 0, description: line.description || line.type });
-      if (fee > 0 && feeAcct) {
-        lines.push({ account: feeAcct._id, accountCode: feeAcct.code, accountName: feeAcct.name, debit: fee, credit: 0, description: 'MoMo fee' });
+    if (isBank) {
+      // Bank: fixed side = bank account; other side = category. No fee-folding
+      // (bank charges are their own statement lines -> their own 6800 entry).
+      if (line.direction === 'out') {
+        jlines.push({ account: category._id, accountCode: category.code, accountName: category.name, debit: amount, credit: 0, description: line.description || line.type });
+        jlines.push({ account: fixed._id, accountCode: fixed.code, accountName: fixed.name, debit: 0, credit: amount, description: fixed.name });
+      } else {
+        jlines.push({ account: fixed._id, accountCode: fixed.code, accountName: fixed.name, debit: amount, credit: 0, description: fixed.name });
+        jlines.push({ account: category._id, accountCode: category.code, accountName: category.name, debit: 0, credit: amount, description: line.description || line.type });
       }
-      lines.push({ account: wallet._id, accountCode: wallet.code, accountName: wallet.name, debit: 0, credit: r2(amount + fee), description: 'MoMo wallet' });
-    } else {
-      // money into the wallet
-      lines.push({ account: wallet._id, accountCode: wallet.code, accountName: wallet.name, debit: amount, credit: 0, description: 'MoMo wallet' });
-      lines.push({ account: category._id, accountCode: category.code, accountName: category.name, debit: 0, credit: amount, description: line.description || line.type });
-      // an incoming transfer rarely carries a fee, but if it does, expense it
+    } else if (line.direction === 'out') {
+      // MoMo out (unchanged)
+      jlines.push({ account: category._id, accountCode: category.code, accountName: category.name, debit: amount, credit: 0, description: line.description || line.type });
       if (fee > 0 && feeAcct) {
-        lines.push({ account: feeAcct._id, accountCode: feeAcct.code, accountName: feeAcct.name, debit: fee, credit: 0, description: 'MoMo fee' });
-        lines.push({ account: wallet._id, accountCode: wallet.code, accountName: wallet.name, debit: 0, credit: fee, description: 'MoMo fee deducted' });
+        jlines.push({ account: feeAcct._id, accountCode: feeAcct.code, accountName: feeAcct.name, debit: fee, credit: 0, description: 'MoMo fee' });
+      }
+      jlines.push({ account: fixed._id, accountCode: fixed.code, accountName: fixed.name, debit: 0, credit: r2(amount + fee), description: 'MoMo wallet' });
+    } else {
+      // MoMo in (unchanged)
+      jlines.push({ account: fixed._id, accountCode: fixed.code, accountName: fixed.name, debit: amount, credit: 0, description: 'MoMo wallet' });
+      jlines.push({ account: category._id, accountCode: category.code, accountName: category.name, debit: 0, credit: amount, description: line.description || line.type });
+      if (fee > 0 && feeAcct) {
+        jlines.push({ account: feeAcct._id, accountCode: feeAcct.code, accountName: feeAcct.name, debit: fee, credit: 0, description: 'MoMo fee' });
+        jlines.push({ account: fixed._id, accountCode: fixed.code, accountName: fixed.name, debit: 0, credit: fee, description: 'MoMo fee deducted' });
       }
     }
 
-    const totalDebit = r2(lines.reduce((t, l) => t + l.debit, 0));
-    const totalCredit = r2(lines.reduce((t, l) => t + l.credit, 0));
+    const totalDebit = r2(jlines.reduce((t, l) => t + l.debit, 0));
+    const totalCredit = r2(jlines.reduce((t, l) => t + l.credit, 0));
 
     const entryNumber = await generateEntryNumber(JournalEntry);
+    const label = isBank ? 'Bank' : 'MoMo';
     const journal = await JournalEntry.create({
       entryNumber, date: line.date || new Date(), journalType: 'general',
-      description: 'MoMo ' + line.type + ' — ' + (line.counterparty || '') + ' (' + session.sessionNumber + ')',
+      description: label + ' ' + line.type + ' — ' + (line.counterparty || '') + ' (' + session.sessionNumber + ')',
       reference: line.externalId || session.sessionNumber,
-      lines, totalDebit, totalCredit,
+      lines: jlines, totalDebit, totalCredit,
       status: 'posted', postedBy: req.user._id, postedAt: new Date(), createdBy: req.user._id,
     });
 
-    for (const jl of lines) {
+    for (const jl of jlines) {
       const acct = await Account.findById(jl.account);
       if (acct) { acct.balance = r2(acct.balance + calculateBalanceChange(acct.normalBalance, jl.debit, jl.credit)); await acct.save(); }
     }
@@ -288,6 +344,21 @@ const autoMatch = async (req, res) => {
     const suggestions = session.lines
       .filter((l) => l.matchStatus === 'unmatched')
       .map((l) => {
+        // Bank sessions: return a classifier-driven suggestion up front. MoMo
+        // sessions fall through to the history-based logic below, unchanged.
+        const bankSuggestion = (session.source === 'bank');
+        if (bankSuggestion) {
+          if (l.bucket === 'reversal') {
+            return { lineId: l._id, kind: 'reversal', note: 'Reversal / returned item — no action needed (ignore or link to original).' };
+          }
+          if (l.suggestedContra) {
+            return { lineId: l._id, kind: 'suggest',
+              suggestedAccount: { accountCode: l.suggestedContra },
+              note: 'Suggested account ' + l.suggestedContra + ' (' + (l.bucket || 'bank') + ') — confirm or change.' };
+          }
+          return { lineId: l._id, kind: 'none', note: 'No suggestion — choose an account.' };
+        }
+
         const amt = r2(l.amount);
         const fee = r2((l.fee || 0) + (l.eLevy || 0));
         const gross = l.direction === 'out' ? r2(amt + fee) : amt;

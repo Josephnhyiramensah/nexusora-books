@@ -21,6 +21,7 @@ const casualWorkerSchema = require('../models/CasualWorker');
 const reconciliationSessionSchema = require('../models/ReconciliationSession');
 const casualPaymentSheetSchema = require('../models/CasualPaymentSheet');
 const exchangeRateSchema = require('../models/ExchangeRate');
+const bankContraRuleSchema = require('../models/BankContraRule');
 
 
 const schemas = {
@@ -37,6 +38,7 @@ const schemas = {
   ReconciliationSession: reconciliationSessionSchema,
   CasualPaymentSheet: casualPaymentSheetSchema,
   ExchangeRate: exchangeRateSchema,
+  BankContraRule: bankContraRuleSchema,
 };
 
 function getModel(tenantDb, modelName, schema) {

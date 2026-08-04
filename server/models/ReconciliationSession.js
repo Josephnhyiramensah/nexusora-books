@@ -20,6 +20,9 @@ const statementLineSchema = new mongoose.Schema({
   reference: String,          // REF column / narration
 
   matchStatus: { type: String, enum: ['unmatched', 'matched', 'ignored'], default: 'unmatched' },
+  // Bank-rec classification (populated for source:'bank'; empty for momo).
+  bucket: { type: String, default: null },
+  suggestedContra: { type: String, default: null },
   journalEntry: { type: mongoose.Schema.Types.ObjectId, ref: 'JournalEntry', default: null },
   matchedEntry: { type: mongoose.Schema.Types.ObjectId, ref: 'JournalEntry', default: null },
 }, { _id: true });
