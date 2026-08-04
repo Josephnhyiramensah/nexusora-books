@@ -17,6 +17,7 @@ export default function ReconciliationPage() {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [importSource, setImportSource] = useState('momo');
   const fileRef = useRef(null);
   const [accounts, setAccounts] = useState([]);
   const [postingLine, setPostingLine] = useState(null);
@@ -52,7 +53,7 @@ export default function ReconciliationPage() {
       const { data } = await api.post('/reconciliation/import', {
         fileBase64: base64,
         fileName: file.name,
-        source: 'momo',
+        source: importSource,
       });
       if (data.success) {
         showToast(data.message);
@@ -410,8 +411,11 @@ export default function ReconciliationPage() {
         </div>
         <div>
           <input ref={fileRef} type="file" id="stmt-upload" accept=".xls,.xlsx,.csv,.pdf" style={{ display: 'none' }} onChange={handleFile} />
-          <label htmlFor="stmt-upload" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', background: 'var(--nexusora-gold)', color: 'var(--deep-navy)', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 600, cursor: uploading ? 'wait' : 'pointer' }}>
-            <FiUpload size={15} /> {uploading ? 'Importing...' : 'Import Statement'}
+          <label htmlFor="stmt-upload" onClick={() => setImportSource('momo')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', background: 'var(--nexusora-gold)', color: 'var(--deep-navy)', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 600, cursor: uploading ? 'wait' : 'pointer', marginRight: 8 }}>
+            <FiUpload size={15} /> {uploading && importSource === 'momo' ? 'Importing...' : 'Import MoMo'}
+          </label>
+          <label htmlFor="stmt-upload" onClick={() => setImportSource('bank')} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 18px', background: 'var(--deep-navy)', color: '#fff', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 600, cursor: uploading ? 'wait' : 'pointer' }}>
+            <FiUpload size={15} /> {uploading && importSource === 'bank' ? 'Importing...' : 'Import Bank'}
           </label>
         </div>
       </div>
