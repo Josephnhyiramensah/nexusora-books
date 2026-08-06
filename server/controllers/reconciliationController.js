@@ -11,8 +11,22 @@ const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 // (matching how logo/letterhead uploads already work — the app doesn't use
 // multipart). We decode to a buffer, parse, and store a draft session.
 //
-// This step ONLY parses and stores for review. No ledger posting happens here —
-// that is a separate, explicit action once the user has checked the lines.
+// Draft-only: no ledger posting here. Balance is validated when a Balance column
+// is present; without one, import still proceeds (QBO-style count/sum sanity).
+
+// Map reader/mapper error codes to clean 4xx rejections (never a 500, never a
+// false "needsMapping"). EMPTY_OR_SCAN = scanned/image or empty file;
+// INCONSISTENT_SHEETS = bad PDF->Excel conversion (route to the PDF importer).
+const readerError = (res, e) => {
+  if (e && e.code === 'EMPTY_OR_SCAN') {
+    return res.status(422).json({ success: false, code: e.code, message: e.message || 'This file has no readable table. Scanned or image-only documents are not supported — please provide a text-based CSV/Excel export or a text (non-scanned) PDF.' });
+  }
+  if (e && e.code === 'INCONSISTENT_SHEETS') {
+    return res.status(422).json({ success: false, code: e.code, message: e.message || 'This file\'s sheets have inconsistent columns (common with PDF-to-Excel conversions). Use your bank\'s native CSV/Excel export, or import the original PDF through the bank importer.' });
+  }
+  return res.status(422).json({ success: false, message: 'Could not read file: ' + (e && e.message ? e.message : 'unknown error') });
+};
+
 const importStatement = async (req, res) => {
   try {
     const { fileBase64, fileName, source = 'momo', bankAccountId } = req.body;
@@ -20,16 +34,12 @@ const importStatement = async (req, res) => {
       return res.status(400).json({ success: false, message: 'No file supplied.' });
     }
 
-    // strip a data: URI prefix if present
     const b64 = fileBase64.includes(',') ? fileBase64.split(',')[1] : fileBase64;
     const buffer = Buffer.from(b64, 'base64');
 
     let parsed;
     try {
       if (source === 'bank') {
-        // Bank path: dispatcher auto-detects the bank format. Seed the
-        // tenant's contra rules and pass the bucket->account map so each
-        // line carries a suggestedContra for autoMatch. Draft-only; no posting.
         const BankContraRule = getModel(req.tenantDb, 'BankContraRule');
         await seedContraRules(req.tenantDb);
         const rules = await BankContraRule.find({ active: true }).lean();
@@ -40,22 +50,22 @@ const importStatement = async (req, res) => {
         parsed = await parseStatement(buffer, fileName);
       }
     } catch (e) {
+      // Unknown bank layout -> offer the column mapper. But if the file itself
+      // is unreadable (scan/empty/inconsistent), reject cleanly instead.
       if (source === 'bank' && e.code === 'UNRECOGNIZED_FORMAT') {
         try {
-          const b = Buffer.from(b64, 'base64');
-          const preview = previewColumns(b);
+          const preview = previewColumns(buffer);
           return res.json({ success: true, needsMapping: true, message: 'Unrecognized bank — map its columns to import.', data: preview });
         } catch (pe) {
-          return res.status(422).json({ success: false, message: 'Could not read file: ' + pe.message });
+          return readerError(res, pe);
         }
       }
+      if (e.code === 'EMPTY_OR_SCAN' || e.code === 'INCONSISTENT_SHEETS') return readerError(res, e);
       return res.status(422).json({ success: false, message: 'Could not read statement: ' + e.message });
     }
 
     const Session = getModel(req.tenantDb, 'ReconciliationSession');
 
-    // Dedupe: collect externalIds already imported for this tenant so re-uploading
-    // the same statement never creates duplicate lines.
     const priorIds = new Set();
     const existing = await Session.find({}, { 'lines.externalId': 1 }).lean();
     existing.forEach((s) => (s.lines || []).forEach((l) => l.externalId && priorIds.add(l.externalId)));
@@ -73,21 +83,22 @@ const importStatement = async (req, res) => {
     const count = await Session.countDocuments({});
     const sessionNumber = 'REC-' + new Date().getFullYear() + '-' + String(count + 1).padStart(3, '0');
 
+    const om = parsed.meta || {};
     const session = await Session.create({
       sessionNumber,
       source,
       bankAccount: bankAccountId || null,
-      accountHolder: parsed.meta.accountHolder,
-      accountMsisdn: parsed.meta.accountMsisdn,
-      periodStart: parsed.meta.periodStart,
-      periodEnd: parsed.meta.periodEnd,
-      openingBalance: r2(parsed.meta.openingBalance),
-      closingBalance: r2(parsed.meta.closingBalance),
+      accountHolder: om.accountHolder || null,
+      accountMsisdn: om.accountMsisdn || null,
+      periodStart: om.periodStart,
+      periodEnd: om.periodEnd,
+      openingBalance: om.openingBalance != null ? r2(om.openingBalance) : 0,
+      closingBalance: om.closingBalance != null ? r2(om.closingBalance) : 0,
       fileName: fileName || 'statement',
       lines: freshLines,
       totalIn: r2(parsed.totals.totalIn),
       totalOut: r2(parsed.totals.totalOut),
-      totalFees: r2(parsed.totals.totalFees),
+      totalFees: r2(parsed.totals.totalFees || 0),
       status: 'draft',
       importedBy: req.user._id,
     });
@@ -113,6 +124,7 @@ const importStatement = async (req, res) => {
 };
 
 // Preview the columns of an unrecognized bank file so the UI can map them.
+// Returns the reader's { columns, previewRows, meta, warnings, sheetCount }.
 const previewColumnsCtrl = async (req, res) => {
   try {
     const { fileBase64 } = req.body;
@@ -123,15 +135,19 @@ const previewColumnsCtrl = async (req, res) => {
     return res.json({ success: true, data: preview });
   } catch (e) {
     console.error('[Reconciliation] previewColumns error:', e.message);
-    return res.status(422).json({ success: false, message: 'Could not read file: ' + e.message });
+    return readerError(res, e);
   }
 };
 
-// Import an unknown bank using a column mapping. Validates via the balance
-// gate, saves the mapping for next time, then creates the draft session.
+// Import an unknown bank using a column mapping — or DRY-RUN validate it.
+// Body may include { dryRun: true }: validate the mapping and return the
+// balance-gate / sanity result WITHOUT saving the mapping or creating a
+// session. This powers the live "✓ balances / ✗ doesn't balance" preview.
+// parseWithMapping returns { ok:false, error, ... } on a bad mapping (it does
+// NOT throw); reader-level failures still throw and surface as clean 4xx.
 const importMapped = async (req, res) => {
   try {
-    const { fileBase64, fileName, bankName, mapping, bankAccountId } = req.body;
+    const { fileBase64, fileName, bankName, mapping, bankAccountId, dryRun } = req.body;
     if (!fileBase64) return res.status(400).json({ success: false, message: 'No file supplied.' });
     if (!bankName || !mapping) return res.status(400).json({ success: false, message: 'Bank name and column mapping are required.' });
     const b64 = fileBase64.includes(',') ? fileBase64.split(',')[1] : fileBase64;
@@ -144,15 +160,46 @@ const importMapped = async (req, res) => {
     rules.forEach((r) => { contraMap[r.bucket] = r.contraAccountCode; });
 
     const fullMapping = Object.assign({ bankName }, mapping);
-    let parsed;
+    let result;
     try {
-      parsed = parseWithMapping(buffer, fullMapping, { contraMap });
+      result = parseWithMapping(buffer, fullMapping, { contraMap });
     } catch (e) {
-      // MAPPING_INVALID carries the balance-gate explanation.
-      return res.status(422).json({ success: false, message: e.message });
+      return readerError(res, e);
     }
 
-    // Save / update the mapping for this bank (proven, since it balanced).
+    // Mapping didn't validate: same payload for the dry-run ✗ and a real attempt.
+    if (!result || !result.ok) {
+      return res.status(422).json({
+        success: false,
+        message: (result && result.error) || 'This mapping could not be validated.',
+        breaks: result ? result.breaks : undefined,
+        balanceChecked: result ? result.balanceChecked : undefined,
+      });
+    }
+
+    // DRY-RUN: report success without persisting anything.
+    if (dryRun) {
+      const dm = result.meta || {};
+      return res.json({
+        success: true,
+        dryRun: true,
+        data: {
+          ok: true,
+          balanceChecked: dm.balanceChecked,
+          balanceChainOk: dm.balanceChainOk,
+          openingBalance: dm.openingBalance,
+          closingBalance: dm.closingBalance,
+          declaredClosing: dm.declaredClosing,
+          totals: result.totals,
+          count: result.lines.length,
+          sample: result.lines.slice(0, 5).map((l) => ({
+            date: l.date, description: l.description, debit: l.debit, credit: l.credit, balance: l.balance,
+          })),
+        },
+      });
+    }
+
+    // Real import. Save/refresh the mapping (proven — it validated).
     const BankColumnMapping = getModel(req.tenantDb, 'BankColumnMapping');
     await BankColumnMapping.findOneAndUpdate(
       { bankName },
@@ -164,21 +211,23 @@ const importMapped = async (req, res) => {
     const priorIds = new Set();
     const existing = await Session.find({}, { 'lines.externalId': 1 }).lean();
     existing.forEach((s) => (s.lines || []).forEach((l) => l.externalId && priorIds.add(l.externalId)));
-    const freshLines = parsed.lines.filter((l) => !l.externalId || !priorIds.has(l.externalId));
-    const skipped = parsed.lines.length - freshLines.length;
+    const freshLines = result.lines.filter((l) => !l.externalId || !priorIds.has(l.externalId));
+    const skipped = result.lines.length - freshLines.length;
     if (freshLines.length === 0) {
       return res.status(409).json({ success: false, message: 'Every transaction in this statement has already been imported (' + skipped + ' duplicates skipped).' });
     }
     const count = await Session.countDocuments({});
     const sessionNumber = 'REC-' + new Date().getFullYear() + '-' + String(count + 1).padStart(3, '0');
+    const m = result.meta || {};
     const session = await Session.create({
       sessionNumber, source: 'bank', bankAccount: bankAccountId || null,
-      accountHolder: parsed.meta.accountHolder || null, accountMsisdn: null,
-      periodStart: parsed.meta.periodStart, periodEnd: parsed.meta.periodEnd,
-      openingBalance: r2(parsed.meta.openingBalance), closingBalance: r2(parsed.meta.closingBalance),
+      accountHolder: m.accountHolder || null, accountMsisdn: null,
+      periodStart: m.periodStart, periodEnd: m.periodEnd,
+      openingBalance: m.openingBalance != null ? r2(m.openingBalance) : 0,
+      closingBalance: m.closingBalance != null ? r2(m.closingBalance) : 0,
       fileName: fileName || (bankName + ' statement'),
       lines: freshLines,
-      totalIn: r2(parsed.totals.totalIn), totalOut: r2(parsed.totals.totalOut), totalFees: r2(parsed.totals.totalFees),
+      totalIn: r2(result.totals.totalIn), totalOut: r2(result.totals.totalOut), totalFees: r2(result.totals.totalFees || 0),
       status: 'draft', importedBy: req.user._id,
     });
     await logAudit(req.tenantDb, {
@@ -186,7 +235,7 @@ const importMapped = async (req, res) => {
       entityId: session._id, entityType: 'ReconciliationSession',
       description: 'Imported mapped ' + bankName + ' statement ' + sessionNumber + ' — ' + freshLines.length + ' transactions' + (skipped ? ' (' + skipped + ' duplicates skipped)' : ''),
     }, req);
-    return res.json({ success: true, message: 'Imported ' + sessionNumber + ' (' + freshLines.length + ' lines).', data: session });
+    return res.json({ success: true, message: 'Imported ' + sessionNumber + ' (' + freshLines.length + ' lines).', data: session, skipped });
   } catch (e) {
     console.error('[Reconciliation] importMapped error:', e.message);
     return res.status(500).json({ success: false, message: 'Failed to import: ' + e.message });

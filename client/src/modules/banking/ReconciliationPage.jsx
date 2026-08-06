@@ -10,6 +10,38 @@ const n2 = (v) => Number(v || 0).toFixed(2);
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 const fmtDateTime = (d) => (d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
 
+// Column roles the mapper can assign. 'ignore' means the column is not used.
+const ROLES = [
+  { key: 'ignore', label: 'Ignore' },
+  { key: 'date', label: 'Date' },
+  { key: 'valueDate', label: 'Value Date' },
+  { key: 'description', label: 'Description' },
+  { key: 'debit', label: 'Debit (money out)' },
+  { key: 'credit', label: 'Credit (money in)' },
+  { key: 'amount', label: 'Amount (signed)' },
+  { key: 'balance', label: 'Balance' },
+  { key: 'reference', label: 'Reference' },
+  { key: 'counterparty', label: 'Counterparty' },
+];
+
+// Best-effort auto-map from a column header to a role (same spirit as QuickBooks'
+// tolerated header names). Order matters: check the more specific tokens first.
+function autoRole(header) {
+  const h = String(header || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!h) return 'ignore';
+  if (h.includes('valuedate') || h === 'valuedt' || h === 'valdate') return 'valueDate';
+  if (h === 'date' || h === 'bookingdate' || h === 'transactiondate' || h === 'posteddate' || h === 'postingdate' || h === 'trandate') return 'date';
+  if (h.includes('description') || h.includes('narration') || h.includes('particular') || h.includes('details') || h.includes('remark')) return 'description';
+  if (h.includes('debit') || h.includes('withdrawal') || h === 'dr' || h.includes('paidout') || h.includes('moneyout')) return 'debit';
+  if (h.includes('credit') || h.includes('deposit') || h === 'cr' || h.includes('paidin') || h.includes('moneyin')) return 'credit';
+  if (h.includes('balance')) return 'balance';
+  if (h.includes('amount') || h === 'amt') return 'amount';
+  if (h.includes('reference') || h === 'ref' || h.includes('cheque') || h.includes('transactionid') || h.includes('txnid')) return 'reference';
+  if (h.includes('counterparty') || h.includes('payee') || h.includes('beneficiary')) return 'counterparty';
+  if (h.includes('date')) return 'date';
+  return 'ignore';
+}
+
 export default function ReconciliationPage() {
   const { plan } = useTenant();
   const { showToast, ToastComponent } = useToast();
@@ -29,6 +61,16 @@ export default function ReconciliationPage() {
   const [reconcileResult, setReconcileResult] = useState(null);
   const [reconciling, setReconciling] = useState(false);
 
+  // ─── Column-mapper state (unrecognized bank flow) ──────────────────────────
+  const [mapper, setMapper] = useState(null);            // { fileBase64, fileName, preview }
+  const [roleByCol, setRoleByCol] = useState({});         // { [colIndex]: role }
+  const [bankName, setBankName] = useState('');
+  const [amountConvention, setAmountConvention] = useState('separate');
+  const [dateFormat, setDateFormat] = useState('DMY');
+  const [dryRun, setDryRun] = useState(null);             // { ok, data } | { ok:false, message }
+  const [validating, setValidating] = useState(false);
+  const [importingMapped, setImportingMapped] = useState(false);
+
   const isPaid = PAID.includes(plan);
 
   const fetchSessions = async () => {
@@ -36,6 +78,81 @@ export default function ReconciliationPage() {
     catch {} finally { setLoading(false); }
   };
   useEffect(() => { if (isPaid) fetchSessions(); else setLoading(false); }, [isPaid]);
+
+  // Open the mapper for an unrecognized bank file. Auto-maps roles from headers,
+  // picks the amount convention from what was detected, and keeps the file's
+  // base64 so Validate/Import can re-send it without a second read.
+  const openMapper = (fileBase64, fileName, preview) => {
+    const cols = (preview && preview.columns) || [];
+    const rbc = {};
+    let hasDeb = false, hasCred = false, hasAmt = false;
+    cols.forEach((c) => {
+      const role = autoRole(c.header);
+      rbc[c.index] = role;
+      if (role === 'debit') hasDeb = true;
+      if (role === 'credit') hasCred = true;
+      if (role === 'amount') hasAmt = true;
+    });
+    setRoleByCol(rbc);
+    setAmountConvention((hasAmt && !hasDeb && !hasCred) ? 'signed' : 'separate');
+    setDateFormat('DMY');
+    setBankName((fileName || '').replace(/\.(xls|xlsx|csv|tsv|pdf)$/i, '').slice(0, 40));
+    setDryRun(null);
+    setMapper({ fileBase64, fileName, preview });
+  };
+
+  // Turn the { colIndex: role } picks into the backend mapping shape.
+  const buildMapping = () => {
+    const columns = {};
+    Object.keys(roleByCol).forEach((idx) => {
+      const role = roleByCol[idx];
+      if (role && role !== 'ignore') columns[role] = Number(idx);
+    });
+    return { columns, amountConvention, dateFormat };
+  };
+
+  // Dry-run: validate the mapping (balance gate / sanity) without saving.
+  const runDry = async () => {
+    if (!mapper) return;
+    setValidating(true); setDryRun(null);
+    try {
+      const { data } = await api.post('/reconciliation/import-mapped', {
+        fileBase64: mapper.fileBase64,
+        fileName: mapper.fileName,
+        bankName: bankName || 'Bank',
+        mapping: buildMapping(),
+        dryRun: true,
+      });
+      if (data.success && data.dryRun) setDryRun({ ok: true, data: data.data });
+      else setDryRun({ ok: false, message: data.message || 'Validation failed' });
+    } catch (err) {
+      setDryRun({ ok: false, message: err.response?.data?.message || 'This mapping could not be validated.' });
+    } finally { setValidating(false); }
+  };
+
+  // Real import using the mapping. Backend saves the mapping on success.
+  const runImport = async () => {
+    if (!mapper) return;
+    setImportingMapped(true);
+    try {
+      const { data } = await api.post('/reconciliation/import-mapped', {
+        fileBase64: mapper.fileBase64,
+        fileName: mapper.fileName,
+        bankName: bankName || 'Bank',
+        mapping: buildMapping(),
+      });
+      if (data.success && data.data?._id) {
+        showToast(data.message);
+        setMapper(null);
+        fetchSessions();
+        openSession(data.data._id);
+      } else {
+        showToast(data.message || 'Import failed', 'error');
+      }
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Import failed', 'error');
+    } finally { setImportingMapped(false); }
+  };
 
   const handleFile = async (e) => {
     const file = e.target.files[0];
@@ -55,6 +172,11 @@ export default function ReconciliationPage() {
         fileName: file.name,
         source: importSource,
       });
+      if (data.success && data.needsMapping) {
+        openMapper(base64, file.name, data.data);
+        showToast('Unrecognized bank — map its columns to import.');
+        return;
+      }
       if (data.success) {
         showToast(data.message);
         fetchSessions();
@@ -170,6 +292,103 @@ export default function ReconciliationPage() {
       if (data.success) { showToast('Deleted'); setDetail(null); fetchSessions(); }
     } catch (err) { showToast(err.response?.data?.message || 'Delete failed', 'error'); }
   };
+
+  // ─── The column-mapper modal (shared render) ───────────────────────────────
+  const mapperModal = mapper && (
+    <div onClick={() => !importingMapped && !validating && setMapper(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1002, padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 'var(--radius-md)', width: 780, maxWidth: '96vw', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)' }}>
+          <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: 18, fontWeight: 700, color: 'var(--deep-navy)' }}>Map bank columns</h3>
+          <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 4 }}>
+            {mapper.fileName} · {mapper.preview.totalRows} rows{mapper.preview.sheetCount > 1 ? ' · ' + mapper.preview.sheetCount + ' sheets' : ''}{mapper.preview.meta && mapper.preview.meta.currency ? ' · ' + mapper.preview.meta.currency : ''}. Give each column a role, then Validate before importing.
+          </p>
+          {mapper.preview.warnings && mapper.preview.warnings.length > 0 && (
+            <p style={{ fontSize: 11.5, color: '#92400E', background: '#FEF3C7', padding: '8px 10px', borderRadius: 6, marginTop: 10, lineHeight: 1.5 }}>
+              {mapper.preview.warnings.join(' ')}
+            </p>
+          )}
+        </div>
+
+        <div style={{ overflowY: 'auto', padding: '16px 24px', flex: 1 }}>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 18 }}>
+            <div style={{ flex: '1 1 220px' }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 5 }}>Bank name</label>
+              <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="e.g. NIB Ghana" style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ flex: '1 1 220px' }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 5 }}>Amount style</label>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => setAmountConvention('separate')} style={{ flex: 1, padding: '8px 6px', borderRadius: 6, border: amountConvention === 'separate' ? '1.5px solid var(--tech-blue)' : '1px solid var(--border)', background: amountConvention === 'separate' ? '#EFF6FF' : '#fff', color: amountConvention === 'separate' ? 'var(--tech-blue)' : 'var(--text-secondary)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Debit / Credit</button>
+                <button onClick={() => setAmountConvention('signed')} style={{ flex: 1, padding: '8px 6px', borderRadius: 6, border: amountConvention === 'signed' ? '1.5px solid var(--tech-blue)' : '1px solid var(--border)', background: amountConvention === 'signed' ? '#EFF6FF' : '#fff', color: amountConvention === 'signed' ? 'var(--tech-blue)' : 'var(--text-secondary)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Single Amount</button>
+              </div>
+            </div>
+            <div style={{ flex: '1 1 150px' }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 5 }}>Date format</label>
+              <select value={dateFormat} onChange={(e) => setDateFormat(e.target.value)} style={{ width: '100%', padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }}>
+                <option value="DMY">Day / Month / Year</option>
+                <option value="MDY">Month / Day / Year</option>
+                <option value="YMD">Year / Month / Day</option>
+              </select>
+            </div>
+          </div>
+
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: 'var(--bg-app)', borderBottom: '1px solid var(--border)' }}>
+                <th style={{ padding: '8px 10px', textAlign: 'left', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)' }}>Column</th>
+                <th style={{ padding: '8px 10px', textAlign: 'left', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)' }}>Sample values</th>
+                <th style={{ padding: '8px 10px', textAlign: 'left', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', width: 200 }}>Role</th>
+              </tr>
+            </thead>
+            <tbody>
+              {mapper.preview.columns.map((c) => {
+                const role = roleByCol[c.index] || 'ignore';
+                const active = role !== 'ignore';
+                return (
+                  <tr key={c.index} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                    <td style={{ padding: '7px 10px', fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                      {c.header ? c.header : <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>column {c.index}</span>}
+                    </td>
+                    <td style={{ padding: '7px 10px', color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: 11 }}>
+                      {(c.samples || []).slice(0, 3).map((s) => String(s)).join('   ·   ') || '—'}
+                    </td>
+                    <td style={{ padding: '7px 10px' }}>
+                      <select value={role} onChange={(e) => setRoleByCol((prev) => ({ ...prev, [c.index]: e.target.value }))} style={{ width: '100%', padding: '6px 8px', border: active ? '1px solid #86EFAC' : '1px solid var(--border)', borderRadius: 6, fontSize: 12, background: active ? '#F0FDF4' : '#fff' }}>
+                        {ROLES.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+                      </select>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {dryRun && (
+            <div style={{ marginTop: 16, padding: '14px 16px', borderRadius: 8, background: dryRun.ok ? '#D1FAE5' : '#FEE2E2' }}>
+              {dryRun.ok ? (
+                <div>
+                  <p style={{ fontSize: 13.5, fontWeight: 700, color: '#065F46', display: 'flex', alignItems: 'center', gap: 8 }}><FiCheck size={16} /> Balances — {dryRun.data.count} transaction(s) ready to import</p>
+                  <p style={{ fontSize: 12, color: '#065F46', marginTop: 6, lineHeight: 1.5 }}>
+                    {dryRun.data.balanceChecked
+                      ? 'Opening GHS ' + n2(dryRun.data.openingBalance) + ' → Closing GHS ' + n2(dryRun.data.closingBalance) + ' · running-balance check passed.'
+                      : 'No Balance column mapped — validated on totals (in GHS ' + n2(dryRun.data.totals.totalIn) + ' / out GHS ' + n2(dryRun.data.totals.totalOut) + ').'}
+                  </p>
+                </div>
+              ) : (
+                <p style={{ fontSize: 13, fontWeight: 600, color: '#991B1B', lineHeight: 1.5 }}>{dryRun.message}</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center' }}>
+          <button onClick={() => setMapper(null)} disabled={importingMapped || validating} style={{ padding: '10px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: '#fff', fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>Cancel</button>
+          <button onClick={runDry} disabled={validating || importingMapped} style={{ padding: '10px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--deep-navy)', background: '#fff', color: 'var(--deep-navy)', fontSize: 13, fontWeight: 600, cursor: validating ? 'wait' : 'pointer' }}>{validating ? 'Validating...' : 'Validate'}</button>
+          <button onClick={runImport} disabled={importingMapped || validating} style={{ padding: '10px 22px', borderRadius: 'var(--radius-sm)', background: 'var(--nexusora-gold)', color: 'var(--deep-navy)', fontSize: 13, fontWeight: 700, border: 'none', cursor: importingMapped ? 'wait' : 'pointer' }}>{importingMapped ? 'Importing...' : 'Import'}</button>
+        </div>
+      </div>
+    </div>
+  );
 
   // ─── Paywall for trial ──────────────────────────────────────────────────────
   if (!isPaid) {
@@ -460,6 +679,8 @@ export default function ReconciliationPage() {
           </ResponsiveTable>
         )}
       </div>
+
+      {mapperModal}
     </div>
   );
 }

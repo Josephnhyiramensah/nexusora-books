@@ -53,7 +53,6 @@ function toBuffer(input) {
   return input;
 }
 
-// Known-format parse. Throws if format unknown (caller handles mapping fallback).
 function parseBankStatement(input, opts = {}) {
   const { fileName = null, format = null, contraMap = {} } = opts;
   const buffer = toBuffer(input);
@@ -68,34 +67,39 @@ function parseBankStatement(input, opts = {}) {
   return adapter.parse(buffer, { filename: fileName, contraMap });
 }
 
-// Return the file's columns + samples so the UI can let a user map an unknown bank.
 function previewColumns(input) {
   const buffer = toBuffer(input);
   const t = readTabular(buffer, { sampleCount: 4 });
   return {
     sheetName: t.sheetName,
+    sheetCount: t.sheetCount,
     headerRowIndex: t.headerRowIndex,
     totalRows: t.totalRows,
-    columns: t.columns,       // [{ index, header, samples }]
+    columns: t.columns,
     previewRows: t.previewRows,
+    meta: t.meta || null,
+    warnings: t.warnings || [],
   };
 }
 
-// Parse an unknown bank using a saved BankColumnMapping. Runs the balance-chain
-// safety gate (inside applyColumnMapping) and then classifies each line.
 function parseWithMapping(input, mapping, opts = {}) {
   const { contraMap = {} } = opts;
   const buffer = toBuffer(input);
   const fileHash = crypto.createHash('sha256').update(buffer).digest('hex');
   const t = readTabular(buffer);
   const res = applyColumnMapping(t.grid, mapping, { fileHash });
-  if (!res.ok) { const e = new Error(res.error); e.code = 'MAPPING_INVALID'; throw e; }
+
+  if (!res || !res.ok) return res;
 
   res.lines = res.lines.map((l) => {
     const { bucket, confidence } = classifyBucket({ type: l.description, description: l.description, signed: l.signed });
     const suggestedContra = Object.prototype.hasOwnProperty.call(contraMap, bucket) ? contraMap[bucket] : null;
-    return Object.assign(l, { type: (l.description || 'BANK').split(';')[0].slice(0, 40), bucket, bucketConfidence: confidence, suggestedContra });
+    return Object.assign(l, {
+      type: (l.description || 'BANK').split(';')[0].slice(0, 40),
+      bucket, bucketConfidence: confidence, suggestedContra,
+    });
   });
+  res.meta = res.meta || {};
   res.meta.fileHash = fileHash;
   return res;
 }
