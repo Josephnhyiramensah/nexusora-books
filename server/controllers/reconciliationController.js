@@ -17,6 +17,50 @@ const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 // Map reader/mapper error codes to clean 4xx rejections (never a 500, never a
 // false "needsMapping"). EMPTY_OR_SCAN = scanned/image or empty file;
 // INCONSISTENT_SHEETS = bad PDF->Excel conversion (route to the PDF importer).
+// Stable signature of a file's column layout (normalized header labels in order).
+// Two imports of the same bank produce the same fingerprint, so a saved mapping
+// can be auto-applied on re-import. Returns null when there are no usable headers.
+const columnFingerprint = (preview) => {
+  const cols = (preview && preview.columns) || [];
+  const parts = cols.map((c) => String(c && c.header != null ? c.header : '').toLowerCase().replace(/[^a-z0-9]/g, ''));
+  return parts.some((p) => p) ? parts.join('|') : null;
+};
+
+// Persist a validated bank parse result as a draft session (dedupe + audit).
+// Shared by the mapped-import path and the auto-apply-on-reimport path so both
+// create sessions identically. Returns { session, skipped, freshCount } or
+// { empty: true, skipped } when every line was already imported.
+const persistBankSession = async (req, opts) => {
+  const { result, bankName, fileName, bankAccountId } = opts;
+  const Session = getModel(req.tenantDb, 'ReconciliationSession');
+  const priorIds = new Set();
+  const existing = await Session.find({}, { 'lines.externalId': 1 }).lean();
+  existing.forEach((s) => (s.lines || []).forEach((l) => l.externalId && priorIds.add(l.externalId)));
+  const freshLines = result.lines.filter((l) => !l.externalId || !priorIds.has(l.externalId));
+  const skipped = result.lines.length - freshLines.length;
+  if (freshLines.length === 0) return { empty: true, skipped };
+  const count = await Session.countDocuments({});
+  const sessionNumber = 'REC-' + new Date().getFullYear() + '-' + String(count + 1).padStart(3, '0');
+  const m = result.meta || {};
+  const session = await Session.create({
+    sessionNumber, source: 'bank', bankAccount: bankAccountId || null,
+    accountHolder: m.accountHolder || null, accountMsisdn: null,
+    periodStart: m.periodStart, periodEnd: m.periodEnd,
+    openingBalance: m.openingBalance != null ? r2(m.openingBalance) : 0,
+    closingBalance: m.closingBalance != null ? r2(m.closingBalance) : 0,
+    fileName: fileName || (bankName + ' statement'),
+    lines: freshLines,
+    totalIn: r2(result.totals.totalIn), totalOut: r2(result.totals.totalOut), totalFees: r2(result.totals.totalFees || 0),
+    status: 'draft', importedBy: req.user._id,
+  });
+  await logAudit(req.tenantDb, {
+    userId: req.user._id, action: 'reconcile_bank', module: 'bank',
+    entityId: session._id, entityType: 'ReconciliationSession',
+    description: 'Imported ' + bankName + ' statement ' + sessionNumber + ' — ' + freshLines.length + ' transactions' + (skipped ? ' (' + skipped + ' duplicates skipped)' : ''),
+  }, req);
+  return { session, skipped, freshCount: freshLines.length, empty: false };
+};
+
 const readerError = (res, e) => {
   if (e && e.code === 'EMPTY_OR_SCAN') {
     return res.status(422).json({ success: false, code: e.code, message: e.message || 'This file has no readable table. Scanned or image-only documents are not supported — please provide a text-based CSV/Excel export or a text (non-scanned) PDF.' });
@@ -55,6 +99,38 @@ const importStatement = async (req, res) => {
       if (source === 'bank' && e.code === 'UNRECOGNIZED_FORMAT') {
         try {
           const preview = previewColumns(buffer);
+          // If this bank's column layout was mapped before, auto-apply the saved
+          // mapping and skip the mapper — but only if the balance-gate still
+          // passes on this file; otherwise fall through to manual mapping.
+          const fp = columnFingerprint(preview);
+          if (fp) {
+            const SavedMap = getModel(req.tenantDb, 'BankColumnMapping');
+            const saved = await SavedMap.findOne({ fingerprint: fp, active: true }).lean();
+            if (saved) {
+              const BCR = getModel(req.tenantDb, 'BankContraRule');
+              await seedContraRules(req.tenantDb);
+              const cRules = await BCR.find({ active: true }).lean();
+              const cMap = {};
+              cRules.forEach((r) => { cMap[r.bucket] = r.contraAccountCode; });
+              const savedMapping = {
+                bankName: saved.bankName,
+                columns: saved.columns,
+                amountConvention: saved.amountConvention || 'separate',
+                dateFormat: saved.dateFormat || null,
+                headerRow: saved.headerRow != null ? saved.headerRow : null,
+                dataStartRow: saved.dataStartRow != null ? saved.dataStartRow : null,
+              };
+              let autoRes = null;
+              try { autoRes = parseWithMapping(buffer, savedMapping, { contraMap: cMap }); } catch (ae) { autoRes = null; }
+              if (autoRes && autoRes.ok) {
+                const p = await persistBankSession(req, { result: autoRes, bankName: saved.bankName, fileName, bankAccountId });
+                if (p.empty) {
+                  return res.status(409).json({ success: false, message: 'Every transaction in this statement has already been imported (' + p.skipped + ' duplicates skipped).' });
+                }
+                return res.json({ success: true, autoMapped: true, message: 'Imported ' + p.session.sessionNumber + ' (' + p.freshCount + ' lines) using your saved ' + saved.bankName + ' mapping.', data: p.session, skipped: p.skipped });
+              }
+            }
+          }
           return res.json({ success: true, needsMapping: true, message: 'Unrecognized bank — map its columns to import.', data: preview });
         } catch (pe) {
           return readerError(res, pe);
@@ -199,43 +275,21 @@ const importMapped = async (req, res) => {
       });
     }
 
-    // Real import. Save/refresh the mapping (proven — it validated).
+    // Real import. Save/refresh the mapping (proven — it validated), storing a
+    // column fingerprint so the next import from this bank auto-applies it.
+    const fp = columnFingerprint(previewColumns(buffer));
     const BankColumnMapping = getModel(req.tenantDb, 'BankColumnMapping');
     await BankColumnMapping.findOneAndUpdate(
       { bankName },
-      { $set: { bankName, columns: fullMapping.columns, amountConvention: fullMapping.amountConvention || 'separate', dateFormat: fullMapping.dateFormat || null, headerRow: (fullMapping.headerRow != null ? fullMapping.headerRow : null), dataStartRow: (fullMapping.dataStartRow != null ? fullMapping.dataStartRow : null), sampleValidated: true, active: true, createdBy: req.user._id } },
+      { $set: { bankName, fingerprint: fp, columns: fullMapping.columns, amountConvention: fullMapping.amountConvention || 'separate', dateFormat: fullMapping.dateFormat || null, headerRow: (fullMapping.headerRow != null ? fullMapping.headerRow : null), dataStartRow: (fullMapping.dataStartRow != null ? fullMapping.dataStartRow : null), sampleValidated: true, active: true, createdBy: req.user._id } },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
-    const Session = getModel(req.tenantDb, 'ReconciliationSession');
-    const priorIds = new Set();
-    const existing = await Session.find({}, { 'lines.externalId': 1 }).lean();
-    existing.forEach((s) => (s.lines || []).forEach((l) => l.externalId && priorIds.add(l.externalId)));
-    const freshLines = result.lines.filter((l) => !l.externalId || !priorIds.has(l.externalId));
-    const skipped = result.lines.length - freshLines.length;
-    if (freshLines.length === 0) {
-      return res.status(409).json({ success: false, message: 'Every transaction in this statement has already been imported (' + skipped + ' duplicates skipped).' });
+    const p = await persistBankSession(req, { result, bankName, fileName, bankAccountId });
+    if (p.empty) {
+      return res.status(409).json({ success: false, message: 'Every transaction in this statement has already been imported (' + p.skipped + ' duplicates skipped).' });
     }
-    const count = await Session.countDocuments({});
-    const sessionNumber = 'REC-' + new Date().getFullYear() + '-' + String(count + 1).padStart(3, '0');
-    const m = result.meta || {};
-    const session = await Session.create({
-      sessionNumber, source: 'bank', bankAccount: bankAccountId || null,
-      accountHolder: m.accountHolder || null, accountMsisdn: null,
-      periodStart: m.periodStart, periodEnd: m.periodEnd,
-      openingBalance: m.openingBalance != null ? r2(m.openingBalance) : 0,
-      closingBalance: m.closingBalance != null ? r2(m.closingBalance) : 0,
-      fileName: fileName || (bankName + ' statement'),
-      lines: freshLines,
-      totalIn: r2(result.totals.totalIn), totalOut: r2(result.totals.totalOut), totalFees: r2(result.totals.totalFees || 0),
-      status: 'draft', importedBy: req.user._id,
-    });
-    await logAudit(req.tenantDb, {
-      userId: req.user._id, action: 'reconcile_bank', module: 'bank',
-      entityId: session._id, entityType: 'ReconciliationSession',
-      description: 'Imported mapped ' + bankName + ' statement ' + sessionNumber + ' — ' + freshLines.length + ' transactions' + (skipped ? ' (' + skipped + ' duplicates skipped)' : ''),
-    }, req);
-    return res.json({ success: true, message: 'Imported ' + sessionNumber + ' (' + freshLines.length + ' lines).', data: session, skipped });
+    return res.json({ success: true, message: 'Imported ' + p.session.sessionNumber + ' (' + p.freshCount + ' lines).', data: p.session, skipped: p.skipped });
   } catch (e) {
     console.error('[Reconciliation] importMapped error:', e.message);
     return res.status(500).json({ success: false, message: 'Failed to import: ' + e.message });

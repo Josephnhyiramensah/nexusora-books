@@ -38,6 +38,10 @@ const BankColumnMappingSchema = new Schema(
     // Tenant's label for the bank, e.g. 'GCB', 'Ecobank'. One mapping per bank.
     bankName: { type: String, required: true, unique: true, index: true },
 
+    // Stable signature of the file's column layout (normalized headers). Lets a
+    // re-import of the same bank auto-apply this mapping without the mapper.
+    fingerprint: { type: String, default: null, index: true },
+
     columns: { type: ColumnRolesSchema, default: () => ({}) },
 
     // 'separate' = distinct debit & credit columns (Fidelity-style).
