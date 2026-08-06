@@ -3,6 +3,7 @@ const { fidelityToSessionLines } = require('./fidelityToSessionLines');
 const { readTabular } = require('./genericTabularReader');
 const { applyColumnMapping } = require('./applyColumnMapping');
 const { classifyBucket } = require('./bankBucketClassifier');
+const { pdfReader, isPdf } = require('./pdfReader');
 const crypto = require('crypto');
 
 const ADAPTERS = [
@@ -53,6 +54,14 @@ function toBuffer(input) {
   return input;
 }
 
+// Read a file into the normalized reader shape. PDFs go through the pdfplumber
+// bridge (native PDF lane); everything else through the xlsx/csv tabular reader.
+// Both return the same { grid, columns, previewRows, meta, ... } contract, so
+// the mapper / balance-gate / fingerprint pipeline is identical for both.
+function readAny(buffer, opts = {}) {
+  return isPdf(buffer) ? pdfReader(buffer) : readTabular(buffer, opts);
+}
+
 function parseBankStatement(input, opts = {}) {
   const { fileName = null, format = null, contraMap = {} } = opts;
   const buffer = toBuffer(input);
@@ -69,7 +78,7 @@ function parseBankStatement(input, opts = {}) {
 
 function previewColumns(input) {
   const buffer = toBuffer(input);
-  const t = readTabular(buffer, { sampleCount: 4 });
+  const t = readAny(buffer, { sampleCount: 4 });
   return {
     sheetName: t.sheetName,
     sheetCount: t.sheetCount,
@@ -86,7 +95,7 @@ function parseWithMapping(input, mapping, opts = {}) {
   const { contraMap = {} } = opts;
   const buffer = toBuffer(input);
   const fileHash = crypto.createHash('sha256').update(buffer).digest('hex');
-  const t = readTabular(buffer);
+  const t = readAny(buffer);
   const res = applyColumnMapping(t.grid, mapping, { fileHash });
 
   if (!res || !res.ok) return res;
