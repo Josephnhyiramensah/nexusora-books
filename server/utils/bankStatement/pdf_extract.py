@@ -179,6 +179,35 @@ def main():
         i += 1
     grid = cleaned
 
+    # Fold continuation rows (counterparty name + narration that the PDF wraps
+    # onto the lines below a transaction) into a dedicated Counterparty column,
+    # so Description stays the transaction type and the counterparty is its own
+    # field. A "carrier" row starts a transaction (has a booking date or a
+    # monetary amount); anything else is a continuation of the row above.
+    def is_carrier(r):
+        if r and r[0].strip():
+            return True
+        for c in r:
+            if num_re.match(c.strip().replace(' ', '')):
+                return True
+        return False
+
+    folded = [grid[0] + ['Counterparty']]
+    current = None
+    for r in grid[1:]:
+        if is_carrier(r):
+            row = list(r) + ['']
+            folded.append(row)
+            current = row
+        elif current is not None:
+            frag = ' '.join(c.strip() for c in r if c.strip())
+            if frag:
+                cp = len(current) - 1
+                current[cp] = (current[cp] + ' ' + frag).strip() if current[cp] else frag
+    grid = folded
+    header_cells = grid[0]
+    ncols = len(header_cells)
+
     columns = []
     for ci in range(ncols):
         samples = []
