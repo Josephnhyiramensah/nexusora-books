@@ -211,6 +211,7 @@ const updateMyTenantSettings = async (req, res) => {
         'letterhead', 'fiscalYearStart', 'baseCurrency', 'dateFormat', 'whiteLabel',
         'requireApproval',
         'currencies',
+        'documentNumbers',
       ];
       allowed.forEach((f) => { if (settings[f] !== undefined) tenant.settings[f] = settings[f]; });
       tenant.markModified('settings');

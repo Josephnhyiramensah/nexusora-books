@@ -388,6 +388,41 @@ function CompanyTab({
           </span>
         </label>
       </div>
+      {/* Invoice Numbering */}
+      <h3 style={{ fontSize: 15, fontWeight: 600, marginTop: 28, marginBottom: 8, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
+        Invoice Numbering
+      </h3>
+      <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+        Customise how new invoice numbers look. Leave the defaults (INV-, 6 digits) if the standard format is fine. Existing invoices keep their numbers.
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 16, marginBottom: 8 }}>
+        <div>
+          <label style={styles.labelStyle}>Prefix</label>
+          <input style={styles.inputStyle}
+            value={companyForm.documentNumbers?.invoice?.prefix ?? 'INV-'}
+            onChange={(e) => setCompanyForm({ ...companyForm, documentNumbers: { ...companyForm.documentNumbers, invoice: { ...(companyForm.documentNumbers?.invoice || {}), prefix: e.target.value } } })}
+            placeholder="INV-" />
+        </div>
+        <div>
+          <label style={styles.labelStyle}>Digits</label>
+          <input type="number" min={1} max={12} style={styles.inputStyle}
+            value={companyForm.documentNumbers?.invoice?.padding ?? 6}
+            onChange={(e) => setCompanyForm({ ...companyForm, documentNumbers: { ...companyForm.documentNumbers, invoice: { ...(companyForm.documentNumbers?.invoice || {}), padding: Number(e.target.value) } } })} />
+        </div>
+        <div>
+          <label style={styles.labelStyle}>Start at</label>
+          <input type="number" min={0} style={styles.inputStyle}
+            value={companyForm.documentNumbers?.invoice?.startNumber ?? 1}
+            onChange={(e) => setCompanyForm({ ...companyForm, documentNumbers: { ...companyForm.documentNumbers, invoice: { ...(companyForm.documentNumbers?.invoice || {}), startNumber: Number(e.target.value) } } })} />
+        </div>
+      </div>
+      <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 24 }}>
+        Preview:{' '}
+        <strong style={{ fontFamily: 'monospace' }}>
+          {(companyForm.documentNumbers?.invoice?.prefix ?? 'INV-') + String(companyForm.documentNumbers?.invoice?.startNumber ?? 1).padStart(Math.min(12, Math.max(1, Number(companyForm.documentNumbers?.invoice?.padding) || 6)), '0')}
+        </strong>
+      </p>
+
       {/* Letterhead */}
       <h3
         style={{
@@ -1309,6 +1344,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
     region: settings?.region || '',
     taxId: settings?.taxId || '',
     requireApproval: settings?.requireApproval || false,
+    documentNumbers: settings?.documentNumbers || { invoice: { prefix: 'INV-', padding: 6, startNumber: 1 } },
     // Carry whiteLabel in the form state — WhiteLabelSettings reads its initial
     // values from here, so without it the toggle always rendered as off after a
     // refresh even though the value had saved.
@@ -1338,6 +1374,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
       city: settings.city ?? prev.city,
       region: settings.region ?? prev.region,
       taxId: settings.taxId ?? prev.taxId,
+      documentNumbers: settings.documentNumbers ?? prev.documentNumbers,
       letterhead: { ...prev.letterhead, ...(settings.letterhead || {}) },
     }));
   }, [settings]);

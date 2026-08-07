@@ -2,11 +2,34 @@ const { getModel } = require('../utils/getModel');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
 
-async function generateInvoiceNumber(Invoice) {
-  const last = await Invoice.findOne({}).sort({ createdAt: -1 }).select('invoiceNumber').lean();
-  if (!last || !last.invoiceNumber) return 'INV-000001';
-  const num = parseInt(last.invoiceNumber.replace('INV-', ''), 10);
-  return `INV-${(num + 1).toString().padStart(6, '0')}`;
+// Generate the next invoice number. A tenant can customise the series via
+// settings.documentNumbers.invoice = { prefix, padding, startNumber }. When no
+// config is passed the defaults reproduce the historical behaviour exactly
+// ('INV-000001'), so tenants who never customise are unaffected. The running
+// number is derived from the highest existing invoice that already uses THIS
+// prefix, so changing the prefix starts a clean series without colliding with
+// old numbers, and there is no separate counter to seed or drift.
+async function generateInvoiceNumber(Invoice, cfg = {}) {
+  const c = cfg || {};
+  const prefix = (c.prefix != null && c.prefix !== '') ? String(c.prefix) : 'INV-';
+  const padding = Number.isFinite(Number(c.padding)) ? Number(c.padding) : 6;
+  const start = Number.isFinite(Number(c.startNumber)) ? Number(c.startNumber) : 1;
+
+  const esc = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const rx = new RegExp('^' + esc + '(\\d+)$');
+
+  const last = await Invoice.findOne({ invoiceNumber: rx })
+    .sort({ invoiceNumber: -1 })
+    .select('invoiceNumber')
+    .lean();
+
+  let n = start;
+  if (last && last.invoiceNumber) {
+    const m = last.invoiceNumber.match(rx);
+    if (m) n = parseInt(m[1], 10) + 1;
+  }
+  if (n < start) n = start;
+  return prefix + String(n).padStart(padding, '0');
 }
 
 const getInvoices = async (req, res) => {
@@ -65,7 +88,7 @@ const createInvoice = async (req, res) => {
     const baseSubtotal = Math.round(subtotal * fxRate * 100) / 100;
     const baseTaxAmount = Math.round(tax * fxRate * 100) / 100;
     const baseTotal = Math.round(total * fxRate * 100) / 100;
-    const invoiceNumber = await generateInvoiceNumber(Invoice);
+    const invoiceNumber = await generateInvoiceNumber(Invoice, req.tenant?.settings?.documentNumbers?.invoice);
 
     const invoice = await Invoice.create({
       invoiceNumber, customer, date, dueDate,
@@ -380,7 +403,7 @@ const runDueRecurring = async (req, res) => {
         const gap = Math.max(0, Math.round((new Date(tmpl.dueDate) - new Date(tmpl.date)) / 86400000)) || 30;
         dueDate.setDate(dueDate.getDate() + gap);
 
-        const invoiceNumber = await generateInvoiceNumber(Invoice);
+        const invoiceNumber = await generateInvoiceNumber(Invoice, req.tenant?.settings?.documentNumbers?.invoice);
         const child = await Invoice.create({
           invoiceNumber, customer: tmpl.customer, date: invDate, dueDate,
           lines: tmpl.lines.map((l) => ({ description: l.description, quantity: l.quantity, unitPrice: l.unitPrice, amount: l.amount, account: l.account })),
