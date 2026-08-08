@@ -10,6 +10,16 @@ const invoiceLineSchema = new mongoose.Schema({
   account: { type: mongoose.Schema.Types.ObjectId, ref: 'Account' },
 }, { _id: true });
 
+// Snapshot of a tenant-defined custom field's value, captured at save time so
+// the invoice stays self-describing even if the tenant later renames or removes
+// the field definition.
+const invoiceCustomFieldSchema = new mongoose.Schema({
+  fieldId: String,
+  label: String,
+  type: String,
+  value: mongoose.Schema.Types.Mixed,
+}, { _id: false });
+
 const invoiceSchema = new mongoose.Schema(
   {
     invoiceNumber: { type: String, required: true, unique: true },
@@ -39,6 +49,8 @@ const invoiceSchema = new mongoose.Schema(
     baseTotal: { type: Number, default: 0 },
     amountPaid: { type: Number, default: 0 },
     balance: { type: Number, default: 0 },
+    // Tenant-defined header-level custom fields (snapshot of label/type/value).
+    customFields: { type: [invoiceCustomFieldSchema], default: [] },
     status: {
       type: String,
       enum: ['draft', 'awaiting_approval', 'sent', 'partially_paid', 'paid', 'overdue', 'cancelled'],

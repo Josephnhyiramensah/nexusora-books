@@ -31,7 +31,12 @@ export default function InvoiceFormPage() {
     customer: '', date: new Date().toISOString().split('T')[0],
     dueDate: '', taxRate: 0, notes: '',
     lines: [emptyLine()],
+    customFields: {},
   });
+
+  // Tenant-defined custom fields that target invoices.
+  const invoiceCustomFields = (tenantSettings?.customFields || []).filter((f) => f.target === 'invoice');
+  const setCustomField = (id, value) => setForm((prev) => ({ ...prev, customFields: { ...prev.customFields, [id]: value } }));
 
   useEffect(() => {
     customerService.getAll({ isActive: 'true' }).then((r) => { if (r.success) setCustomers(r.data); }).catch(() => {});
@@ -97,6 +102,7 @@ export default function InvoiceFormPage() {
         taxRate: parseFloat(form.taxRate) || 0, notes: form.notes,
         currency: isForeign ? invCurrency : '',
         exchangeRate: rate,
+        customFields: form.customFields,
         lines: validLines.map((l) => ({
           description: l.description, quantity: parseFloat(l.quantity) || 1,
           unitPrice: parseFloat(l.unitPrice), account: l.account || undefined,
@@ -243,6 +249,48 @@ export default function InvoiceFormPage() {
             </div>
           </div>
         </div>
+        {/* Custom Fields */}
+        {invoiceCustomFields.length > 0 && (
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))', gap: 16 }}>
+              {invoiceCustomFields.map((f) => {
+                const val = form.customFields?.[f.id];
+                const labelEl = (
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                    {f.label}{f.required ? ' *' : ''}
+                  </label>
+                );
+                if (f.type === 'checkbox') {
+                  return (
+                    <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 22 }}>
+                      <input type="checkbox" checked={!!val} onChange={(e) => setCustomField(f.id, e.target.checked)} style={{ width: 18, height: 18 }} />
+                      <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>{f.label}{f.required ? ' *' : ''}</span>
+                    </div>
+                  );
+                }
+                if (f.type === 'select') {
+                  return (
+                    <div key={f.id}>
+                      {labelEl}
+                      <select value={val || ''} onChange={(e) => setCustomField(f.id, e.target.value)} style={inputStyle}>
+                        <option value="">Select...</option>
+                        {(f.options || []).map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                    </div>
+                  );
+                }
+                const inputType = f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text';
+                return (
+                  <div key={f.id}>
+                    {labelEl}
+                    <input type={inputType} value={val || ''} onChange={(e) => setCustomField(f.id, e.target.value)} style={inputStyle} placeholder={f.label} />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Notes */}
         <div style={{ marginBottom: 24 }}>
           <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Notes</label>

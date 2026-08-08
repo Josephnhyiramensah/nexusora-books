@@ -276,14 +276,21 @@ async function generateInvoicePDF({ invoice, customer, tenantSettings, companyNa
         ['Due Date:',     new Date(invoice.dueDate).toLocaleDateString('en-GB')],
         ['Currency:',     isForeign ? (invCur + ' (rate: 1 ' + invCur + ' = ' + fxRate + ' GHS)') : 'GHS (Ghana Cedis)'],
       ];
+      (invoice.customFields || []).forEach((cf) => {
+        let val = cf.value;
+        if (cf.type === 'checkbox') val = val ? 'Yes' : 'No';
+        else if (cf.type === 'date' && val) { try { val = new Date(val).toLocaleDateString('en-GB'); } catch (e) {} }
+        details.push([cf.label + ':', String(val === undefined || val === null ? '' : val)]);
+      });
       doc.fillColor(COLORS.navy).fontSize(9).font('Helvetica-Bold').text('INVOICE DETAILS', 350, sY + 54);
       details.forEach(([label, value], i) => {
         doc.fillColor(COLORS.gray).font('Helvetica').text(label, 350, sY + 68 + (i * 14));
         doc.fillColor(COLORS.black).font('Helvetica-Bold').text(value, 420, sY + 68 + (i * 14), { width: 125, align: 'right' });
       });
 
-      // Line items
-      let y = sY + 150;
+      // Line items — start below whichever of the two header columns is taller
+      // (custom fields can lengthen the right-hand details block).
+      let y = Math.max(sY + 150, sY + 68 + details.length * 14 + 12, billY + 12);
       doc.fillColor(COLORS.navy).fontSize(11).font('Helvetica-Bold').text('ITEMS', 50, y);
       y += 16;
 
