@@ -8,7 +8,6 @@ import invoiceService from '../../services/invoiceService';
 import accountService from '../../services/accountService';
 import SmartAccountSelect from '../../components/common/SmartAccountSelect';
 import { useToast } from '../../hooks/useToast';
-// 👇 ADDED: ResponsiveTable import for wrapping the line-items table
 import ResponsiveTable from '../../components/common/ResponsiveTable';
 
 const emptyLine = () => ({ description: '', quantity: 1, unitPrice: '', account: '' });
@@ -34,9 +33,10 @@ export default function InvoiceFormPage() {
     customFields: {},
   });
 
-  // Tenant-defined custom fields that target invoices.
+  // Tenant-defined header-level custom fields that target invoices.
   const invoiceCustomFields = (tenantSettings?.customFields || []).filter((f) => f.target === 'invoice');
-  const setCustomField = (id, value) => setForm((prev) => ({ ...prev, customFields: { ...prev.customFields, [id]: value } }));
+  const setCustomField = (id, value) =>
+    setForm((prev) => ({ ...prev, customFields: { ...prev.customFields, [id]: value } }));
 
   useEffect(() => {
     customerService.getAll({ isActive: 'true' }).then((r) => { if (r.success) setCustomers(r.data); }).catch(() => {});
@@ -95,6 +95,14 @@ export default function InvoiceFormPage() {
     const validLines = form.lines.filter((l) => l.description && parseFloat(l.unitPrice) > 0);
     if (validLines.length < 1) { showToast('At least 1 line with description and price required', 'error'); return; }
 
+    // Client-side required check for custom fields (server also enforces).
+    for (const f of invoiceCustomFields) {
+      if (!f.required) continue;
+      const v = form.customFields?.[f.id];
+      const empty = f.type === 'checkbox' ? !v : (v === undefined || v === null || String(v).trim() === '');
+      if (empty) { showToast(`${f.label} is required`, 'error'); return; }
+    }
+
     try {
       setSaving(true);
       const res = await invoiceService.create({
@@ -126,6 +134,38 @@ export default function InvoiceFormPage() {
     width: '100%', padding: '10px 14px', border: '1px solid var(--border)',
     borderRadius: 'var(--radius-sm)', fontSize: 13, color: 'var(--text-primary)', outline: 'none',
   };
+  const labelStyle = { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 };
+
+  // Render a single custom field by its type.
+  const renderCustomField = (f) => {
+    const val = form.customFields?.[f.id];
+    if (f.type === 'checkbox') {
+      return (
+        <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 8, alignSelf: 'end', paddingBottom: 10 }}>
+          <input type="checkbox" checked={!!val} onChange={(e) => setCustomField(f.id, e.target.checked)} style={{ width: 18, height: 18 }} />
+          <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>{f.label}{f.required ? ' *' : ''}</span>
+        </div>
+      );
+    }
+    if (f.type === 'select') {
+      return (
+        <div key={f.id}>
+          <label style={labelStyle}>{f.label}{f.required ? ' *' : ''}</label>
+          <select value={val || ''} onChange={(e) => setCustomField(f.id, e.target.value)} style={inputStyle}>
+            <option value="">Select...</option>
+            {(f.options || []).map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+          </select>
+        </div>
+      );
+    }
+    const inputType = f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text';
+    return (
+      <div key={f.id}>
+        <label style={labelStyle}>{f.label}{f.required ? ' *' : ''}</label>
+        <input type={inputType} value={val || ''} onChange={(e) => setCustomField(f.id, e.target.value)} style={inputStyle} placeholder={f.label} />
+      </div>
+    );
+  };
 
   return (
     <div>
@@ -133,32 +173,42 @@ export default function InvoiceFormPage() {
       <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 22, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 24 }}>New Invoice</h1>
 
       <div style={{ background: '#fff', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: 28 }}>
-        {/* 👇 CHANGED: Header grid – replaced '1fr 1fr 1fr 1fr' with auto‑collapsing responsive columns */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))', gap: 16, marginBottom: 24 }}>
           <div>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Customer *</label>
+            <label style={labelStyle}>Customer *</label>
             <select value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} style={inputStyle}>
               <option value="">Select customer...</option>
               {customers.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
             </select>
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Invoice Date *</label>
+            <label style={labelStyle}>Invoice Date *</label>
             <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={inputStyle} />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Due Date *</label>
+            <label style={labelStyle}>Due Date *</label>
             <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} style={inputStyle} />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Tax Rate (%)</label>
+            <label style={labelStyle}>Tax Rate (%)</label>
             <input type="number" step="0.01" min="0" value={form.taxRate} onChange={(e) => setForm({ ...form, taxRate: e.target.value })} style={inputStyle} placeholder="e.g. 15" />
           </div>
         </div>
 
-        {/* Line Items – 👇 CHANGED: outer div now only holds background/border-radius, no overflow:hidden */}
+        {/* Additional Information — tenant-defined custom fields (header-level) */}
+        {invoiceCustomFields.length > 0 && (
+          <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: '1px solid var(--border)' }}>
+            <h3 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 14, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Additional Information
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(220px, 100%), 1fr))', gap: 16 }}>
+              {invoiceCustomFields.map((f) => renderCustomField(f))}
+            </div>
+          </div>
+        )}
+
+        {/* Line Items */}
         <div style={{ background: '#fff', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
-          {/* 👇 ADDED: ResponsiveTable wrapper */}
           <ResponsiveTable minWidth={600}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
@@ -204,11 +254,10 @@ export default function InvoiceFormPage() {
                 })}
               </tbody>
             </table>
-          {/* 👇 ADDED: closing ResponsiveTable */}
           </ResponsiveTable>
         </div>
 
-        <button onClick={addLine} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 'var(--radius-sm)', border: '1px dashed var(--tech-blue)', color: 'var(--tech-blue)', fontSize: 12, fontWeight: 600, background: '#fff', marginBottom: 20 }}>
+        <button onClick={addLine} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 'var(--radius-sm)', border: '1px dashed var(--tech-blue)', color: 'var(--tech-blue)', fontSize: 12, fontWeight: 600, background: '#fff', marginBottom: 20, marginTop: 20 }}>
           <FiPlus size={14} /> Add Line
         </button>
 
@@ -249,51 +298,10 @@ export default function InvoiceFormPage() {
             </div>
           </div>
         </div>
-        {/* Custom Fields */}
-        {invoiceCustomFields.length > 0 && (
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))', gap: 16 }}>
-              {invoiceCustomFields.map((f) => {
-                const val = form.customFields?.[f.id];
-                const labelEl = (
-                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                    {f.label}{f.required ? ' *' : ''}
-                  </label>
-                );
-                if (f.type === 'checkbox') {
-                  return (
-                    <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 22 }}>
-                      <input type="checkbox" checked={!!val} onChange={(e) => setCustomField(f.id, e.target.checked)} style={{ width: 18, height: 18 }} />
-                      <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>{f.label}{f.required ? ' *' : ''}</span>
-                    </div>
-                  );
-                }
-                if (f.type === 'select') {
-                  return (
-                    <div key={f.id}>
-                      {labelEl}
-                      <select value={val || ''} onChange={(e) => setCustomField(f.id, e.target.value)} style={inputStyle}>
-                        <option value="">Select...</option>
-                        {(f.options || []).map((opt) => <option key={opt} value={opt}>{opt}</option>)}
-                      </select>
-                    </div>
-                  );
-                }
-                const inputType = f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text';
-                return (
-                  <div key={f.id}>
-                    {labelEl}
-                    <input type={inputType} value={val || ''} onChange={(e) => setCustomField(f.id, e.target.value)} style={inputStyle} placeholder={f.label} />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
         {/* Notes */}
         <div style={{ marginBottom: 24 }}>
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Notes</label>
+          <label style={labelStyle}>Notes</label>
           <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })}
             placeholder="Payment terms, delivery notes..." style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} />
         </div>
