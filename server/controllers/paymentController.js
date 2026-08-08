@@ -4,11 +4,32 @@ const { getModel } = require('../utils/getModel');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
 
-async function generatePaymentNumber(Payment) {
-  const last = await Payment.findOne({}).sort({ createdAt: -1 }).select('paymentNumber').lean();
-  if (!last || !last.paymentNumber) return 'PAY-000001';
-  const num = parseInt(last.paymentNumber.replace('PAY-', ''), 10);
-  return `PAY-${(num + 1).toString().padStart(6, '0')}`;
+// Generate the next payment number. A tenant can customise the series via
+// settings.documentNumbers.payment = { prefix, padding, startNumber }. With no
+// config the defaults reproduce the historical 'PAY-000001'. The running number
+// comes from the highest existing payment that already uses THIS prefix, so
+// changing the prefix starts a clean series with no counter to seed or drift.
+async function generatePaymentNumber(Payment, cfg = {}) {
+  const c = cfg || {};
+  const prefix = (c.prefix != null && c.prefix !== '') ? String(c.prefix) : 'PAY-';
+  const padding = Number.isFinite(Number(c.padding)) ? Number(c.padding) : 6;
+  const start = Number.isFinite(Number(c.startNumber)) ? Number(c.startNumber) : 1;
+
+  const esc = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const rx = new RegExp('^' + esc + '(\\d+)$');
+
+  const last = await Payment.findOne({ paymentNumber: rx })
+    .sort({ paymentNumber: -1 })
+    .select('paymentNumber')
+    .lean();
+
+  let n = start;
+  if (last && last.paymentNumber) {
+    const m = last.paymentNumber.match(rx);
+    if (m) n = parseInt(m[1], 10) + 1;
+  }
+  if (n < start) n = start;
+  return prefix + String(n).padStart(padding, '0');
 }
 
 const getPayments = async (req, res) => {
@@ -130,7 +151,7 @@ const receivePayment = async (req, res) => {
     }
 
     // Create payment record
-    const paymentNumber = await generatePaymentNumber(Payment);
+    const paymentNumber = await generatePaymentNumber(Payment, req.tenant?.settings?.documentNumbers?.payment);
     const payment = await Payment.create({
       paymentNumber, type: 'incoming', date,
       amount: payAmount, method,
@@ -241,7 +262,7 @@ const makePayment = async (req, res) => {
       await vendor.save();
     }
 
-    const paymentNumber = await generatePaymentNumber(Payment);
+    const paymentNumber = await generatePaymentNumber(Payment, req.tenant?.settings?.documentNumbers?.payment);
     const payment = await Payment.create({
       paymentNumber, type: 'outgoing', date,
       amount: payAmount, method,

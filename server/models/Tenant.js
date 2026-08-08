@@ -32,15 +32,25 @@ const tenantSchema = new mongoose.Schema(
       // Maker-checker: when true, entries created by accountants need admin
       // approval before they post. Default off — tenants opt in.
       requireApproval: { type: Boolean, default: false },
-      // Per-tenant document number formats. When a tenant leaves these unset the
-      // system falls back to the historical default (e.g. invoice 'INV-000001'),
-      // so nothing changes for anyone who doesn't customise. A tenant can brand
-      // their own series (prefix), width (padding) and where the count begins
-      // (startNumber). The running number itself is derived from existing
-      // documents that share the prefix — no counter to seed or drift.
+      // Per-tenant document number formats for invoices, bills and payments.
+      // When a tenant leaves these unset the system falls back to the historical
+      // default (INV-000001 / BILL-000001 / PAY-000001), so nothing changes for
+      // anyone who doesn't customise. Journals are NOT included — they always use
+      // the system entry numbering. The running number is derived from existing
+      // documents that share the prefix, so there is no counter to seed or drift.
       documentNumbers: {
         invoice: {
           prefix: { type: String, default: 'INV-' },
+          padding: { type: Number, default: 6, min: 1, max: 12 },
+          startNumber: { type: Number, default: 1, min: 0 },
+        },
+        bill: {
+          prefix: { type: String, default: 'BILL-' },
+          padding: { type: Number, default: 6, min: 1, max: 12 },
+          startNumber: { type: Number, default: 1, min: 0 },
+        },
+        payment: {
+          prefix: { type: String, default: 'PAY-' },
           padding: { type: Number, default: 6, min: 1, max: 12 },
           startNumber: { type: Number, default: 1, min: 0 },
         },

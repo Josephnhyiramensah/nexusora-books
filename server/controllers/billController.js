@@ -2,11 +2,32 @@ const { getModel } = require('../utils/getModel');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
 
-async function generateBillNumber(Bill) {
-  const last = await Bill.findOne({}).sort({ createdAt: -1 }).select('billNumber').lean();
-  if (!last || !last.billNumber) return 'BILL-000001';
-  const num = parseInt(last.billNumber.replace('BILL-', ''), 10);
-  return `BILL-${(num + 1).toString().padStart(6, '0')}`;
+// Generate the next bill number. A tenant can customise the series via
+// settings.documentNumbers.bill = { prefix, padding, startNumber }. With no
+// config the defaults reproduce the historical 'BILL-000001'. The running
+// number comes from the highest existing bill that already uses THIS prefix, so
+// changing the prefix starts a clean series with no counter to seed or drift.
+async function generateBillNumber(Bill, cfg = {}) {
+  const c = cfg || {};
+  const prefix = (c.prefix != null && c.prefix !== '') ? String(c.prefix) : 'BILL-';
+  const padding = Number.isFinite(Number(c.padding)) ? Number(c.padding) : 6;
+  const start = Number.isFinite(Number(c.startNumber)) ? Number(c.startNumber) : 1;
+
+  const esc = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const rx = new RegExp('^' + esc + '(\\d+)$');
+
+  const last = await Bill.findOne({ billNumber: rx })
+    .sort({ billNumber: -1 })
+    .select('billNumber')
+    .lean();
+
+  let n = start;
+  if (last && last.billNumber) {
+    const m = last.billNumber.match(rx);
+    if (m) n = parseInt(m[1], 10) + 1;
+  }
+  if (n < start) n = start;
+  return prefix + String(n).padStart(padding, '0');
 }
 
 const getBills = async (req, res) => {
@@ -59,7 +80,7 @@ const createBill = async (req, res) => {
     const subtotal = processedLines.reduce((sum, l) => sum + l.amount, 0);
     const tax = taxRate ? Math.round(subtotal * (Number(taxRate) / 100) * 100) / 100 : 0;
     const total = Math.round((subtotal + tax) * 100) / 100;
-    const billNumber = await generateBillNumber(Bill);
+    const billNumber = await generateBillNumber(Bill, req.tenant?.settings?.documentNumbers?.bill);
 
     const bill = await Bill.create({
       billNumber, vendor, date, dueDate,

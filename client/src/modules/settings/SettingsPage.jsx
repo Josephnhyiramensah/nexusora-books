@@ -388,40 +388,39 @@ function CompanyTab({
           </span>
         </label>
       </div>
-      {/* Invoice Numbering */}
+      {/* Document Numbering */}
       <h3 style={{ fontSize: 15, fontWeight: 600, marginTop: 28, marginBottom: 8, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
-        Invoice Numbering
+        Document Numbering
       </h3>
       <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
-        Customise how new invoice numbers look. Leave the defaults (INV-, 6 digits) if the standard format is fine. Existing invoices keep their numbers.
+        Customise how new numbers look for invoices, bills and payments. Leave a row on its defaults to keep the standard format. Existing documents keep their numbers. (Journal entries always use the system numbering.)
       </p>
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 16, marginBottom: 8 }}>
-        <div>
-          <label style={styles.labelStyle}>Prefix</label>
-          <input style={styles.inputStyle}
-            value={companyForm.documentNumbers?.invoice?.prefix ?? 'INV-'}
-            onChange={(e) => setCompanyForm({ ...companyForm, documentNumbers: { ...companyForm.documentNumbers, invoice: { ...(companyForm.documentNumbers?.invoice || {}), prefix: e.target.value } } })}
-            placeholder="INV-" />
-        </div>
-        <div>
-          <label style={styles.labelStyle}>Digits</label>
-          <input type="number" min={1} max={12} style={styles.inputStyle}
-            value={companyForm.documentNumbers?.invoice?.padding ?? 6}
-            onChange={(e) => setCompanyForm({ ...companyForm, documentNumbers: { ...companyForm.documentNumbers, invoice: { ...(companyForm.documentNumbers?.invoice || {}), padding: Number(e.target.value) } } })} />
-        </div>
-        <div>
-          <label style={styles.labelStyle}>Start at</label>
-          <input type="number" min={0} style={styles.inputStyle}
-            value={companyForm.documentNumbers?.invoice?.startNumber ?? 1}
-            onChange={(e) => setCompanyForm({ ...companyForm, documentNumbers: { ...companyForm.documentNumbers, invoice: { ...(companyForm.documentNumbers?.invoice || {}), startNumber: Number(e.target.value) } } })} />
-        </div>
-      </div>
-      <p style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginBottom: 24 }}>
-        Preview:{' '}
-        <strong style={{ fontFamily: 'monospace' }}>
-          {(companyForm.documentNumbers?.invoice?.prefix ?? 'INV-') + String(companyForm.documentNumbers?.invoice?.startNumber ?? 1).padStart(Math.min(12, Math.max(1, Number(companyForm.documentNumbers?.invoice?.padding) || 6)), '0')}
-        </strong>
-      </p>
+      {[
+        { key: 'invoice', label: 'Invoices', def: 'INV-' },
+        { key: 'bill', label: 'Bills', def: 'BILL-' },
+        { key: 'payment', label: 'Payments', def: 'PAY-' },
+      ].map((doc) => {
+        const dn = companyForm.documentNumbers?.[doc.key] || {};
+        const setDN = (patch) => setCompanyForm({ ...companyForm, documentNumbers: { ...companyForm.documentNumbers, [doc.key]: { ...(companyForm.documentNumbers?.[doc.key] || {}), ...patch } } });
+        const pad = Math.min(12, Math.max(1, Number(dn.padding) || 6));
+        const preview = (dn.prefix ?? doc.def) + String(dn.startNumber ?? 1).padStart(pad, '0');
+        return (
+          <div key={doc.key} style={{ marginBottom: 18 }}>
+            <label style={{ ...styles.labelStyle, marginBottom: 6 }}>{doc.label}</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12 }}>
+              <input style={styles.inputStyle} value={dn.prefix ?? doc.def} placeholder={doc.def}
+                onChange={(e) => setDN({ prefix: e.target.value })} />
+              <input type="number" min={1} max={12} style={styles.inputStyle} value={dn.padding ?? 6}
+                onChange={(e) => setDN({ padding: Number(e.target.value) })} />
+              <input type="number" min={0} style={styles.inputStyle} value={dn.startNumber ?? 1}
+                onChange={(e) => setDN({ startNumber: Number(e.target.value) })} />
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
+              Preview: <strong style={{ fontFamily: 'monospace' }}>{preview}</strong>
+            </p>
+          </div>
+        );
+      })}
 
       {/* Letterhead */}
       <h3
