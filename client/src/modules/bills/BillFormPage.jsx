@@ -5,6 +5,7 @@ import vendorService from '../../services/vendorService';
 import billService from '../../services/billService';
 import accountService from '../../services/accountService';
 import SmartAccountSelect from '../../components/common/SmartAccountSelect';
+import { useTenant } from '../../context/TenantContext';
 import { useToast } from '../../hooks/useToast';
 
 const emptyLine = () => ({ description: '', quantity: 1, unitPrice: '', account: '' });
@@ -12,6 +13,7 @@ const emptyLine = () => ({ description: '', quantity: 1, unitPrice: '', account:
 export default function BillFormPage() {
   const navigate = useNavigate();
   const { showToast, ToastComponent } = useToast();
+  const { settings: tenantSettings } = useTenant();
   const [vendors, setVendors] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -19,7 +21,13 @@ export default function BillFormPage() {
   const [form, setForm] = useState({
     vendor: '', date: new Date().toISOString().split('T')[0],
     dueDate: '', taxRate: 0, notes: '', lines: [emptyLine()],
+    customFields: {},
   });
+
+  // Tenant-defined header-level custom fields that target bills.
+  const billCustomFields = (tenantSettings?.customFields || []).filter((f) => f.target === 'bill');
+  const setCustomField = (id, value) =>
+    setForm((prev) => ({ ...prev, customFields: { ...prev.customFields, [id]: value } }));
 
   useEffect(() => {
     vendorService.getAll({ isActive: 'true' }).then((r) => { if (r.success) setVendors(r.data); }).catch(() => {});
@@ -49,11 +57,20 @@ export default function BillFormPage() {
     const validLines = form.lines.filter((l) => l.description && parseFloat(l.unitPrice) > 0);
     if (validLines.length < 1) { showToast('At least 1 line required', 'error'); return; }
 
+    // Client-side required check for custom fields (server also enforces).
+    for (const f of billCustomFields) {
+      if (!f.required) continue;
+      const v = form.customFields?.[f.id];
+      const empty = f.type === 'checkbox' ? !v : (v === undefined || v === null || String(v).trim() === '');
+      if (empty) { showToast(`${f.label} is required`, 'error'); return; }
+    }
+
     try {
       setSaving(true);
       const res = await billService.create({
         vendor: form.vendor, date: form.date, dueDate: form.dueDate,
         taxRate: parseFloat(form.taxRate) || 0, notes: form.notes,
+        customFields: form.customFields,
         lines: validLines.map((l) => ({ description: l.description, quantity: parseFloat(l.quantity) || 1, unitPrice: parseFloat(l.unitPrice), account: l.account || undefined })),
       });
       if (res.success) {
@@ -68,6 +85,37 @@ export default function BillFormPage() {
   };
 
   const inputStyle = { width: '100%', padding: '10px 14px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 13, color: 'var(--text-primary)', outline: 'none' };
+  const labelStyle = { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 };
+
+  const renderCustomField = (f) => {
+    const val = form.customFields?.[f.id];
+    if (f.type === 'checkbox') {
+      return (
+        <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 8, alignSelf: 'end', paddingBottom: 10 }}>
+          <input type="checkbox" checked={!!val} onChange={(e) => setCustomField(f.id, e.target.checked)} style={{ width: 18, height: 18 }} />
+          <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>{f.label}{f.required ? ' *' : ''}</span>
+        </div>
+      );
+    }
+    if (f.type === 'select') {
+      return (
+        <div key={f.id}>
+          <label style={labelStyle}>{f.label}{f.required ? ' *' : ''}</label>
+          <select value={val || ''} onChange={(e) => setCustomField(f.id, e.target.value)} style={inputStyle}>
+            <option value="">Select...</option>
+            {(f.options || []).map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+          </select>
+        </div>
+      );
+    }
+    const inputType = f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text';
+    return (
+      <div key={f.id}>
+        <label style={labelStyle}>{f.label}{f.required ? ' *' : ''}</label>
+        <input type={inputType} value={val || ''} onChange={(e) => setCustomField(f.id, e.target.value)} style={inputStyle} placeholder={f.label} />
+      </div>
+    );
+  };
 
   return (
     <div>
@@ -75,28 +123,39 @@ export default function BillFormPage() {
       <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: 22, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 24 }}>New Bill</h1>
 
       <div style={{ background: '#fff', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: 28 }}>
-        {/* 👇 CHANGED: grid columns to responsive auto-fit with min 220px */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(220px, 100%), 1fr))', gap: 16, marginBottom: 24 }}>
           <div>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Vendor *</label>
+            <label style={labelStyle}>Vendor *</label>
             <select value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} style={inputStyle}>
               <option value="">Select vendor...</option>
               {vendors.map((v) => <option key={v._id} value={v._id}>{v.name}</option>)}
             </select>
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Bill Date *</label>
+            <label style={labelStyle}>Bill Date *</label>
             <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={inputStyle} />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Due Date *</label>
+            <label style={labelStyle}>Due Date *</label>
             <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} style={inputStyle} />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>Tax Rate (%)</label>
+            <label style={labelStyle}>Tax Rate (%)</label>
             <input type="number" step="0.01" min="0" value={form.taxRate} onChange={(e) => setForm({ ...form, taxRate: e.target.value })} style={inputStyle} />
           </div>
         </div>
+
+        {/* Additional Information — tenant-defined custom fields (header-level) */}
+        {billCustomFields.length > 0 && (
+          <div style={{ marginBottom: 24, paddingBottom: 20, borderBottom: '1px solid var(--border)' }}>
+            <h3 style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 14, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Additional Information
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(220px, 100%), 1fr))', gap: 16 }}>
+              {billCustomFields.map((f) => renderCustomField(f))}
+            </div>
+          </div>
+        )}
 
         <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', marginBottom: 20 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>

@@ -136,7 +136,7 @@ function CompanyTab({
   showToast,
 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 700 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 20, maxWidth: 1100, alignItems: 'start' }}>
 
       {/* ── Card 1: Company Information ─────────────────────────────────── */}
       <div style={styles.card}>

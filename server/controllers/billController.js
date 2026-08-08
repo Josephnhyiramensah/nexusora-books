@@ -82,11 +82,27 @@ const createBill = async (req, res) => {
     const total = Math.round((subtotal + tax) * 100) / 100;
     const billNumber = await generateBillNumber(Bill, req.tenant?.settings?.documentNumbers?.bill);
 
+    // Snapshot tenant-defined custom fields (header-level) onto this bill.
+    const cfDefs = ((req.tenant && req.tenant.settings && req.tenant.settings.customFields) || []).filter((d) => d.target === 'bill');
+    const cfSubmitted = req.body.customFields || {};
+    const cfSnapshot = [];
+    for (const d of cfDefs) {
+      let v = cfSubmitted[d.id];
+      if (d.type === 'checkbox') v = !!v;
+      if (d.required && (v === undefined || v === null || v === '')) {
+        return res.status(400).json({ success: false, message: d.label + ' is required.' });
+      }
+      if (v !== undefined && v !== null && v !== '') {
+        cfSnapshot.push({ fieldId: d.id, label: d.label, type: d.type, value: v });
+      }
+    }
+
     const bill = await Bill.create({
       billNumber, vendor, date, dueDate,
       lines: processedLines,
       subtotal, taxRate: taxRate || 0, taxAmount: tax,
       total, amountPaid: 0, balance: total,
+      customFields: cfSnapshot,
       status: 'draft', notes, createdBy: req.user._id,
     });
 

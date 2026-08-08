@@ -10,6 +10,16 @@ const billLineSchema = new mongoose.Schema({
   account: { type: mongoose.Schema.Types.ObjectId, ref: 'Account' },
 }, { _id: true });
 
+// Snapshot of a tenant-defined custom field's value, captured at save time so
+// the bill stays self-describing even if the tenant later renames or removes
+// the field definition.
+const billCustomFieldSchema = new mongoose.Schema({
+  fieldId: String,
+  label: String,
+  type: String,
+  value: mongoose.Schema.Types.Mixed,
+}, { _id: false });
+
 const billSchema = new mongoose.Schema(
   {
     billNumber: { type: String, required: true, unique: true },
@@ -29,6 +39,8 @@ const billSchema = new mongoose.Schema(
     total: { type: Number, default: 0 },
     amountPaid: { type: Number, default: 0 },
     balance: { type: Number, default: 0 },
+    // Tenant-defined header-level custom fields (snapshot of label/type/value).
+    customFields: { type: [billCustomFieldSchema], default: [] },
     status: {
       type: String,
       enum: ['draft', 'awaiting_approval', 'approved', 'partially_paid', 'paid', 'overdue', 'cancelled'],
@@ -39,8 +51,6 @@ const billSchema = new mongoose.Schema(
     journalEntry: { type: mongoose.Schema.Types.ObjectId, ref: 'JournalEntry' },
     notes: String,
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    approvedAt: Date,
     rejectionReason: String,
   },
   { timestamps: true }
