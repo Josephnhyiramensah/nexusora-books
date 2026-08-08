@@ -212,6 +212,7 @@ const updateMyTenantSettings = async (req, res) => {
         'requireApproval',
         'currencies',
         'documentNumbers',
+        'customFields',
       ];
       allowed.forEach((f) => { if (settings[f] !== undefined) tenant.settings[f] = settings[f]; });
       tenant.markModified('settings');

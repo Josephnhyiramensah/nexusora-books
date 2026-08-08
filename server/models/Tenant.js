@@ -1,5 +1,17 @@
 const mongoose = require('mongoose');
 
+// A tenant-defined custom field (header-level) that appears on a document type.
+// Definitions live in Tenant.settings.customFields; the value a user enters is
+// snapshotted onto each document so records stay self-describing over time.
+const customFieldSchema = new mongoose.Schema({
+  id: String,                                  // stable id, generated in the UI
+  label: { type: String, trim: true },
+  type: { type: String, enum: ['text', 'number', 'date', 'select', 'checkbox'], default: 'text' },
+  target: { type: String, enum: ['invoice', 'bill'], default: 'invoice' },
+  required: { type: Boolean, default: false },
+  options: { type: [String], default: [] },    // choices when type === 'select'
+}, { _id: false });
+
 const tenantSchema = new mongoose.Schema(
   {
     subdomain: {
@@ -55,6 +67,8 @@ const tenantSchema = new mongoose.Schema(
           startNumber: { type: Number, default: 1, min: 0 },
         },
       },
+      // Tenant-defined header-level custom fields for invoices/bills.
+      customFields: { type: [customFieldSchema], default: [] },
       logo: String,
       letterheadImage: String,
       address: String,

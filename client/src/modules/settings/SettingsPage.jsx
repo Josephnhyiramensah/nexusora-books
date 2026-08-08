@@ -422,6 +422,63 @@ function CompanyTab({
         );
       })}
 
+      {/* Custom Fields */}
+      <h3 style={{ fontSize: 15, fontWeight: 600, marginTop: 28, marginBottom: 8, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
+        Custom Fields
+      </h3>
+      <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+        Add your own fields (LPO number, project code, delivery date, etc.) to appear on invoices and bills. Leave empty if you don't need any.
+      </p>
+      {(companyForm.customFields || []).map((f, idx) => {
+        const upd = (patch) => {
+          const arr = [...(companyForm.customFields || [])];
+          arr[idx] = { ...arr[idx], ...patch };
+          setCompanyForm({ ...companyForm, customFields: arr });
+        };
+        const del = () => setCompanyForm({ ...companyForm, customFields: (companyForm.customFields || []).filter((_, i) => i !== idx) });
+        return (
+          <div key={f.id || idx} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12, marginBottom: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 10, alignItems: 'end' }}>
+              <div>
+                <label style={styles.labelStyle}>Field label</label>
+                <input style={styles.inputStyle} value={f.label || ''} onChange={(e) => upd({ label: e.target.value })} placeholder="e.g. LPO Number" />
+              </div>
+              <div>
+                <label style={styles.labelStyle}>Type</label>
+                <select style={styles.inputStyle} value={f.type || 'text'} onChange={(e) => upd({ type: e.target.value })}>
+                  <option value="text">Text</option>
+                  <option value="number">Number</option>
+                  <option value="date">Date</option>
+                  <option value="select">Dropdown</option>
+                  <option value="checkbox">Checkbox</option>
+                </select>
+              </div>
+              <div>
+                <label style={styles.labelStyle}>Appears on</label>
+                <select style={styles.inputStyle} value={f.target || 'invoice'} onChange={(e) => upd({ target: e.target.value })}>
+                  <option value="invoice">Invoices</option>
+                  <option value="bill">Bills</option>
+                </select>
+              </div>
+              <button type="button" onClick={del} style={{ padding: '9px 12px', border: '1px solid #FECACA', background: '#fff', color: '#DC2626', borderRadius: 6, fontSize: 12.5, cursor: 'pointer' }}>Remove</button>
+            </div>
+            <div style={{ display: 'flex', gap: 18, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', gap: 6, fontSize: 13, alignItems: 'center', color: 'var(--text-secondary)' }}>
+                <input type="checkbox" checked={!!f.required} onChange={(e) => upd({ required: e.target.checked })} /> Required
+              </label>
+              {f.type === 'select' && (
+                <input style={{ ...styles.inputStyle, flex: 1, minWidth: 200 }} value={(f.options || []).join(', ')} onChange={(e) => upd({ options: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} placeholder="Dropdown options, comma-separated" />
+              )}
+            </div>
+          </div>
+        );
+      })}
+      <button type="button"
+        onClick={() => setCompanyForm({ ...companyForm, customFields: [...(companyForm.customFields || []), { id: 'cf_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), label: '', type: 'text', target: 'invoice', required: false, options: [] }] })}
+        style={{ padding: '9px 16px', border: '1px dashed var(--tech-blue)', background: '#fff', color: 'var(--tech-blue)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', marginBottom: 24 }}>
+        + Add field
+      </button>
+
       {/* Letterhead */}
       <h3
         style={{
@@ -1344,6 +1401,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
     taxId: settings?.taxId || '',
     requireApproval: settings?.requireApproval || false,
     documentNumbers: settings?.documentNumbers || { invoice: { prefix: 'INV-', padding: 6, startNumber: 1 } },
+    customFields: settings?.customFields || [],
     // Carry whiteLabel in the form state — WhiteLabelSettings reads its initial
     // values from here, so without it the toggle always rendered as off after a
     // refresh even though the value had saved.
@@ -1374,6 +1432,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
       region: settings.region ?? prev.region,
       taxId: settings.taxId ?? prev.taxId,
       documentNumbers: settings.documentNumbers ?? prev.documentNumbers,
+      customFields: settings.customFields ?? prev.customFields,
       letterhead: { ...prev.letterhead, ...(settings.letterhead || {}) },
     }));
   }, [settings]);
