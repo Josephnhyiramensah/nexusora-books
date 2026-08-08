@@ -80,6 +80,9 @@ const styles = {
     cursor: 'pointer',
     border: 'none',
   },
+  // Small section heading used at the top of each split card.
+  cardTitle: { fontSize: 16, fontWeight: 600, marginBottom: 8 },
+  cardSub: { fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 },
 };
 
 // ---------- Sub-components ----------
@@ -129,168 +132,339 @@ function CompanyTab({
   companyForm,
   setCompanyForm,
   handleLogoUpload,
-  handleSaveCompany,
+  saveSlice,
   showToast,
 }) {
   return (
-    <div style={{ ...styles.card, maxWidth: 700 }}>
-      <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 20 }}>Company Information</h2>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 700 }}>
 
-      {/* Logo Upload */}
-      <div
-        style={{
-          marginBottom: 28,
-          padding: 20,
-          background: 'var(--bg-app)',
-          borderRadius: 'var(--radius-md)',
-          border: '1px dashed var(--border)',
-        }}
-      >
-        <label style={{ ...styles.labelStyle, marginBottom: 14 }}>Company Logo</label>
-        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
-          This logo replaces the "N" icon on the dashboard and top bar. Recommended: square PNG or
-          JPG, at least 200×200px.
-        </p>
+      {/* ── Card 1: Company Information ─────────────────────────────────── */}
+      <div style={styles.card}>
+        <h2 style={styles.cardTitle}>Company Information</h2>
+        <p style={styles.cardSub}>Your logo, address and posting rules.</p>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-          {/* Logo Preview */}
-          <div
-            style={{
-              width: 80,
-              height: 80,
-              borderRadius: 16,
-              flexShrink: 0,
-              background: companyForm.logo
-                ? 'transparent'
-                : 'linear-gradient(135deg, var(--nexusora-gold), #e0b930)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontFamily: 'var(--font-heading)',
-              fontWeight: 700,
-              fontSize: 36,
-              color: 'var(--deep-navy)',
-              border: '2px solid var(--border)',
-              overflow: 'hidden',
-            }}
-          >
-            {companyForm.logo ? (
-              <img
-                src={companyForm.logo}
-                alt="Company logo"
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        {/* Logo Upload */}
+        <div
+          style={{
+            marginBottom: 28,
+            padding: 20,
+            background: 'var(--bg-app)',
+            borderRadius: 'var(--radius-md)',
+            border: '1px dashed var(--border)',
+          }}
+        >
+          <label style={{ ...styles.labelStyle, marginBottom: 14 }}>Company Logo</label>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
+            This logo replaces the "N" icon on the dashboard and top bar. Recommended: square PNG or
+            JPG, at least 200×200px.
+          </p>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+            <div
+              style={{
+                width: 80,
+                height: 80,
+                borderRadius: 16,
+                flexShrink: 0,
+                background: companyForm.logo
+                  ? 'transparent'
+                  : 'linear-gradient(135deg, var(--nexusora-gold), #e0b930)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontFamily: 'var(--font-heading)',
+                fontWeight: 700,
+                fontSize: 36,
+                color: 'var(--deep-navy)',
+                border: '2px solid var(--border)',
+                overflow: 'hidden',
+              }}
+            >
+              {companyForm.logo ? (
+                <img
+                  src={companyForm.logo}
+                  alt="Company logo"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              ) : (
+                companyName?.[0] || 'N'
+              )}
+            </div>
+
+            <div style={{ flex: 1 }}>
+              <input
+                type="file"
+                id="logo-upload"
+                accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+                onChange={handleLogoUpload}
+                style={{ display: 'none' }}
               />
-            ) : (
-              companyName?.[0] || 'N'
-            )}
-          </div>
-
-          {/* Upload Controls */}
-          <div style={{ flex: 1 }}>
-            <input
-              type="file"
-              id="logo-upload"
-              accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
-              onChange={handleLogoUpload}
-              style={{ display: 'none' }}
-            />
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <motion.label
-                htmlFor="logo-upload"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '10px 20px',
-                  borderRadius: 'var(--radius-sm)',
-                  background: 'var(--deep-navy)',
-                  color: '#fff',
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                📁 Choose Logo File
-              </motion.label>
-
-              {companyForm.logo && (
-                <motion.button
-                  type="button"
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <motion.label
+                  htmlFor="logo-upload"
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => {
-                    setCompanyForm((prev) => ({ ...prev, logo: '' }));
-                    showToast('Logo removed — click Save to apply');
-                  }}
                   style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
                     padding: '10px 20px',
                     borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--danger)',
-                    color: 'var(--danger)',
-                    background: '#fff',
+                    background: 'var(--deep-navy)',
+                    color: '#fff',
                     fontSize: 13,
                     fontWeight: 600,
                     cursor: 'pointer',
                   }}
                 >
-                  🗑 Remove Logo
-                </motion.button>
-              )}
+                  📁 Choose Logo File
+                </motion.label>
+
+                {companyForm.logo && (
+                  <motion.button
+                    type="button"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => {
+                      setCompanyForm((prev) => ({ ...prev, logo: '' }));
+                      showToast('Logo removed — click Save to apply');
+                    }}
+                    style={{
+                      padding: '10px 20px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--danger)',
+                      color: 'var(--danger)',
+                      background: '#fff',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    🗑 Remove Logo
+                  </motion.button>
+                )}
+              </div>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10 }}>
+                PNG, JPG, SVG, or WebP — max 2MB. Works on laptop, desktop, and mobile.
+              </p>
             </div>
-            <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10 }}>
-              PNG, JPG, SVG, or WebP — max 2MB. Works on laptop, desktop, and mobile.
-            </p>
           </div>
+        </div>
+
+        {/* Company Info Fields */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+          <div>
+            <label style={styles.labelStyle}>Company Name</label>
+            <input style={styles.inputStyle} value={companyName || ''} disabled />
+          </div>
+          <div>
+            <label style={styles.labelStyle}>Subdomain</label>
+            <input style={styles.inputStyle} value={`${subdomain}.nexusorabooks.com`} disabled />
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
+          <div>
+            <label style={styles.labelStyle}>Address</label>
+            <input
+              style={styles.inputStyle}
+              value={companyForm.address}
+              onChange={(e) => setCompanyForm({ ...companyForm, address: e.target.value })}
+              placeholder="Street address"
+            />
+          </div>
+          <div>
+            <label style={styles.labelStyle}>City</label>
+            <input
+              style={styles.inputStyle}
+              value={companyForm.city}
+              onChange={(e) => setCompanyForm({ ...companyForm, city: e.target.value })}
+              placeholder="Kumasi"
+            />
+          </div>
+          <div>
+            <label style={styles.labelStyle}>Region</label>
+            <input
+              style={styles.inputStyle}
+              value={companyForm.region}
+              onChange={(e) => setCompanyForm({ ...companyForm, region: e.target.value })}
+              placeholder="Ashanti"
+            />
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={styles.labelStyle}>Tax ID (TIN)</label>
+          <input
+            style={styles.inputStyle}
+            value={companyForm.taxId}
+            onChange={(e) => setCompanyForm({ ...companyForm, taxId: e.target.value })}
+            placeholder="GRA TIN"
+          />
+        </div>
+
+        <div style={{ marginBottom: 20, padding: 16, background: 'var(--bg-app)', borderRadius: 8, border: '1px solid var(--border)' }}>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer' }}>
+            <input type="checkbox" style={{ marginTop: 3, width: 18, height: 18, cursor: 'pointer' }}
+              checked={!!companyForm.requireApproval}
+              onChange={(e) => setCompanyForm({ ...companyForm, requireApproval: e.target.checked })} />
+            <span>
+              <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Require approval before entries post</span>
+              <span style={{ display: 'block', fontSize: 12.5, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.5 }}>
+                When enabled, journal entries, invoices, and bills created by accountants must be approved by an admin before they post to the ledger. Admins and super-admins still post directly.
+              </span>
+            </span>
+          </label>
+        </div>
+
+        <button onClick={() => saveSlice({ logo: companyForm.logo, address: companyForm.address, city: companyForm.city, region: companyForm.region, taxId: companyForm.taxId, requireApproval: companyForm.requireApproval }, 'Company information saved')} style={styles.buttonPrimary}>
+          Save Company Information
+        </button>
+      </div>
+
+      {/* ── Card 2: Document Numbering ─────────────────────────────────── */}
+      <div style={styles.card}>
+        <h2 style={styles.cardTitle}>Document Numbering</h2>
+        <p style={styles.cardSub}>
+          Customise how new numbers look for invoices, bills and payments. Leave a row on its defaults to keep the standard format. Existing documents keep their numbers. (Journal entries always use the system numbering.)
+        </p>
+        {[
+          { key: 'invoice', label: 'Invoices', def: 'INV-' },
+          { key: 'bill', label: 'Bills', def: 'BILL-' },
+          { key: 'payment', label: 'Payments', def: 'PAY-' },
+        ].map((doc) => {
+          const dn = companyForm.documentNumbers?.[doc.key] || {};
+          const setDN = (patch) => setCompanyForm({ ...companyForm, documentNumbers: { ...companyForm.documentNumbers, [doc.key]: { ...(companyForm.documentNumbers?.[doc.key] || {}), ...patch } } });
+          const pad = Math.min(12, Math.max(1, Number(dn.padding) || 6));
+          const preview = (dn.prefix ?? doc.def) + String(dn.startNumber ?? 1).padStart(pad, '0');
+          return (
+            <div key={doc.key} style={{ marginBottom: 18 }}>
+              <label style={{ ...styles.labelStyle, marginBottom: 6 }}>{doc.label}</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12 }}>
+                <input style={styles.inputStyle} value={dn.prefix ?? doc.def} placeholder={doc.def}
+                  onChange={(e) => setDN({ prefix: e.target.value })} />
+                <input type="number" min={1} max={12} style={styles.inputStyle} value={dn.padding ?? 6}
+                  onChange={(e) => setDN({ padding: Number(e.target.value) })} />
+                <input type="number" min={0} style={styles.inputStyle} value={dn.startNumber ?? 1}
+                  onChange={(e) => setDN({ startNumber: Number(e.target.value) })} />
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
+                Preview: <strong style={{ fontFamily: 'monospace' }}>{preview}</strong>
+              </p>
+            </div>
+          );
+        })}
+        <button onClick={() => saveSlice({ documentNumbers: companyForm.documentNumbers }, 'Numbering saved')} style={styles.buttonPrimary}>
+          Save Numbering
+        </button>
+      </div>
+
+      {/* ── Card 3: Custom Fields ──────────────────────────────────────── */}
+      <div style={styles.card}>
+        <h2 style={styles.cardTitle}>Custom Fields</h2>
+        <p style={styles.cardSub}>
+          Add your own fields (LPO number, project code, delivery date, etc.) to appear on invoices and bills. Leave empty if you don't need any.
+        </p>
+        {(companyForm.customFields || []).map((f, idx) => {
+          const upd = (patch) => {
+            const arr = [...(companyForm.customFields || [])];
+            arr[idx] = { ...arr[idx], ...patch };
+            setCompanyForm({ ...companyForm, customFields: arr });
+          };
+          const del = () => setCompanyForm({ ...companyForm, customFields: (companyForm.customFields || []).filter((_, i) => i !== idx) });
+          return (
+            <div key={f.id || idx} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12, marginBottom: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 10, alignItems: 'end' }}>
+                <div>
+                  <label style={styles.labelStyle}>Field label</label>
+                  <input style={styles.inputStyle} value={f.label || ''} onChange={(e) => upd({ label: e.target.value })} placeholder="e.g. LPO Number" />
+                </div>
+                <div>
+                  <label style={styles.labelStyle}>Type</label>
+                  <select style={styles.inputStyle} value={f.type || 'text'} onChange={(e) => upd({ type: e.target.value })}>
+                    <option value="text">Text</option>
+                    <option value="number">Number</option>
+                    <option value="date">Date</option>
+                    <option value="select">Dropdown</option>
+                    <option value="checkbox">Checkbox</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={styles.labelStyle}>Appears on</label>
+                  <select style={styles.inputStyle} value={f.target || 'invoice'} onChange={(e) => upd({ target: e.target.value })}>
+                    <option value="invoice">Invoices</option>
+                    <option value="bill">Bills</option>
+                  </select>
+                </div>
+                <button type="button" onClick={del} style={{ padding: '9px 12px', border: '1px solid #FECACA', background: '#fff', color: '#DC2626', borderRadius: 6, fontSize: 12.5, cursor: 'pointer' }}>Remove</button>
+              </div>
+              <div style={{ display: 'flex', gap: 18, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <label style={{ display: 'flex', gap: 6, fontSize: 13, alignItems: 'center', color: 'var(--text-secondary)' }}>
+                  <input type="checkbox" checked={!!f.required} onChange={(e) => upd({ required: e.target.checked })} /> Required
+                </label>
+                {f.type === 'select' && (
+                  <input style={{ ...styles.inputStyle, flex: 1, minWidth: 200 }} value={(f.options || []).join(', ')} onChange={(e) => upd({ options: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} placeholder="Dropdown options, comma-separated" />
+                )}
+              </div>
+            </div>
+          );
+        })}
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 6 }}>
+          <button type="button"
+            onClick={() => setCompanyForm({ ...companyForm, customFields: [...(companyForm.customFields || []), { id: 'cf_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), label: '', type: 'text', target: 'invoice', required: false, options: [] }] })}
+            style={{ padding: '9px 16px', border: '1px dashed var(--tech-blue)', background: '#fff', color: 'var(--tech-blue)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            + Add field
+          </button>
+          <button onClick={() => saveSlice({ customFields: companyForm.customFields }, 'Custom fields saved')} style={styles.buttonPrimary}>
+            Save Custom Fields
+          </button>
         </div>
       </div>
 
+      {/* ── Card 4: Letterhead & Print ─────────────────────────────────── */}
+      <div style={styles.card}>
+        <h2 style={styles.cardTitle}>Letterhead & Print Settings</h2>
+        <p style={styles.cardSub}>These details appear on printed invoices, reports, and official documents.</p>
 
-      <div style={{ marginBottom: 28, padding: 20, background: 'var(--bg-app)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--border)' }}>
-        <label style={{ ...styles.labelStyle, marginBottom: 6 }}>Official Letterhead Image</label>
-        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
-          Upload your company letterhead as PNG or JPG. It replaces the navy header on all printed statements and invoices — your exact branded letterhead will appear.
-        </p>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, flexWrap: 'wrap' }}>
-          <div style={{ width: 220, height: 65, borderRadius: 8, border: '1px solid var(--border)', overflow: 'hidden', background: '#F8FAFF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            {companyForm.letterheadImage ? (
-              <img src={companyForm.letterheadImage} alt="Letterhead preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
-              <span style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center', padding: 8 }}>No letterhead uploaded</span>
-            )}
-          </div>
-          <div>
-            <input type="file" id="letterhead-upload" accept="image/png,image/jpeg,image/jpg"
-              style={{ display: 'none' }}
-            onChange={async (e) => {
+        <div style={{ marginBottom: 28, padding: 20, background: 'var(--bg-app)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--border)' }}>
+          <label style={{ ...styles.labelStyle, marginBottom: 6 }}>Official Letterhead Image</label>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
+            Upload your company letterhead as PNG or JPG. It replaces the navy header on all printed statements and invoices — your exact branded letterhead will appear.
+          </p>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20, flexWrap: 'wrap' }}>
+            <div style={{ width: 220, height: 65, borderRadius: 8, border: '1px solid var(--border)', overflow: 'hidden', background: '#F8FAFF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              {companyForm.letterheadImage ? (
+                <img src={companyForm.letterheadImage} alt="Letterhead preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center', padding: 8 }}>No letterhead uploaded</span>
+              )}
+            </div>
+            <div>
+              <input type="file" id="letterhead-upload" accept="image/png,image/jpeg,image/jpg"
+                style={{ display: 'none' }}
+              onChange={async (e) => {
   const file = e.target.files[0];
   if (!file) return;
   if (file.size > 10 * 1024 * 1024) { showToast('Letterhead must be under 10MB', 'error'); return; }
   showToast('Compressing and uploading letterhead...');
   try {
-    // Compress image using canvas before uploading
     const compressedBase64 = await new Promise((resolve, reject) => {
       const img = new Image();
       const objectUrl = URL.createObjectURL(file);
       img.onload = () => {
         URL.revokeObjectURL(objectUrl);
         const canvas = document.createElement('canvas');
-        // Max width 1200px for letterhead — enough for A4 quality
         const maxWidth = 800;
         const scale = Math.min(1, maxWidth / img.width);
         canvas.width = img.width * scale;
         canvas.height = img.height * scale;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        // Compress to JPEG at 80% quality
         resolve(canvas.toDataURL('image/jpeg', 0.5));
       };
       img.onerror = reject;
       img.src = objectUrl;
     });
-
-    console.log('[Letterhead] Compressed size:', Math.round(compressedBase64.length / 1024), 'KB');
 
     const { data } = await api.post('/upload/letterhead', {
       imageData: compressedBase64,
@@ -299,293 +473,121 @@ function CompanyTab({
 
     if (data.success) {
       setCompanyForm((prev) => ({ ...prev, letterheadImage: data.url }));
-      showToast('✅ Letterhead uploaded — click Save Company Settings to apply');
+      showToast('✅ Letterhead uploaded — click Save Letterhead & Print to apply');
     }
   } catch (err) {
     showToast(err.response?.data?.message || 'Upload failed', 'error');
   }
 }}
+              />
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <motion.label htmlFor="letterhead-upload" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 'var(--radius-sm)', background: 'var(--deep-navy)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  📄 Upload Letterhead
+                </motion.label>
+                {companyForm.letterheadImage && (
+                  <motion.button type="button" whileHover={{ scale: 1.02 }} onClick={() => { setCompanyForm((prev) => ({ ...prev, letterheadImage: '' })); showToast('Letterhead removed'); }}
+                    style={{ padding: '10px 20px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--danger)', color: 'var(--danger)', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                    🗑 Remove
+                  </motion.button>
+                )}
+              </div>
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10 }}>PNG or JPG — max 5MB. After uploading click Save Letterhead & Print.</p>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+          <div>
+            <label style={styles.labelStyle}>Company Name (on letterhead)</label>
+            <input
+              style={styles.inputStyle}
+              value={companyForm.letterhead.companyName}
+              onChange={(e) =>
+                setCompanyForm({
+                  ...companyForm,
+                  letterhead: { ...companyForm.letterhead, companyName: e.target.value },
+                })
+              }
             />
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <motion.label htmlFor="letterhead-upload" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 'var(--radius-sm)', background: 'var(--deep-navy)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                📄 Upload Letterhead
-              </motion.label>
-              {companyForm.letterheadImage && (
-                <motion.button type="button" whileHover={{ scale: 1.02 }} onClick={() => { setCompanyForm((prev) => ({ ...prev, letterheadImage: '' })); showToast('Letterhead removed'); }}
-                  style={{ padding: '10px 20px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--danger)', color: 'var(--danger)', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                  🗑 Remove
-                </motion.button>
-              )}
-            </div>
-            <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10 }}>PNG or JPG — max 5MB. After uploading click Save Company Settings.</p>
+          </div>
+          <div>
+            <label style={styles.labelStyle}>Tagline</label>
+            <input
+              style={styles.inputStyle}
+              value={companyForm.letterhead.tagline}
+              onChange={(e) =>
+                setCompanyForm({
+                  ...companyForm,
+                  letterhead: { ...companyForm.letterhead, tagline: e.target.value },
+                })
+              }
+              placeholder="Your company motto"
+            />
           </div>
         </div>
-      </div>
 
-      {/* Company Info Fields */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-        <div>
-          <label style={styles.labelStyle}>Company Name</label>
-          <input style={styles.inputStyle} value={companyName || ''} disabled />
-        </div>
-        <div>
-          <label style={styles.labelStyle}>Subdomain</label>
-          <input style={styles.inputStyle} value={`${subdomain}.nexusorabooks.com`} disabled />
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
-        <div>
-          <label style={styles.labelStyle}>Address</label>
+        <div style={{ marginBottom: 16 }}>
+          <label style={styles.labelStyle}>Address (on letterhead)</label>
           <input
             style={styles.inputStyle}
-            value={companyForm.address}
-            onChange={(e) => setCompanyForm({ ...companyForm, address: e.target.value })}
-            placeholder="Street address"
+            value={companyForm.letterhead.address}
+            onChange={(e) =>
+              setCompanyForm({
+                ...companyForm,
+                letterhead: { ...companyForm.letterhead, address: e.target.value },
+              })
+            }
+            placeholder="Full address for documents"
           />
         </div>
-        <div>
-          <label style={styles.labelStyle}>City</label>
-          <input
-            style={styles.inputStyle}
-            value={companyForm.city}
-            onChange={(e) => setCompanyForm({ ...companyForm, city: e.target.value })}
-            placeholder="Kumasi"
-          />
-        </div>
-        <div>
-          <label style={styles.labelStyle}>Region</label>
-          <input
-            style={styles.inputStyle}
-            value={companyForm.region}
-            onChange={(e) => setCompanyForm({ ...companyForm, region: e.target.value })}
-            placeholder="Ashanti"
-          />
-        </div>
-      </div>
 
-      <div style={{ marginBottom: 16 }}>
-        <label style={styles.labelStyle}>Tax ID (TIN)</label>
-        <input
-          style={styles.inputStyle}
-          value={companyForm.taxId}
-          onChange={(e) => setCompanyForm({ ...companyForm, taxId: e.target.value })}
-          placeholder="GRA TIN"
-        />
-      </div>
-
-      <div style={{ marginBottom: 16, padding: 16, background: 'var(--bg-app)', borderRadius: 8, border: '1px solid var(--border)' }}>
-        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer' }}>
-          <input type="checkbox" style={{ marginTop: 3, width: 18, height: 18, cursor: 'pointer' }}
-            checked={!!companyForm.requireApproval}
-            onChange={(e) => setCompanyForm({ ...companyForm, requireApproval: e.target.checked })} />
-          <span>
-            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Require approval before entries post</span>
-            <span style={{ display: 'block', fontSize: 12.5, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.5 }}>
-              When enabled, journal entries, invoices, and bills created by accountants must be approved by an admin before they post to the ledger. Admins and super-admins still post directly.
-            </span>
-          </span>
-        </label>
-      </div>
-      {/* Document Numbering */}
-      <h3 style={{ fontSize: 15, fontWeight: 600, marginTop: 28, marginBottom: 8, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
-        Document Numbering
-      </h3>
-      <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
-        Customise how new numbers look for invoices, bills and payments. Leave a row on its defaults to keep the standard format. Existing documents keep their numbers. (Journal entries always use the system numbering.)
-      </p>
-      {[
-        { key: 'invoice', label: 'Invoices', def: 'INV-' },
-        { key: 'bill', label: 'Bills', def: 'BILL-' },
-        { key: 'payment', label: 'Payments', def: 'PAY-' },
-      ].map((doc) => {
-        const dn = companyForm.documentNumbers?.[doc.key] || {};
-        const setDN = (patch) => setCompanyForm({ ...companyForm, documentNumbers: { ...companyForm.documentNumbers, [doc.key]: { ...(companyForm.documentNumbers?.[doc.key] || {}), ...patch } } });
-        const pad = Math.min(12, Math.max(1, Number(dn.padding) || 6));
-        const preview = (dn.prefix ?? doc.def) + String(dn.startNumber ?? 1).padStart(pad, '0');
-        return (
-          <div key={doc.key} style={{ marginBottom: 18 }}>
-            <label style={{ ...styles.labelStyle, marginBottom: 6 }}>{doc.label}</label>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12 }}>
-              <input style={styles.inputStyle} value={dn.prefix ?? doc.def} placeholder={doc.def}
-                onChange={(e) => setDN({ prefix: e.target.value })} />
-              <input type="number" min={1} max={12} style={styles.inputStyle} value={dn.padding ?? 6}
-                onChange={(e) => setDN({ padding: Number(e.target.value) })} />
-              <input type="number" min={0} style={styles.inputStyle} value={dn.startNumber ?? 1}
-                onChange={(e) => setDN({ startNumber: Number(e.target.value) })} />
-            </div>
-            <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-              Preview: <strong style={{ fontFamily: 'monospace' }}>{preview}</strong>
-            </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 24 }}>
+          <div>
+            <label style={styles.labelStyle}>Phone</label>
+            <input
+              style={styles.inputStyle}
+              value={companyForm.letterhead.phone}
+              onChange={(e) =>
+                setCompanyForm({
+                  ...companyForm,
+                  letterhead: { ...companyForm.letterhead, phone: e.target.value },
+                })
+              }
+            />
           </div>
-        );
-      })}
-
-      {/* Custom Fields */}
-      <h3 style={{ fontSize: 15, fontWeight: 600, marginTop: 28, marginBottom: 8, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
-        Custom Fields
-      </h3>
-      <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
-        Add your own fields (LPO number, project code, delivery date, etc.) to appear on invoices and bills. Leave empty if you don't need any.
-      </p>
-      {(companyForm.customFields || []).map((f, idx) => {
-        const upd = (patch) => {
-          const arr = [...(companyForm.customFields || [])];
-          arr[idx] = { ...arr[idx], ...patch };
-          setCompanyForm({ ...companyForm, customFields: arr });
-        };
-        const del = () => setCompanyForm({ ...companyForm, customFields: (companyForm.customFields || []).filter((_, i) => i !== idx) });
-        return (
-          <div key={f.id || idx} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12, marginBottom: 10 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 10, alignItems: 'end' }}>
-              <div>
-                <label style={styles.labelStyle}>Field label</label>
-                <input style={styles.inputStyle} value={f.label || ''} onChange={(e) => upd({ label: e.target.value })} placeholder="e.g. LPO Number" />
-              </div>
-              <div>
-                <label style={styles.labelStyle}>Type</label>
-                <select style={styles.inputStyle} value={f.type || 'text'} onChange={(e) => upd({ type: e.target.value })}>
-                  <option value="text">Text</option>
-                  <option value="number">Number</option>
-                  <option value="date">Date</option>
-                  <option value="select">Dropdown</option>
-                  <option value="checkbox">Checkbox</option>
-                </select>
-              </div>
-              <div>
-                <label style={styles.labelStyle}>Appears on</label>
-                <select style={styles.inputStyle} value={f.target || 'invoice'} onChange={(e) => upd({ target: e.target.value })}>
-                  <option value="invoice">Invoices</option>
-                  <option value="bill">Bills</option>
-                </select>
-              </div>
-              <button type="button" onClick={del} style={{ padding: '9px 12px', border: '1px solid #FECACA', background: '#fff', color: '#DC2626', borderRadius: 6, fontSize: 12.5, cursor: 'pointer' }}>Remove</button>
-            </div>
-            <div style={{ display: 'flex', gap: 18, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <label style={{ display: 'flex', gap: 6, fontSize: 13, alignItems: 'center', color: 'var(--text-secondary)' }}>
-                <input type="checkbox" checked={!!f.required} onChange={(e) => upd({ required: e.target.checked })} /> Required
-              </label>
-              {f.type === 'select' && (
-                <input style={{ ...styles.inputStyle, flex: 1, minWidth: 200 }} value={(f.options || []).join(', ')} onChange={(e) => upd({ options: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} placeholder="Dropdown options, comma-separated" />
-              )}
-            </div>
+          <div>
+            <label style={styles.labelStyle}>Email</label>
+            <input
+              style={styles.inputStyle}
+              value={companyForm.letterhead.email}
+              onChange={(e) =>
+                setCompanyForm({
+                  ...companyForm,
+                  letterhead: { ...companyForm.letterhead, email: e.target.value },
+                })
+              }
+            />
           </div>
-        );
-      })}
-      <button type="button"
-        onClick={() => setCompanyForm({ ...companyForm, customFields: [...(companyForm.customFields || []), { id: 'cf_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), label: '', type: 'text', target: 'invoice', required: false, options: [] }] })}
-        style={{ padding: '9px 16px', border: '1px dashed var(--tech-blue)', background: '#fff', color: 'var(--tech-blue)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', marginBottom: 24 }}>
-        + Add field
-      </button>
-
-      {/* Letterhead */}
-      <h3
-        style={{
-          fontSize: 15,
-          fontWeight: 600,
-          marginTop: 28,
-          marginBottom: 16,
-          paddingTop: 20,
-          borderTop: '1px solid var(--border)',
-        }}
-      >
-        Letterhead & Print Settings
-      </h3>
-      <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
-        These details appear on printed invoices, reports, and official documents.
-      </p>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-        <div>
-          <label style={styles.labelStyle}>Company Name (on letterhead)</label>
-          <input
-            style={styles.inputStyle}
-            value={companyForm.letterhead.companyName}
-            onChange={(e) =>
-              setCompanyForm({
-                ...companyForm,
-                letterhead: { ...companyForm.letterhead, companyName: e.target.value },
-              })
-            }
-          />
+          <div>
+            <label style={styles.labelStyle}>Website</label>
+            <input
+              style={styles.inputStyle}
+              value={companyForm.letterhead.website}
+              onChange={(e) =>
+                setCompanyForm({
+                  ...companyForm,
+                  letterhead: { ...companyForm.letterhead, website: e.target.value },
+                })
+              }
+            />
+          </div>
         </div>
-        <div>
-          <label style={styles.labelStyle}>Tagline</label>
-          <input
-            style={styles.inputStyle}
-            value={companyForm.letterhead.tagline}
-            onChange={(e) =>
-              setCompanyForm({
-                ...companyForm,
-                letterhead: { ...companyForm.letterhead, tagline: e.target.value },
-              })
-            }
-            placeholder="Your company motto"
-          />
-        </div>
+
+        <button onClick={() => saveSlice({ letterheadImage: companyForm.letterheadImage, letterhead: companyForm.letterhead }, 'Letterhead saved')} style={styles.buttonPrimary}>
+          Save Letterhead & Print
+        </button>
       </div>
-
-      <div style={{ marginBottom: 16 }}>
-        <label style={styles.labelStyle}>Address (on letterhead)</label>
-        <input
-          style={styles.inputStyle}
-          value={companyForm.letterhead.address}
-          onChange={(e) =>
-            setCompanyForm({
-              ...companyForm,
-              letterhead: { ...companyForm.letterhead, address: e.target.value },
-            })
-          }
-          placeholder="Full address for documents"
-        />
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 24 }}>
-        <div>
-          <label style={styles.labelStyle}>Phone</label>
-          <input
-            style={styles.inputStyle}
-            value={companyForm.letterhead.phone}
-            onChange={(e) =>
-              setCompanyForm({
-                ...companyForm,
-                letterhead: { ...companyForm.letterhead, phone: e.target.value },
-              })
-            }
-          />
-        </div>
-        <div>
-          <label style={styles.labelStyle}>Email</label>
-          <input
-            style={styles.inputStyle}
-            value={companyForm.letterhead.email}
-            onChange={(e) =>
-              setCompanyForm({
-                ...companyForm,
-                letterhead: { ...companyForm.letterhead, email: e.target.value },
-              })
-            }
-          />
-        </div>
-        <div>
-          <label style={styles.labelStyle}>Website</label>
-          <input
-            style={styles.inputStyle}
-            value={companyForm.letterhead.website}
-            onChange={(e) =>
-              setCompanyForm({
-                ...companyForm,
-                letterhead: { ...companyForm.letterhead, website: e.target.value },
-              })
-            }
-          />
-        </div>
-      </div>
-
-      <button onClick={() => handleSaveCompany()} style={styles.buttonPrimary}>
-        Save Company Settings
-      </button>
     </div>
   );
 }
@@ -1386,7 +1388,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
 
       if (data.success) {
         setCompanyForm((prev) => ({ ...prev, logo: data.url }));
-        showToast('✅ Logo uploaded — click Save Company Settings to apply');
+        showToast('✅ Logo uploaded — click Save Company Information to apply');
       }
     } catch (err) {
       showToast(err.response?.data?.message || 'Logo upload failed', 'error');
@@ -1447,6 +1449,47 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
   useEffect(() => {
     if (['super_admin', 'admin'].includes(user?.role)) fetchUsers();
   }, []);
+
+  // Save ONLY the given settings keys, leaving everything else as last saved.
+  // The backend does a partial $set, so sending a slice never disturbs the
+  // other cards. The slice is merged into context so the UI stays in sync.
+  const saveSlice = async (partial, successMsg) => {
+    try {
+      const clean = { ...partial };
+      // Never send base64 data URLs (or non-string image values) — only URLs.
+      if (typeof clean.logo === 'string') {
+        if (clean.logo.startsWith('data:')) delete clean.logo;
+      } else if (clean.logo) {
+        delete clean.logo;
+      }
+      if (typeof clean.letterheadImage === 'string') {
+        if (clean.letterheadImage.startsWith('data:')) delete clean.letterheadImage;
+      } else if (clean.letterheadImage) {
+        delete clean.letterheadImage;
+      }
+      const token = localStorage.getItem('accessToken');
+      const host = window.location.hostname;
+      const sub = /^\d+\.\d+\.\d+\.\d+$/.test(host) ? '' : host.split('.')[0];
+      const res = await fetch('/api/auth/company-settings', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          'X-Tenant-ID': sub,
+        },
+        body: JSON.stringify({ settings: clean }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        updateSettings({ ...(settings || {}), ...clean });
+        showToast(successMsg || 'Settings saved');
+      } else {
+        showToast(data.message || 'Failed to save', 'error');
+      }
+    } catch (err) {
+      showToast(err.message || 'Failed', 'error');
+    }
+  };
 
   const handleSaveCompany = async (overrideForm) => {
     try {
@@ -1588,7 +1631,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
           companyForm={companyForm}
           setCompanyForm={setCompanyForm}
           handleLogoUpload={handleLogoUpload}
-          handleSaveCompany={handleSaveCompany}
+          saveSlice={saveSlice}
           showToast={showToast}
         />
       )}
