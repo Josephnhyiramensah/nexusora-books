@@ -153,6 +153,7 @@ export function exportToCSV(filename, headers, rows) {
 const NAVY = 'FF1A3560';
 const GOLD = 'FFC9A227';
 const LIGHT = 'FFF2F6FA';
+const BAND = 'FFF7FAFD';   // subtle fill for alternating (zebra) data rows
 const WHITE = 'FFFFFFFF';
 const BORDER = 'FFE2E8F0';
 
@@ -217,9 +218,14 @@ export async function exportToExcelStyled({ filename, companyName, title, subtit
     cell.border = { bottom: { style: 'thin', color: { argb: NAVY } } };
   });
   headerRow.height = 20;
-  ws.views = [{ state: 'frozen', ySplit: r }];
+  const headerRowIdx = r;
+  // Freeze the header row AND the first column so labels stay visible when
+  // scrolling in either direction; repeat the header on every printed page.
+  ws.views = [{ state: 'frozen', xSplit: 1, ySplit: r }];
+  ws.pageSetup.printTitlesRow = r + ':' + r;
   r += 1;
 
+  const firstDataRow = r;
   const moneyFmt = '#,##0.00';
 
   // ── Sections ──
@@ -251,18 +257,22 @@ export async function exportToExcelStyled({ filename, companyName, title, subtit
       r += 1;
     }
 
-    // Data rows.
+    // Data rows — with zebra banding for readability.
+    let __bandIdx = 0;
     (section.rows || []).forEach((row) => {
       const rr = ws.getRow(r);
+      const banded = __bandIdx % 2 === 1;
       columns.forEach((c, i) => {
         const cell = rr.getCell(i + 1);
         const val = row[c.key];
         cell.value = (val === '' || val === undefined || val === null) ? '' : val;
         cell.font = { name: 'Calibri', size: 10, color: { argb: 'FF1F2937' } };
         cell.alignment = { horizontal: c.align || (c.money ? 'right' : 'left') };
+        if (banded) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BAND } };
         if (c.money && typeof val === 'number') cell.numFmt = moneyFmt;
         cell.border = { bottom: { style: 'hair', color: { argb: BORDER } } };
       });
+      __bandIdx += 1;
       r += 1;
     });
 
@@ -288,6 +298,11 @@ export async function exportToExcelStyled({ filename, companyName, title, subtit
 
     r += 1; // gap between sections
   });
+
+  // Auto-filter across the header row and data columns, so the export sorts and
+  // filters like a real data table.
+  const lastDataRow = Math.max(firstDataRow, r - 2);
+  ws.autoFilter = { from: { row: headerRowIdx, column: 1 }, to: { row: lastDataRow, column: colCount } };
 
   // Download.
   const buf = await wb.xlsx.writeBuffer();
