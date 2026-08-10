@@ -56,7 +56,7 @@ const resolveTenant = async (subdomain) => {
   try {
     const tenant = await Tenant.findOne({
       subdomain,
-      status: { $in: ['active', 'founding'] },
+      status: { $nin: ['suspended', 'archived'] },
     });
     return tenant;
   } catch (error) {
