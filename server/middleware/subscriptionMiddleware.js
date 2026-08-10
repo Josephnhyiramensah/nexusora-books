@@ -29,7 +29,7 @@ const enforceSubscription = async (req, res, next) => {
         plan: tenant.plan,
         expiryDate: expiry,
         message: tenant.plan === 'trial'
-          ? 'Your 14-day free trial has ended. Please upgrade to continue.'
+          ? 'Your 30-day free trial has ended. Please upgrade to continue.'
           : 'Your subscription has expired. Please renew to continue.',
       });
     }
