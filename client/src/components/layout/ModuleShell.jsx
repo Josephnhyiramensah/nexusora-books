@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { FiChevronLeft, FiChevronRight } from 'react-icons/fi';
+import { motion, AnimatePresence } from 'framer-motion';
+import { FiChevronLeft, FiChevronRight, FiLock } from 'react-icons/fi';
 import TopBar from './TopBar';
 import ModuleSidebar from './ModuleSidebar';
 import MobileDrawer from './MobileDrawer';
@@ -18,6 +18,12 @@ export default function ModuleShell({ moduleTitle, sidebarItems }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [daysLeft, setDaysLeft] = useState(null);
 
+  // Expired-subscription state → drives the read-only paywall overlay.
+  const [expired, setExpired] = useState(false);
+  const [expiryDate, setExpiryDate] = useState(null);
+  const [expiredPlan, setExpiredPlan] = useState('');
+  const [paywallDismissed, setPaywallDismissed] = useState(false);
+
   const showMobileNav = isMobile || isTablet;
 
   useEffect(() => {
@@ -25,11 +31,25 @@ export default function ModuleShell({ moduleTitle, sidebarItems }) {
     const checkSub = async () => {
       try {
         const { data } = await api.get(`/payment/status/${subdomain}`);
-        if (data.success) setDaysLeft(data.data.daysLeft);
+        if (data.success) {
+          setDaysLeft(data.data.daysLeft);
+          setExpired(!!data.data.isExpired);
+          setExpiryDate(data.data.expiryDate || null);
+          setExpiredPlan(data.data.plan || '');
+        }
       } catch {}
     };
     checkSub();
   }, [subdomain]);
+
+  const fmtDate = (d) => {
+    if (!d) return '';
+    try { return new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }); }
+    catch { return ''; }
+  };
+
+  const planLabel = expiredPlan ? expiredPlan.charAt(0).toUpperCase() + expiredPlan.slice(1) : 'subscription';
+  const showPaywall = expired && !paywallDismissed;
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
@@ -95,7 +115,6 @@ export default function ModuleShell({ moduleTitle, sidebarItems }) {
                 placeholder="Search..."
                 style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 14, width: '100%' }}
                 onFocus={() => {
-                  // On mobile, navigate to a search-focused state
                   document.querySelector('input[placeholder="Search..."]')?.blur();
                 }}
               />
@@ -103,8 +122,26 @@ export default function ModuleShell({ moduleTitle, sidebarItems }) {
           </div>
         )}
 
-        {/* Trial expiry warning */}
-        {daysLeft !== null && daysLeft <= 5 && (
+        {/* Expired — persistent read-only banner (shows after the overlay is dismissed) */}
+        {expired && paywallDismissed && (
+          <div style={{
+            background: '#DC2626', color: '#fff',
+            padding: isMobile ? '9px 16px' : '9px 32px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            flexWrap: 'wrap', gap: 8, fontSize: 13, fontWeight: 500,
+          }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <FiLock size={14} /> Read-only — your {planLabel} plan expired{expiryDate ? ` on ${fmtDate(expiryDate)}` : ''}. Renew to make changes.
+            </span>
+            <button onClick={() => navigate('/upgrade')}
+              style={{ padding: '5px 14px', background: '#fff', color: '#DC2626', borderRadius: 8, fontSize: 12, fontWeight: 700, border: 'none', cursor: 'pointer', flexShrink: 0 }}>
+              Renew →
+            </button>
+          </div>
+        )}
+
+        {/* Trial expiry warning — only when NOT already expired */}
+        {!expired && daysLeft !== null && daysLeft <= 5 && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
@@ -154,6 +191,71 @@ export default function ModuleShell({ moduleTitle, sidebarItems }) {
           <Outlet />
         </motion.main>
       </div>
+
+      {/* ── Expired paywall overlay ─────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showPaywall && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 1000,
+              background: 'rgba(15, 34, 64, 0.72)', backdropFilter: 'blur(4px)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0, y: 12 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.92, opacity: 0 }}
+              transition={{ type: 'spring', damping: 16, stiffness: 200 }}
+              style={{
+                background: '#fff', borderRadius: 20, padding: isMobile ? '32px 24px' : '44px 40px',
+                maxWidth: 460, width: '100%', textAlign: 'center', boxShadow: '0 24px 60px rgba(0,0,0,0.3)',
+              }}
+            >
+              <div style={{
+                width: 64, height: 64, borderRadius: '50%', margin: '0 auto 20px',
+                background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <FiLock size={28} color="#DC2626" />
+              </div>
+
+              <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: 22, fontWeight: 700, color: 'var(--deep-navy)', marginBottom: 10 }}>
+                Your {planLabel} plan has expired
+              </h2>
+              <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 6 }}>
+                {expiryDate
+                  ? `Your subscription expired on ${fmtDate(expiryDate)}.`
+                  : 'Your subscription has expired.'}
+              </p>
+              <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 28 }}>
+                You can still view your data, but you'll need to renew before you can create or edit anything.
+              </p>
+
+              <button
+                onClick={() => navigate('/upgrade')}
+                style={{
+                  width: '100%', padding: '13px 24px', borderRadius: 12, marginBottom: 12,
+                  background: 'linear-gradient(135deg, #1A3560, #2E75B6)', color: '#fff',
+                  fontSize: 15, fontWeight: 700, border: 'none', cursor: 'pointer',
+                }}
+              >
+                Renew Subscription
+              </button>
+              <button
+                onClick={() => setPaywallDismissed(true)}
+                style={{
+                  width: '100%', padding: '11px 24px', borderRadius: 12,
+                  background: 'transparent', color: 'var(--text-muted)',
+                  fontSize: 13, fontWeight: 600, border: '1px solid var(--border)', cursor: 'pointer',
+                }}
+              >
+                Continue in read-only mode
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
