@@ -24,7 +24,7 @@ const auditLogSchema = new mongoose.Schema(
       enum: [
         'auth', 'accounts', 'journals', 'invoices', 'bills', 'payments',
         'customers', 'vendors', 'inventory', 'fixed_assets', 'payroll',
-        'bank', 'budget', 'tax', 'reports', 'notes', 'todos', 'settings',
+        'bank', 'banking', 'budget', 'tax', 'reports', 'notes', 'todos', 'settings',
       ],
       required: true,
     },
