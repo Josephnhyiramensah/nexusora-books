@@ -18,6 +18,10 @@ export default function NotificationBell() {
   const [skew, setSkew] = useState(0);
   const [loading, setLoading] = useState(false);
   const menuRef = useRef(null);
+  // Ids of live/derived alerts the user dismissed this session. They are
+  // recomputed on every bell open, so without this a dismissed alert reappears
+  // immediately. Cleared on refresh/re-login, so a still-true condition returns.
+  const dismissedRef = useRef(new Set());
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -78,7 +82,7 @@ export default function NotificationBell() {
         if (overdue.length > 0) items.push({ id: 'overdue-tasks', type: 'warning', title: `${overdue.length} overdue task${overdue.length > 1 ? 's' : ''}`, message: 'Complete your overdue to-do items', path: '/todos', time: 'Overdue' });
       }
     } catch {}
-    setDerived(items);
+    setDerived(items.filter((n) => !dismissedRef.current.has(n.id)));
   };
 
   const handleOpen = async () => {
@@ -106,7 +110,7 @@ export default function NotificationBell() {
   };
 
   const handleDerivedClick = (n) => { navigate(n.path); setIsOpen(false); };
-  const dismissDerived = (e, id) => { e.stopPropagation(); setDerived((prev) => prev.filter((n) => n.id !== id)); };
+  const dismissDerived = (e, id) => { e.stopPropagation(); dismissedRef.current.add(id); setDerived((prev) => prev.filter((n) => n.id !== id)); };
 
   const typeColors = { danger: { dot: '#DC2626' }, warning: { dot: '#D97706' }, info: { dot: '#2563EB' }, success: { dot: '#16A34A' } };
 
