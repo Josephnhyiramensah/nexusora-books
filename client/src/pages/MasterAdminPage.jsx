@@ -983,9 +983,9 @@ export default function MasterAdminPage() {
                         <div style={{ fontSize: 11, color: '#9CA3AF' }}>{t.owner?.email}</div>
                       </td>
                       <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                        <select value={t.plan} disabled={t.plan === 'founding' || changingPlan === t.subdomain}
+                        <select value={t.plan} disabled={changingPlan === t.subdomain}
                           onChange={(e) => handlePlanChange(t.subdomain, e.target.value)}
-                          style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${planColor[t.plan] || '#6B7280'}40`, fontSize: 11, fontWeight: 700, background: `${planColor[t.plan] || '#6B7280'}10`, color: planColor[t.plan] || '#6B7280', cursor: t.plan === 'founding' ? 'not-allowed' : 'pointer', textTransform: 'capitalize' }}>
+                          style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${planColor[t.plan] || '#6B7280'}40`, fontSize: 11, fontWeight: 700, background: `${planColor[t.plan] || '#6B7280'}10`, color: planColor[t.plan] || '#6B7280', cursor: 'pointer', textTransform: 'capitalize' }}>
                           {['trial', 'starter', 'professional', 'enterprise', 'founding'].map((p) => <option key={p} value={p}>{p}</option>)}
                         </select>
                       </td>

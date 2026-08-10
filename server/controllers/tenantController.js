@@ -304,6 +304,9 @@ const changeTenantPlan = async (req, res) => {
       founding:     { maxUsers: 9999, maxAccountants: 9999 },
     };
 
+    const PLAN_DAYS = { trial: 30, starter: 30, professional: 30, enterprise: 30, founding: 36500 };
+    const days = PLAN_DAYS[plan] ?? 30;
+
     tenant.plan = plan;
     tenant.status = plan === 'founding' ? 'founding' : 'active';
     tenant.subscription = {
@@ -311,8 +314,12 @@ const changeTenantPlan = async (req, res) => {
       plan,
       maxUsers: planLimits[plan].maxUsers,
       maxAccountants: planLimits[plan].maxAccountants,
+      // Reset expiry to a real date for the new plan. Founding gets the long
+      // horizon; paid/trial plans get a fresh term from today — this is what
+      // lets a founding tenant be moved onto real billing and actually expire.
+      startDate: new Date(),
+      expiryDate: new Date(Date.now() + days * 24 * 60 * 60 * 1000),
     };
-
     await tenant.save();
     res.json({ success: true, message: `Plan changed to ${plan} for ${tenant.subdomain}.`, data: tenant });
   } catch (error) {
