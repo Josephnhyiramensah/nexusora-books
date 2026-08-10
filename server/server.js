@@ -156,8 +156,7 @@ app.get('/api/health/detailed', platformProtect, (req, res) => {  try {
 
 // ─── Public routes (no auth, no tenant) ──────────────────────────────────────
 app.use('/api/tenants',          tenantRoutes);
-app.use('/api/payment',     tenantMiddleware,  paymentGwRoutes);   // Paystack: initialize, verify, status
-// ─── Tenant-scoped routes (auth required) ────────────────────────────────────
+app.use('/api/payment',          paymentGwRoutes);   // Paystack: initialize, verify, status// ─── Tenant-scoped routes (auth required) ────────────────────────────────────
 const tm  = tenantMiddleware;
 const es  = enforceSubscription;
 

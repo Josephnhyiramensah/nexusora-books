@@ -9,10 +9,12 @@ const {
   verifyPayment,
   getSubscriptionStatus,
 } = require('../controllers/paymentGatewayController');
+const tenantMiddleware = require('../middleware/tenantMiddleware');
 
 // Webhook is registered directly in server.js (needs raw body before express.json)
-router.get('/verify/:reference', verifyPayment);
-router.post('/initialize', protect, initializePayment);
-router.get('/status/:subdomain', getSubscriptionStatus);
+
+router.get('/verify/:reference', verifyPayment);                          // no tm — post-redirect, no subdomain
+router.post('/initialize', tenantMiddleware, protect, initializePayment); // tm so protect can resolve the user
+router.get('/status/:subdomain', getSubscriptionStatus);                  // identifies tenant from param
 
 module.exports = router;
