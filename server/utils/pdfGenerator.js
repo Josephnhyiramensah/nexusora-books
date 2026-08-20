@@ -315,7 +315,9 @@ async function generateInvoicePDF({ invoice, customer, tenantSettings, companyNa
       drawLine(doc, y + 4, COLORS.border);
       y += 14;
 
-      const totalsX = 350, valX = 460, valW = 80;
+      // Wider value column for the totals block so a large TOTAL (fontSize 14)
+      // never wraps and collides with the Amount Paid / Balance Due rows.
+      const totalsX = 350, valX = 400, valW = 145;
 
       [
         ['Subtotal:', invoice.subtotal || 0],
@@ -330,7 +332,7 @@ async function generateInvoicePDF({ invoice, customer, tenantSettings, companyNa
       y += 6;
       doc.fillColor(COLORS.navy).fontSize(12).font('Helvetica-Bold').text('TOTAL:', totalsX, y);
       doc.fontSize(14).text(M(invoice.total), valX, y - 2, { width: valW, align: 'right' });
-      y += 20;
+      y += 26;
 
       if (invoice.amountPaid > 0) {
         doc.fillColor(COLORS.green).fontSize(9).font('Helvetica').text('Amount Paid:', totalsX, y);
