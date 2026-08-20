@@ -5,7 +5,9 @@ const jwt = require('jsonwebtoken');
 const PlatformAdmin = require('../models/PlatformAdmin');
 
 const MAX_ATTEMPTS = 5;
-const LOCK_MINUTES = 15;
+// Escalating lockout for the master console — the most powerful login in the
+// system, so it locks harder and longer than tenant logins on repeat attacks.
+const LOCK_DURATIONS_MIN = [30, 60, 240, 1440];   // 30m → 1h → 4h → 24h
 
 const platformLogin = async (req, res) => {
   try {
@@ -39,7 +41,9 @@ const platformLogin = async (req, res) => {
     if (!isMatch) {
       admin.failedLoginAttempts = (admin.failedLoginAttempts || 0) + 1;
       if (admin.failedLoginAttempts >= MAX_ATTEMPTS) {
-        admin.lockedUntil = new Date(Date.now() + LOCK_MINUTES * 60 * 1000);
+        const idx = Math.min(admin.lockoutCount || 0, LOCK_DURATIONS_MIN.length - 1);
+        admin.lockedUntil = new Date(Date.now() + LOCK_DURATIONS_MIN[idx] * 60 * 1000);
+        admin.lockoutCount = (admin.lockoutCount || 0) + 1;
         admin.failedLoginAttempts = 0;
       }
       await admin.save();
@@ -49,6 +53,7 @@ const platformLogin = async (req, res) => {
 
     admin.failedLoginAttempts = 0;
     admin.lockedUntil = undefined;
+    admin.lockoutCount = 0;
     admin.lastLogin = new Date();
     await admin.save();
 

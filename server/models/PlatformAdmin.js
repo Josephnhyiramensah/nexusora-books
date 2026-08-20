@@ -17,6 +17,7 @@ const platformAdminSchema = new mongoose.Schema(
     refreshToken: { type: String, select: false },
     failedLoginAttempts: { type: Number, default: 0 },
     lockedUntil: Date,
+    lockoutCount: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
