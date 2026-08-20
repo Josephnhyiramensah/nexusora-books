@@ -6,6 +6,9 @@ const {
   markRecurring, getRecurringTemplates, stopRecurring, runDueRecurring,
   approveInvoice, rejectInvoice,
 } = require('../controllers/invoiceController');
+const validate = require('../middleware/validate');
+const { createInvoiceRules, updateInvoiceRules } = require('../validators/invoiceValidators');
+
 router.use(protect);
 
 router.get('/', getInvoices);
@@ -15,8 +18,8 @@ router.post('/recurring/run', authorise('super_admin', 'admin', 'accountant'), r
 router.post('/:id/recurring', authorise('super_admin', 'admin', 'accountant'), markRecurring);
 router.post('/:id/recurring/stop', authorise('super_admin', 'admin', 'accountant'), stopRecurring);
 router.get('/:id', getInvoice);
-router.post('/', authorise('super_admin', 'admin', 'accountant'), createInvoice);
-router.put('/:id', authorise('super_admin', 'admin', 'accountant'), updateInvoice);
+router.post('/', authorise('super_admin', 'admin', 'accountant'), createInvoiceRules, validate, createInvoice);
+router.put('/:id', authorise('super_admin', 'admin', 'accountant'), updateInvoiceRules, validate, updateInvoice);
 router.post('/:id/send', authorise('super_admin', 'admin', 'accountant'), sendInvoice);
 router.post('/:id/approve', authorise('super_admin', 'admin'), approveInvoice);
 router.post('/:id/reject', authorise('super_admin', 'admin'), rejectInvoice);
