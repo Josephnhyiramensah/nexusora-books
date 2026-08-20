@@ -46,6 +46,8 @@ const apiKeyRoutes       = require('./routes/apiKeyRoutes');
 const externalApiRoutes  = require('./routes/externalApiRoutes');
 const platformRoutes     = require('./routes/platformRoutes');
 const platformAuthRoutes = require('./routes/platformAuthRoutes');
+const mongoSanitize = require('express-mongo-sanitize');
+const hpp = require('hpp');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -85,6 +87,13 @@ app.post('/api/payment/webhook',
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// ─── Injection hardening ──────────────────────────────────────────────────────
+// Strip MongoDB operators ($ and .) from body/query/params so a payload like
+// { "email": { "$gt": "" } } cannot manipulate a query. hpp collapses duplicated
+// query params that could otherwise slip past validation.
+app.use(mongoSanitize());
+app.use(hpp());
 if (process.env.NODE_ENV === 'development') app.use(morgan('dev'));
 // ─── Rate limiting ────────────────────────────────────────────────────────────
 // Keyed per tenant+IP so one noisy tenant cannot exhaust another's budget.
