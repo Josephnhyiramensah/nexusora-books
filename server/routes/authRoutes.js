@@ -1,5 +1,4 @@
 // server/routes/authRoutes.js
-
 const express = require('express');
 const router = express.Router();
 const {
@@ -10,12 +9,15 @@ const {
   setup, verifySetup, disable, regenerateBackupCodes, loginVerify,
 } = require('../controllers/twoFactorController');
 const { protect, optionalProtect, authorise } = require('../middleware/authMiddleware');
+const validate = require('../middleware/validate');
+const { loginRules, registerRules, changePasswordRules } = require('../validators/authValidators');
+
 // Registration is PUBLIC only for the first user of an empty tenant.
 // optionalProtect populates req.user when an admin token is supplied, so the
 // controller can reject anonymous registration into an existing workspace.
-router.post('/register', optionalProtect, register);
-
-router.post('/login', login);
+// Validation runs first so malformed bodies never reach the controller.
+router.post('/register', optionalProtect, registerRules, validate, register);
+router.post('/login', loginRules, validate, login);
 router.post('/refresh', refreshToken);
 
 // 2FA login step 2 — PUBLIC (the user is mid-login, not yet authenticated).
@@ -25,13 +27,15 @@ router.post('/2fa/login', loginVerify);
 // Protected routes
 router.post('/logout', protect, logout);
 router.get('/me', protect, getMe);
-router.put('/change-password', protect, changePassword);
+router.put('/change-password', protect, changePasswordRules, validate, changePassword);
 
 // Tenant-facing company settings save. Saves to the caller's OWN tenant only
 // (req.tenant, from the host) — no subdomain in the path to tamper with.
 // Company profile, letterhead text, TIN and white-label are owner-level settings —
 // staff and viewers must not be able to change the company's identity.
-router.put('/company-settings', protect, authorise('super_admin', 'admin'), updateMyTenantSettings);// 2FA enrolment & management — behind protect (user is already logged in).
+router.put('/company-settings', protect, authorise('super_admin', 'admin'), updateMyTenantSettings);
+
+// 2FA enrolment & management — behind protect (user is already logged in).
 router.post('/2fa/setup', protect, setup);
 router.post('/2fa/verify-setup', protect, verifySetup);
 router.post('/2fa/disable', protect, disable);
