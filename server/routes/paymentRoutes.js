@@ -10,12 +10,14 @@ const {
   receivePayment,
   makePayment,
 } = require('../controllers/paymentController');
+const validate = require('../middleware/validate');
+const { receivePaymentRules, makePaymentRules } = require('../validators/accountingPaymentValidators');
 
 router.use(protect);
 
 router.get('/', getPayments);
 router.get('/:id', getPayment);
-router.post('/receive', authorise('super_admin', 'admin', 'accountant'), receivePayment);
-router.post('/make', authorise('super_admin', 'admin', 'accountant'), makePayment);
+router.post('/receive', authorise('super_admin', 'admin', 'accountant'), receivePaymentRules, validate, receivePayment);
+router.post('/make', authorise('super_admin', 'admin', 'accountant'), makePaymentRules, validate, makePayment);
 
 module.exports = router;
