@@ -1,6 +1,7 @@
 const { getModel } = require('../utils/getModel');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { parseStatement } = require('../utils/momoParser');
+const { validateBankFile } = require('../utils/bankStatement/bankFileGuard');
 const { parseBankStatement, previewColumns, parseWithMapping } = require('../utils/bankStatement');
 const seedContraRules = require('../utils/bankStatement/seedContraRules');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
@@ -80,6 +81,7 @@ const importStatement = async (req, res) => {
 
     const b64 = fileBase64.includes(',') ? fileBase64.split(',')[1] : fileBase64;
     const buffer = Buffer.from(b64, 'base64');
+    validateBankFile(buffer, { fileName: typeof fileName !== 'undefined' ? fileName : '' });
 
     let parsed;
     try {
@@ -207,6 +209,7 @@ const previewColumnsCtrl = async (req, res) => {
     if (!fileBase64) return res.status(400).json({ success: false, message: 'No file supplied.' });
     const b64 = fileBase64.includes(',') ? fileBase64.split(',')[1] : fileBase64;
     const buffer = Buffer.from(b64, 'base64');
+    validateBankFile(buffer, { fileName: typeof fileName !== 'undefined' ? fileName : '' });
     const preview = previewColumns(buffer);
     return res.json({ success: true, data: preview });
   } catch (e) {
@@ -228,6 +231,7 @@ const importMapped = async (req, res) => {
     if (!bankName || !mapping) return res.status(400).json({ success: false, message: 'Bank name and column mapping are required.' });
     const b64 = fileBase64.includes(',') ? fileBase64.split(',')[1] : fileBase64;
     const buffer = Buffer.from(b64, 'base64');
+    validateBankFile(buffer, { fileName: typeof fileName !== 'undefined' ? fileName : '' });
 
     const BankContraRule = getModel(req.tenantDb, 'BankContraRule');
     await seedContraRules(req.tenantDb);
