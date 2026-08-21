@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { protect, authorise } = require('../middleware/authMiddleware');
-const { getBills, getBill, createBill, approveBill, deleteBill, confirmBill, rejectBill } = require('../controllers/billController');
+const { getBills, getBill, createBill, approveBill, deleteBill, confirmBill, rejectBill, downloadBillPDF } = require('../controllers/billController');
 const validate = require('../middleware/validate');
 const { createBillRules } = require('../validators/billValidators');
 
@@ -9,6 +9,7 @@ router.use(protect);
 
 router.get('/', getBills);
 router.get('/:id', getBill);
+router.get('/:id/pdf', downloadBillPDF);
 router.post('/', authorise('super_admin', 'admin', 'accountant'), createBillRules, validate, createBill);
 router.post('/:id/approve', authorise('super_admin', 'admin', 'accountant'), approveBill);
 router.post('/:id/confirm', authorise('super_admin', 'admin'), confirmBill);

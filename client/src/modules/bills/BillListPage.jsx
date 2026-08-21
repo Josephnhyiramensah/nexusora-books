@@ -8,6 +8,7 @@ import { useToast } from '../../hooks/useToast';
 import { useAuth } from '../../context/AuthContext';
 import { useTenant } from '../../context/TenantContext';
 import ActionMenu from '../../components/common/ActionMenu';
+import { openAuthedPdf } from '../../utils/openAuthedPdf';
 import EntryDetailsModal from '../../components/common/EntryDetailsModal';
 import api from '../../services/api';
 import ResponsiveTable from '../../components/common/ResponsiveTable';
@@ -91,7 +92,7 @@ export default function BillListPage() {
       items.push({ icon: '💸', label: 'Make Payment', onClick: () => navigate('/bills/make-payment'), variant: 'success' });
     }
 
-    items.push({ icon: '🖨️', label: 'Print Bill', onClick: () => window.print(), dividerBefore: items.length > 0 });
+    items.push({ icon: '🖨️', label: 'Print Bill', onClick: () => openAuthedPdf(`/api/bills/${b._id}/pdf`, `${b.billNumber}.pdf`), dividerBefore: items.length > 0 });
     items.push({ icon: '📋', label: 'View Vendor', onClick: () => navigate('/bills/vendors') });
 
     if (b.status === 'draft') {

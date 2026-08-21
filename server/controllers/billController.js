@@ -1,6 +1,7 @@
 const { getModel } = require('../utils/getModel');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
+const { generateBillPDF } = require('../utils/pdfGenerator');
 
 // Generate the next bill number. A tenant can customise the series via
 // settings.documentNumbers.bill = { prefix, padding, startNumber }. With no
@@ -287,4 +288,32 @@ const rejectBill = async (req, res) => {
   }
 };
 
-module.exports = { getBills, getBill, createBill, approveBill, deleteBill, confirmBill, rejectBill };
+// GET /api/bills/:id/pdf — stream a branded bill PDF.
+const downloadBillPDF = async (req, res) => {
+  try {
+    const Bill = getModel(req.tenantDb, 'Bill');
+    const bill = await Bill.findById(req.params.id).populate('vendor', 'name email phone address taxId');
+    if (!bill) return res.status(404).json({ success: false, message: 'Bill not found.' });
+
+    const tenantSettings = req.tenant?.settings || {};
+    const companyName = req.tenant?.companyName || '';
+    const plan = req.tenant?.plan || 'trial';
+
+    const pdfBuffer = await generateBillPDF({
+      bill,
+      vendor: bill.vendor,
+      tenantSettings,
+      companyName,
+      plan,
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${bill.billNumber}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (error) {
+    console.error('[Bills] PDF generation failed:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to generate bill PDF.' });
+  }
+};
+
+module.exports = { getBills, getBill, createBill, approveBill, deleteBill, confirmBill, rejectBill, downloadBillPDF };

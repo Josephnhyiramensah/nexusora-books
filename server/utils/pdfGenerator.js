@@ -360,4 +360,154 @@ async function generateInvoicePDF({ invoice, customer, tenantSettings, companyNa
   });
 }
 
-module.exports = { generateCustomerStatement, generateInvoicePDF };
+// ─── Bill PDF ─────────────────────────────────────────────────────────────────
+// Mirrors generateInvoicePDF (same letterhead, table and totals layout) but for a
+// purchase bill: shows the VENDOR instead of a customer, and "BILL" in place of
+// "INVOICE". Kept as its own function so the two documents can diverge later.
+async function generateBillPDF({ bill, vendor, tenantSettings, companyName, plan }) {
+  const cur = 'GHS';
+  const M = (v) => cur + ' ' + (Number(v) || 0).toFixed(2);
+  const lhBuffer = await loadLetterheadBuffer(tenantSettings?.letterheadImage);
+  const showBranding = (plan || 'trial') === 'trial';
+
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({ size: 'A4', margin: 50 });
+      const chunks = [];
+      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      let hY = 99;
+      if (lhBuffer) {
+        try {
+          const HEADER_H = 105;
+          doc.image(lhBuffer, 0, 0, { width: 595, height: HEADER_H });
+          doc.rect(0, HEADER_H, 595, 4).fill(COLORS.gold);
+          doc.fillColor(COLORS.black);
+          hY = HEADER_H + 12;
+        } catch (e) {
+          console.error('[PDF] Letterhead embed failed:', e.message);
+          hY = drawTextHeader(doc, tenantSettings, companyName);
+        }
+      } else {
+        hY = drawTextHeader(doc, tenantSettings, companyName);
+      }
+
+      const sY = hY + 16;
+
+      // Title + number
+      doc.fillColor(COLORS.navy).fontSize(22).font('Helvetica-Bold').text('BILL', 50, sY);
+      doc.fillColor(COLORS.gold).fontSize(14).font('Helvetica-Bold').text(bill.billNumber, 50, sY + 28);
+
+      // Status badge
+      const statusColors = { paid: COLORS.green, overdue: COLORS.red, approved: COLORS.gold, draft: COLORS.gray };
+      const sc = statusColors[bill.status] || COLORS.gray;
+      doc.rect(400, sY, 145, 28).fill(sc + '20').stroke(sc);
+      doc.fillColor(sc).fontSize(11).font('Helvetica-Bold')
+        .text((bill.status || '').replace(/_/g, ' ').toUpperCase(), 402, sY + 8, { width: 141, align: 'center' });
+
+      drawLine(doc, sY + 44);
+
+      // Vendor block (the party we owe)
+      doc.fillColor(COLORS.navy).fontSize(9).font('Helvetica-Bold').text('BILL FROM', 50, sY + 54);
+      doc.fillColor(COLORS.black).fontSize(11).font('Helvetica-Bold').text(vendor?.name || '—', 50, sY + 68);
+      doc.fillColor(COLORS.gray).fontSize(9).font('Helvetica');
+      let billY = sY + 82;
+      const billW = 250;
+      const billLine = (txt) => {
+        if (!txt) return;
+        const h = doc.heightOfString(String(txt), { width: billW });
+        doc.text(String(txt), 50, billY, { width: billW });
+        billY += h + 2;
+      };
+      billLine(vendor?.email);
+      billLine(vendor?.phone);
+      billLine(vendor?.address);
+      if (vendor?.taxId) billLine('TIN: ' + vendor.taxId);
+
+      // Bill details right
+      const details = [
+        ['Bill Date:', new Date(bill.date).toLocaleDateString('en-GB')],
+        ['Due Date:',  new Date(bill.dueDate).toLocaleDateString('en-GB')],
+        ['Currency:',  'GHS (Ghana Cedis)'],
+      ];
+      (bill.customFields || []).forEach((cf) => {
+        let val = cf.value;
+        if (cf.type === 'checkbox') val = val ? 'Yes' : 'No';
+        else if (cf.type === 'date' && val) { try { val = new Date(val).toLocaleDateString('en-GB'); } catch (e) {} }
+        details.push([cf.label + ':', String(val === undefined || val === null ? '' : val)]);
+      });
+      doc.fillColor(COLORS.navy).fontSize(9).font('Helvetica-Bold').text('BILL DETAILS', 350, sY + 54);
+      details.forEach(([label, value], i) => {
+        doc.fillColor(COLORS.gray).font('Helvetica').text(label, 350, sY + 68 + (i * 14));
+        doc.fillColor(COLORS.black).font('Helvetica-Bold').text(value, 420, sY + 68 + (i * 14), { width: 125, align: 'right' });
+      });
+
+      // Line items
+      let y = Math.max(sY + 150, sY + 68 + details.length * 14 + 12, billY + 12);
+      doc.fillColor(COLORS.navy).fontSize(11).font('Helvetica-Bold').text('ITEMS', 50, y);
+      y += 16;
+
+      doc.rect(50, y, 495, 22).fill(COLORS.navy);
+      doc.fillColor('#fff').fontSize(8).font('Helvetica-Bold');
+      doc.text('DESCRIPTION', 58,  y + 7);
+      doc.text('QTY',         330, y + 7, { width: 50,  align: 'right' });
+      doc.text('UNIT PRICE',  385, y + 7, { width: 70,  align: 'right' });
+      doc.text('AMOUNT',      460, y + 7, { width: 80,  align: 'right' });
+      y += 22;
+
+      (bill.lines || []).forEach((line, i) => {
+        doc.rect(50, y, 495, 20).fill(i % 2 === 0 ? '#fff' : COLORS.light);
+        doc.fillColor(COLORS.black).fontSize(9).font('Helvetica');
+        doc.text(line.description || '—',       58,  y + 6, { width: 268 });
+        doc.text(String(line.quantity || 0),     330, y + 6, { width: 50,  align: 'right' });
+        doc.text(M(line.unitPrice),              385, y + 6, { width: 70,  align: 'right' });
+        doc.text(M(line.amount),                 460, y + 6, { width: 80,  align: 'right' });
+        y += 20;
+      });
+
+      drawLine(doc, y + 4, COLORS.border);
+      y += 14;
+
+      // Wider value column so a large TOTAL never wraps (same fix as invoices).
+      const totalsX = 350, valX = 400, valW = 145;
+
+      [
+        ['Subtotal:', bill.subtotal || 0],
+        bill.taxRate ? [`VAT (${bill.taxRate}%):`, bill.taxAmount || 0] : null,
+      ].filter(Boolean).forEach(([label, value]) => {
+        doc.fillColor(COLORS.gray).fontSize(9).font('Helvetica').text(label, totalsX, y);
+        doc.fillColor(COLORS.black).font('Helvetica-Bold').text(M(value), valX, y, { width: valW, align: 'right' });
+        y += 16;
+      });
+
+      drawLine(doc, y, COLORS.navy);
+      y += 6;
+      doc.fillColor(COLORS.navy).fontSize(12).font('Helvetica-Bold').text('TOTAL:', totalsX, y);
+      doc.fontSize(14).text(M(bill.total), valX, y - 2, { width: valW, align: 'right' });
+      y += 26;
+
+      if (bill.amountPaid > 0) {
+        doc.fillColor(COLORS.green).fontSize(9).font('Helvetica').text('Amount Paid:', totalsX, y);
+        doc.font('Helvetica-Bold').text(M(bill.amountPaid), valX, y, { width: valW, align: 'right' });
+        y += 16;
+        doc.fillColor(COLORS.red).text('Balance Due:', totalsX, y);
+        doc.font('Helvetica-Bold').text(M(bill.balance), valX, y, { width: valW, align: 'right' });
+      }
+
+      if (bill.notes) {
+        y += 30;
+        doc.fillColor(COLORS.navy).fontSize(9).font('Helvetica-Bold').text('NOTES:', 50, y);
+        doc.fillColor(COLORS.gray).font('Helvetica').text(bill.notes, 50, y + 14, { width: 495 });
+      }
+
+      drawFooter(doc, 1, showBranding);
+      doc.end();
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+module.exports = { generateCustomerStatement, generateInvoicePDF, generateBillPDF };
