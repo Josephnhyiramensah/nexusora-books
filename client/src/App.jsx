@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { TenantProvider, useTenant } from './context/TenantContext';
@@ -112,11 +113,26 @@ function RootRedirect() {
   return <Navigate to={isPublic ? '/register' : '/home'} replace />;
 }
 
+
+// Sets the browser tab / installed-app window title to include the tenant's
+// company name, e.g. "Nexusora Books · Spottend Point Media". Lives inside
+// TenantProvider so it can read the resolved tenant.
+function TenantTitle() {
+  const { companyName, isPublic } = useTenant();
+  useEffect(() => {
+    document.title = companyName
+      ? `Nexusora Books · ${companyName}`
+      : 'Nexusora Books — Smart Books. Smarter Business.';
+  }, [companyName, isPublic]);
+  return null;
+}
+
 // ─── App ───────────────────────────────────────────────────────────
 export default function App() {
   return (
     <BrowserRouter>
       <TenantProvider>
+        <TenantTitle />
         <AuthProvider>
           <Routes>
 
