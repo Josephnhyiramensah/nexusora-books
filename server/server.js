@@ -57,7 +57,20 @@ const PORT = process.env.PORT || 5000;
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
 // ─── Middleware ───────────────────────────────────────────────────────────────
-app.use(helmet());
+// helmet sets safe security headers. HSTS is enabled explicitly so that once a
+// browser has seen the site over HTTPS it refuses plain HTTP for a year (across
+// tenant subdomains too) — important for a payment app. Content-Security-Policy
+// is deliberately left off: a strict policy would block Paystack, Cloudinary,
+// Google Fonts and inline styles, and needs its own tuning pass before enabling.
+app.use(helmet({
+  contentSecurityPolicy: false,
+  hsts: {
+    maxAge: 31536000,        // 1 year
+    includeSubDomains: true,
+    preload: true,
+  },
+  crossOriginEmbedderPolicy: false, // avoid breaking Cloudinary / external images
+}));
 app.use(cors({
   origin: (origin, cb) => {
     // No origin = same-origin, curl, or server-to-server. Allow.
