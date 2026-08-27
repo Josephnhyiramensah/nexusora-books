@@ -1,0 +1,56 @@
+# Dependabot configuration for Nexusora Books
+# Automatically scans dependencies for known vulnerabilities and opens
+# pull requests to update them. Runs weekly for the server and the client.
+# Docs: https://docs.github.com/code-security/dependabot
+version: 2
+updates:
+  # ---- Backend (Node/Express API) ----
+  - package-ecosystem: "npm"
+    directory: "/server"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Africa/Accra"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "deps(server)"
+    # Group minor & patch updates into fewer PRs to reduce noise;
+    # security updates still come through promptly.
+    groups:
+      server-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ---- Frontend (React/Vite) ----
+  - package-ecosystem: "npm"
+    directory: "/client"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Africa/Accra"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "deps(client)"
+    groups:
+      client-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ---- GitHub Actions (if/when you add CI workflows) ----
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
