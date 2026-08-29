@@ -20,6 +20,7 @@ import { motion } from 'framer-motion';
 import { FiCode } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 import { FiEdit3 } from 'react-icons/fi';   // if not already imported
+import { FiDollarSign } from 'react-icons/fi';
 import PermissionsPanel from './PermissionsPanel';
 // ---------- Styles ----------
 const styles = {
