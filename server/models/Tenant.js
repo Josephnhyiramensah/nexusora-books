@@ -69,6 +69,20 @@ const tenantSchema = new mongoose.Schema(
       },
       // Tenant-defined header-level custom fields for invoices/bills.
       customFields: { type: [customFieldSchema], default: [] },
+      // Per-tenant override of Ghana statutory payroll rates (PAYE + SSNIT).
+      // When unset, the tenant inherits the global default (PlatformSettings)
+      // or the hardcoded fallback. Editable only by this tenant's super_admin
+      // or admin. See server/config/payrollRates.js for the resolution order.
+      payrollRates: {
+        payeBands: { type: [{ upTo: Number, rate: Number }], default: undefined },
+        ssnit: {
+          employeeRate: { type: Number, default: undefined },
+          employerRate: { type: Number, default: undefined },
+        },
+        label: { type: String, default: '' },
+        updatedAt: { type: Date, default: undefined },
+        updatedBy: { type: String, default: '' },
+      },
       logo: String,
       letterheadImage: String,
       address: String,

@@ -39,7 +39,7 @@ const getAdminSettings = async (req, res) => {
 // PUT /api/platform/settings — master admin only
 const updateSettings = async (req, res) => {
   try {
-    const { company, smtp, subscription, branding } = req.body;
+    const { company, smtp, subscription, branding, payrollRates } = req.body;
 
     const settings = await PlatformSettings.findByIdAndUpdate(
       'platform',
@@ -49,6 +49,7 @@ const updateSettings = async (req, res) => {
           ...(smtp         && { smtp }),
           ...(subscription && { subscription }),
           ...(branding     && { branding }),
+          ...(payrollRates && { payrollRates }),
           lastUpdatedBy: 'master_admin',
         },
       },

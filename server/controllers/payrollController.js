@@ -2,31 +2,24 @@ const { getModel } = require('../utils/getModel');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
 
-// GRA 2026 PAYE Tax Bands (monthly)
-const PAYE_BANDS = [
-  { upTo: 490, rate: 0 },
-  { upTo: 600, rate: 0.05 },
-  { upTo: 730, rate: 0.10 },
-  { upTo: 3896.67, rate: 0.175 },
-  { upTo: 20000, rate: 0.25 },
-  { upTo: 50000, rate: 0.30 },
-  { upTo: Infinity, rate: 0.35 },
-];
+// Ghana statutory payroll rates (PAYE bands + SSNIT) are resolved per-run from:
+//   tenant override (Tenant.settings.payrollRates) -> global default
+//   (PlatformSettings.payrollRates) -> hardcoded fallback (config/payrollRates).
+const {
+  resolvePayrollRates,
+  calculatePAYE,
+} = require('../config/payrollRates');
+const PlatformSettings = require('../models/PlatformSettings');
 
-function calculatePAYE(taxableIncome) {
-  let tax = 0;
-  let remaining = taxableIncome;
-  let prevLimit = 0;
-
-  for (const band of PAYE_BANDS) {
-    const bandWidth = band.upTo - prevLimit;
-    const taxable = Math.min(remaining, bandWidth);
-    tax += taxable * band.rate;
-    remaining -= taxable;
-    prevLimit = band.upTo;
-    if (remaining <= 0) break;
-  }
-  return Math.round(tax * 100) / 100;
+// Load the effective rates for the tenant handling this request.
+async function loadEffectiveRates(req) {
+  let globalRates;
+  try {
+    const platform = await PlatformSettings.findById('platform').lean();
+    globalRates = platform && platform.payrollRates;
+  } catch (_) { globalRates = undefined; }
+  const tenantRates = req.tenant && req.tenant.settings && req.tenant.settings.payrollRates;
+  return resolvePayrollRates(tenantRates, globalRates);
 }
 
 // Employee CRUD
@@ -103,11 +96,13 @@ const runPayroll = async (req, res) => {
 
     const r2 = (n) => Math.round(n * 100) / 100;
 
+    const rates = await loadEffectiveRates(req);
+
     const entries = employees.map((emp) => {
       const totalAllowances = (emp.allowances || []).reduce((s, a) => s + (a.amount || 0), 0);
       const grossPay = r2(emp.basicSalary + totalAllowances);
-      const employeeSsnit = r2(emp.basicSalary * 0.055);
-      const employerSsnit = r2(emp.basicSalary * 0.13);
+      const employeeSsnit = r2(emp.basicSalary * rates.ssnit.employeeRate);
+      const employerSsnit = r2(emp.basicSalary * rates.ssnit.employerRate);
 
       const pf = emp.providentFund || {};
       const providentFund = pf.mode === 'fixed' ? r2(pf.value || 0)
@@ -116,7 +111,7 @@ const runPayroll = async (req, res) => {
       // SSNIT and provident fund both come off BEFORE tax.
       const deductionBeforeTax = r2(employeeSsnit + providentFund);
       const taxableIncome = r2(grossPay - deductionBeforeTax);
-      const paye = calculatePAYE(taxableIncome);
+      const paye = calculatePAYE(taxableIncome, rates.payeBands);
 
       // Never recover more loan than is still outstanding.
       const loan = emp.loan || {};
@@ -152,8 +147,8 @@ const runPayroll = async (req, res) => {
       runDate: new Date(), entries,
       totalGross, totalNet, totalPaye, totalEmployeeSsnit, totalEmployerSsnit,
       totalProvidentFund, totalLoanDeduction, totalDeduction,
-      payeBands: PAYE_BANDS.map((b) => ({ upTo: Number.isFinite(b.upTo) ? b.upTo : null, rate: b.rate })),
-      payeBandsLabel: 'GRA 2026 monthly bands',
+      payeBands: rates.payeBands.map((b) => ({ upTo: Number.isFinite(b.upTo) ? b.upTo : null, rate: b.rate })),
+      payeBandsLabel: rates.label,
       status: 'draft', createdBy: req.user._id,
     });
 

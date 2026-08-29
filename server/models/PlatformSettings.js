@@ -39,6 +39,23 @@ const platformSettingsSchema = new mongoose.Schema({
     accentColor:  { type: String, default: '#C9A227' },
   },
 
+  // Global default Ghana statutory payroll rates. Tenants inherit these unless
+  // they set their own override in Tenant.settings.payrollRates. Editable only
+  // from the master console. Leaving this empty means tenants fall back to the
+  // hardcoded defaults in server/config/payrollRates.js.
+  payrollRates: {
+    // PAYE progressive monthly bands. upTo:null = highest band (no upper limit).
+    payeBands: {
+      type: [{ upTo: Number, rate: Number }],
+      default: undefined,
+    },
+    ssnit: {
+      employeeRate: { type: Number, default: undefined }, // e.g. 0.055
+      employerRate: { type: Number, default: undefined }, // e.g. 0.13
+    },
+    label: { type: String, default: '' }, // e.g. "GRA 2026 monthly bands"
+  },
+
   lastUpdatedBy: { type: String, default: 'system' },
 }, { timestamps: true });
 
