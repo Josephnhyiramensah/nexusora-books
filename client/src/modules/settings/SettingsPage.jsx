@@ -11,6 +11,7 @@ import {
   FiToggleRight,
 } from 'react-icons/fi';
 import { useAuth } from '../../context/AuthContext';
+import PayrollRatesEditor from './PayrollRatesEditor';
 import { useTenant } from '../../context/TenantContext';
 import { useToast } from '../../hooks/useToast';
 import Modal from '../../components/common/Modal';
@@ -1595,6 +1596,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
     { key: 'users', label: 'Users & Roles', icon: FiUsers },
     { key: 'security', label: 'Security', icon: FiShield },
     
+...(['super_admin', 'admin'].includes(user?.role) ? [{ key: 'payrollRates', label: 'Payroll Rates', icon: FiDollarSign }] : []),
 { key: 'api', label: 'API Keys', icon: FiCode },
 { key: 'whitelabel', label: 'White-label', icon: FiEdit3 },
   ];
@@ -1662,6 +1664,10 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
           inputStyle={styles.inputStyle}
         />
       )}
+      {activeTab === 'payrollRates' && isAdmin && (
+        <PayrollRatesEditor showToast={showToast} />
+      )}
+
       {/* API Keys Tab */}
       {activeTab === 'api' && (
         <div>

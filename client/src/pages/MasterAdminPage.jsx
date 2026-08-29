@@ -78,7 +78,7 @@ function CompanyInfoSettings() {
       {saved && <div style={{ padding: '12px 18px', background: '#D1FAE5', borderRadius: 10, color: '#065F46', fontSize: 14, fontWeight: 600, marginBottom: 20 }}>✅ Saved. Changes are now live.</div>}
 
       <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid #E2E8F0', flexWrap: 'wrap' }}>
-        {[{ key: 'company', label: '🏢 Contact Info' }, { key: 'subscription', label: '💰 Pricing' }, { key: 'branding', label: '🎨 Branding' }, { key: 'smtp', label: '📧 SMTP' }].map((t) => (
+        {[{ key: 'company', label: '🏢 Contact Info' }, { key: 'subscription', label: '💰 Pricing' }, { key: 'branding', label: '🎨 Branding' }, { key: 'smtp', label: '📧 SMTP' }, { key: 'payroll', label: '🧮 Payroll Rates' }].map((t) => (
           <button key={t.key} onClick={() => setSettingsTab(t.key)} style={{ padding: '8px 16px', fontSize: 13, fontWeight: settingsTab === t.key ? 600 : 400, color: settingsTab === t.key ? '#1A3560' : '#9CA3AF', borderBottom: settingsTab === t.key ? '2px solid #C9A227' : '2px solid transparent', background: 'transparent', border: 'none', cursor: 'pointer', marginBottom: -1 }}>{t.label}</button>
         ))}
       </div>
@@ -119,6 +119,54 @@ function CompanyInfoSettings() {
             ))}
           </div>
           <div style={{ marginTop: 16, padding: '12px 16px', background: '#FEF3C7', borderRadius: 10, fontSize: 13, color: '#92400E' }}>⚠️ SMTP password stays in <code>server/.env</code> as <code>SMTP_PASS</code>. Never store it in the database.</div>
+
+          {settingsTab === 'payroll' && (
+            <div>
+              <div style={{ padding: '12px 16px', background: '#EFF6FF', borderRadius: 10, fontSize: 13, color: '#1E40AF', marginBottom: 16 }}>
+                These are the <strong>global default</strong> Ghana PAYE/SSNIT rates. Every company inherits them unless it sets its own override in its Settings. Update these once when the GRA changes rates. Leaving them empty means companies use the built-in GRA 2026 defaults.
+              </div>
+              <p style={{ fontSize: 13, fontWeight: 700, color: '#1A3560', marginBottom: 8 }}>SSNIT (%)</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
+                <div>
+                  <label style={{ fontSize: 12, color: '#6B7280' }}>Employee %</label>
+                  <input type="number" step="0.1" style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid #D1D5DB', boxSizing: 'border-box' }}
+                    value={form.payrollRates?.ssnit?.employeeRate != null ? (form.payrollRates.ssnit.employeeRate * 100) : ''}
+                    onChange={(e) => setForm({ ...form, payrollRates: { ...(form.payrollRates || {}), ssnit: { ...((form.payrollRates || {}).ssnit || {}), employeeRate: e.target.value === '' ? undefined : Number(e.target.value) / 100 } } })} placeholder="5.5" />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: '#6B7280' }}>Employer %</label>
+                  <input type="number" step="0.1" style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid #D1D5DB', boxSizing: 'border-box' }}
+                    value={form.payrollRates?.ssnit?.employerRate != null ? (form.payrollRates.ssnit.employerRate * 100) : ''}
+                    onChange={(e) => setForm({ ...form, payrollRates: { ...(form.payrollRates || {}), ssnit: { ...((form.payrollRates || {}).ssnit || {}), employerRate: e.target.value === '' ? undefined : Number(e.target.value) / 100 } } })} placeholder="13" />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: '#1A3560', margin: 0 }}>PAYE Bands (monthly)</p>
+                <button type="button" onClick={() => setForm({ ...form, payrollRates: { ...(form.payrollRates || {}), payeBands: [ ...((form.payrollRates || {}).payeBands || []), { upTo: null, rate: 0 } ] } })}
+                  style={{ padding: '6px 12px', fontSize: 12, borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', cursor: 'pointer' }}>+ Add band</button>
+              </div>
+              <p style={{ fontSize: 12, color: '#6B7280', marginTop: 0, marginBottom: 10 }}>Each band taxes income up to its limit at the given rate. Leave the last limit empty for “and above”.</p>
+              {((form.payrollRates || {}).payeBands || []).map((b, i) => (
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 36px', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                  <input type="number" placeholder="Up to (GHS)" style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #D1D5DB' }}
+                    value={b.upTo == null ? '' : b.upTo}
+                    onChange={(e) => { const v = e.target.value; const bands = [...form.payrollRates.payeBands]; bands[i] = { ...bands[i], upTo: v === '' ? null : Number(v) }; setForm({ ...form, payrollRates: { ...form.payrollRates, payeBands: bands } }); }} />
+                  <input type="number" step="0.1" placeholder="Rate %" style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #D1D5DB' }}
+                    value={b.rate != null ? (b.rate * 100) : ''}
+                    onChange={(e) => { const v = e.target.value; const bands = [...form.payrollRates.payeBands]; bands[i] = { ...bands[i], rate: v === '' ? 0 : Number(v) / 100 }; setForm({ ...form, payrollRates: { ...form.payrollRates, payeBands: bands } }); }} />
+                  <button type="button" title="Remove" onClick={() => { const bands = form.payrollRates.payeBands.filter((_, idx) => idx !== i); setForm({ ...form, payrollRates: { ...form.payrollRates, payeBands: bands } }); }}
+                    style={{ padding: 8, borderRadius: 8, border: '1px solid #D1D5DB', background: '#fff', color: '#DC2626', cursor: 'pointer' }}>✕</button>
+                </div>
+              ))}
+              <div style={{ marginTop: 14 }}>
+                <label style={{ fontSize: 12, color: '#6B7280' }}>Label</label>
+                <input style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid #D1D5DB', boxSizing: 'border-box' }}
+                  value={form.payrollRates?.label || ''}
+                  onChange={(e) => setForm({ ...form, payrollRates: { ...(form.payrollRates || {}), label: e.target.value } })} placeholder="e.g. GRA 2026 monthly bands" />
+              </div>
+            </div>
+          )}
         </div>
       )}
 

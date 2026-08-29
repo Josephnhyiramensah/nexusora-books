@@ -274,4 +274,17 @@ const approvePayroll = async (req, res) => {
   }
 };
 
-module.exports = { getEmployees, createEmployee, updateEmployee, runPayroll, getPayrollRuns, getPayrollRun, approvePayroll };
+// GET /api/payroll/rates — returns the effective PAYE/SSNIT rates for this
+// tenant and where they come from (tenant override / global default / built-in).
+// Readable by any payroll-viewer; editing is admin-only via company-settings.
+const getPayrollRates = async (req, res) => {
+  try {
+    const rates = await loadEffectiveRates(req);
+    res.json({ success: true, data: rates });
+  } catch (error) {
+    console.error('[Payroll] getRates error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to load payroll rates.' });
+  }
+};
+
+module.exports = { getEmployees, createEmployee, updateEmployee, runPayroll, getPayrollRuns, getPayrollRun, approvePayroll, getPayrollRates };
