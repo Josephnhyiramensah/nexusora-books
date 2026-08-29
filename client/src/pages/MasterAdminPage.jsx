@@ -120,7 +120,10 @@ function CompanyInfoSettings() {
           </div>
           <div style={{ marginTop: 16, padding: '12px 16px', background: '#FEF3C7', borderRadius: 10, fontSize: 13, color: '#92400E' }}>⚠️ SMTP password stays in <code>server/.env</code> as <code>SMTP_PASS</code>. Never store it in the database.</div>
 
-          {settingsTab === 'payroll' && (
+        </div>
+      )}
+
+      {settingsTab === 'payroll' && (
             <div>
               <div style={{ padding: '12px 16px', background: '#EFF6FF', borderRadius: 10, fontSize: 13, color: '#1E40AF', marginBottom: 16 }}>
                 These are the <strong>global default</strong> Ghana PAYE/SSNIT rates. Every company inherits them unless it sets its own override in its Settings. Update these once when the GRA changes rates. Leaving them empty means companies use the built-in GRA 2026 defaults.
@@ -166,8 +169,6 @@ function CompanyInfoSettings() {
                   onChange={(e) => setForm({ ...form, payrollRates: { ...(form.payrollRates || {}), label: e.target.value } })} placeholder="e.g. GRA 2026 monthly bands" />
               </div>
             </div>
-          )}
-        </div>
       )}
 
       <div style={{ marginTop: 24 }}>
