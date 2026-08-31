@@ -49,6 +49,19 @@ const platformAuthRoutes = require('./routes/platformAuthRoutes');
 const mongoSanitize = require('express-mongo-sanitize');
 const hpp = require('hpp');
 const app = express();
+
+// ── Error tracking (Sentry) ─────────────────────────────────────────────────
+// Initialises only when SENTRY_DSN is set in server/.env. Without it, this is a
+// no-op, so nothing breaks in environments where Sentry isn't configured.
+const Sentry = require('@sentry/node');
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || 'production',
+    tracesSampleRate: 0.1,
+    sendDefaultPii: false,
+  });
+}
 const PORT = process.env.PORT || 5000;
 
 // Behind Nginx. Without this, Express sees every request as coming from
@@ -222,6 +235,10 @@ app.use('/external/v1', externalApiRoutes);
 app.use((req, res) => {
   res.status(404).json({ success: false, message: `Route not found: ${req.method} ${req.originalUrl}` });
 });
+// Sentry captures any error that reached here before our handler formats it.
+if (process.env.SENTRY_DSN && Sentry.setupExpressErrorHandler) {
+  Sentry.setupExpressErrorHandler(app);
+}
 app.use((err, req, res, _next) => {
   try { recordError(req.tenant?.subdomain, err.message, req.originalUrl); }
    catch { /* never let tracking break the response */ }
