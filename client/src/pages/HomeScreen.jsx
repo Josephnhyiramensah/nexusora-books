@@ -25,6 +25,7 @@ const moduleTiles = [
   { label: 'Revenue',             subtitle: 'Sales, service income',          path: '/revenue',              accentColor: '#16A34A', icon: FiTrendingUp },
   { label: 'Expenses',            subtitle: 'Operating costs, COGS',          path: '/expenses',             accentColor: '#EA580C', icon: FiMinusCircle },
   { label: 'Journals',            subtitle: 'General, sales, purchases',      path: '/journals',             accentColor: '#2563EB', icon: FiBookOpen },
+  { label: 'Vouchers',            subtitle: 'Payment, receipt, contra, journal', path: '/vouchers',             accentColor: '#0EA5E9', icon: FiFileText },
   { label: 'Invoicing',           subtitle: 'Customer invoices & receipts',   path: '/invoicing',            accentColor: '#0891B2', icon: FiSend },
   { label: 'Bills & Payments',    subtitle: 'Vendor bills & payments',        path: '/bills',                accentColor: '#D97706', icon: FiCreditCard },
   { label: 'Inventory',           subtitle: 'Stock tracking & valuation',     path: '/inventory',            accentColor: '#4F46E5', icon: FiPackage },

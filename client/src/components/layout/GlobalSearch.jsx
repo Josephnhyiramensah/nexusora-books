@@ -9,6 +9,8 @@ const MODULE_INDEX = [
   { label: 'Chart of Accounts', path: '/assets', keywords: ['accounts', 'chart', 'coa', 'ledger', 'asset', 'liability', 'equity'] },
   { label: 'Journal Entries', path: '/journals', keywords: ['journal', 'entries', 'debit', 'credit', 'posting'] },
   { label: 'New Journal Entry', path: '/journals/new', keywords: ['new journal', 'create journal', 'add entry'] },
+  { label: 'Vouchers', path: '/vouchers', keywords: ['voucher', 'vouchers', 'payment voucher', 'receipt voucher', 'contra', 'debit note', 'credit note'] },
+  { label: 'New Voucher', path: '/vouchers/new', keywords: ['new voucher', 'create voucher', 'add voucher'] },
   { label: 'Customers', path: '/invoicing/customers', keywords: ['customer', 'client', 'buyer', 'debtor'] },
   { label: 'Invoices', path: '/invoicing/invoices', keywords: ['invoice', 'bill to', 'receivable', 'sales'] },
   { label: 'New Invoice', path: '/invoicing/new', keywords: ['new invoice', 'create invoice'] },
