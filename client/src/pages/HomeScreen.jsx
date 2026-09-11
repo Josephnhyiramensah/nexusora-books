@@ -13,7 +13,7 @@ import {
   FiSend, FiCreditCard, FiPackage, FiTruck, FiUsers,
   FiHome as FiBankIcon, FiTarget, FiPercent, FiBarChart2,
   FiEdit3, FiCheckSquare, FiSettings, FiDollarSign,
-  FiMinusCircle, FiBookOpen, FiZap, FiActivity,
+  FiMinusCircle, FiBookOpen, FiZap, FiActivity, FiFileText,
 } from 'react-icons/fi';
 import TwoFactorNudge from '../components/common/TwoFactorNudge';
 
