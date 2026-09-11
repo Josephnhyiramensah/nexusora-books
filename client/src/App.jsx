@@ -15,7 +15,7 @@ import FinancialAnalyticsPage from './modules/accounts/FinancialAnalyticsPage';
 // Icons
 import {
   FiList, FiFileText, FiPlusCircle, FiDollarSign, FiBookOpen,
-  FiTrendingUp, FiTrendingDown, FiUsers, FiSend,
+  FiTrendingUp, FiTrendingDown, FiUsers, FiSend, FiCornerDownLeft,
   FiCreditCard, FiShoppingBag, FiPieChart, FiBarChart2, FiZap,
 } from 'react-icons/fi';
 
