@@ -16,6 +16,7 @@ const bankAccountSchema = require('../models/BankAccount');
 const budgetSchema = require('../models/Budget');
 const inventoryItemSchema = require('../models/InventoryItem');
 const apiKeySchema = require('../models/ApiKey');
+const voucherSchema = require('../models/Voucher');
 const notificationSchema = require('../models/Notification');
 const casualWorkerSchema = require('../models/CasualWorker');
 const reconciliationSessionSchema = require('../models/ReconciliationSession');
@@ -34,6 +35,7 @@ const schemas = {
   BankAccount: bankAccountSchema, Budget: budgetSchema,
   InventoryItem: inventoryItemSchema,
   ApiKey: apiKeySchema,
+  Voucher: voucherSchema,
   Notification: notificationSchema,
   CasualWorker: casualWorkerSchema,
   ReconciliationSession: reconciliationSessionSchema,
