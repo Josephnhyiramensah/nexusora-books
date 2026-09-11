@@ -1,7 +1,7 @@
 // client/src/modules/journals/JournalListPage.jsx
 
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate , useLocation } from 'react-router-dom';
 import { FiDownload, FiPlus, FiEye, FiCornerDownLeft, FiSearch } from 'react-icons/fi';
 import { exportJournals } from '../reports/dataExports';
 import journalService from '../../services/journalService';
@@ -12,11 +12,21 @@ import { useToast } from '../../hooks/useToast';
 import { useAuth } from '../../context/AuthContext';
 import { useTenant } from '../../context/TenantContext';
 
+// Sidebar path -> journalType filter, so clicking a sidebar item filters the list.
+const PATH_JOURNAL_TYPE = {
+  '/journals/general': 'general',
+  '/journals/sales': 'sales',
+  '/journals/purchases': 'purchases',
+  '/journals/cash-receipts': 'cash_receipts',
+  '/journals/cash-payments': 'cash_payments',
+};
+
 export default function JournalListPage() {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('');
   const [filterType, setFilterType] = useState('');
+  const location = useLocation();
   const [viewEntry, setViewEntry] = useState(null);
   const navigate = useNavigate();
   const { showToast, ToastComponent } = useToast();
@@ -38,6 +48,11 @@ export default function JournalListPage() {
       setLoading(false);
     }
   };
+
+  // When the sidebar path changes, apply the matching journalType filter.
+  useEffect(() => {
+    setFilterType(PATH_JOURNAL_TYPE[location.pathname] || '');
+  }, [location.pathname]);
 
   useEffect(() => { fetchEntries(); }, [filterStatus, filterType]);
 

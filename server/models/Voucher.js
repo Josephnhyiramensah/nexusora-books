@@ -58,6 +58,16 @@ const voucherSchema = new mongoose.Schema(
     bankName: String,
     instrumentNo: String,              // cheque / instrument number
 
+    // Mode-specific details captured on the voucher form. Which keys are filled
+    // depends on the payment mode: e.g. mobile_money uses { momoNumber, momoName,
+    // reference }; cheque uses { chequeNo, bank, branch }; bank_transfer uses
+    // { bank, accountNo, branch, reference }. Kept flexible so new modes don't
+    // require schema changes.
+    paymentDetails: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+
     amount: { type: Number, required: true, min: 0.01 },
 
     // Accounting lines (simple = 2 lines; multi-line = more). Always balanced

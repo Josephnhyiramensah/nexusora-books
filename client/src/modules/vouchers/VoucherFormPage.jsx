@@ -1,7 +1,7 @@
 // client/src/modules/vouchers/VoucherFormPage.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiSave, FiArrowLeft } from 'react-icons/fi';
+import { FiSave, FiArrowLeft, FiChevronDown, FiX } from 'react-icons/fi';
 import voucherService from '../../services/voucherService';
 import api from '../../services/api';
 import { formatCurrency } from '../../utils/formatters';
@@ -20,13 +20,115 @@ const VOUCHER_TYPES = [
 ];
 
 const MODES = [
-  { value: 'cash', label: 'Cash' },
+  { value: 'cash',          label: 'Cash' },
   { value: 'bank_transfer', label: 'Bank Transfer' },
-  { value: 'cheque', label: 'Cheque' },
-  { value: 'mobile_money', label: 'Mobile Money' },
-  { value: 'card', label: 'Card' },
-  { value: 'other', label: 'Other' },
+  { value: 'cheque',        label: 'Cheque' },
+  { value: 'mobile_money',  label: 'Mobile Money (MoMo)' },
+  { value: 'card',          label: 'Card' },
+  { value: 'other',         label: 'Other' },
 ];
+
+// Which extra fields each payment mode shows. key = paymentDetails key.
+const MODE_FIELDS = {
+  cash: [],
+  bank_transfer: [
+    { key: 'bank', label: 'Bank' },
+    { key: 'accountNo', label: 'Account No.' },
+    { key: 'branch', label: 'Branch' },
+    { key: 'reference', label: 'Reference' },
+  ],
+  cheque: [
+    { key: 'chequeNo', label: 'Cheque No.' },
+    { key: 'bank', label: 'Bank' },
+    { key: 'branch', label: 'Branch' },
+  ],
+  mobile_money: [
+    { key: 'momoNumber', label: 'MoMo Number' },
+    { key: 'momoName', label: 'MoMo Name' },
+    { key: 'reference', label: 'Transaction Ref' },
+  ],
+  card: [
+    { key: 'cardLast4', label: 'Card (last 4)' },
+    { key: 'reference', label: 'Reference' },
+  ],
+  other: [
+    { key: 'reference', label: 'Reference' },
+  ],
+};
+
+// Smart defaults: which SIDE of the entry the voucher type naturally fills with
+// a cash/bank account, so the user only picks the other side. We only PRE-HINT;
+// the user can always change it. (We never auto-pick the opposite account.)
+// 'debit' means the cash/bank normally sits on the debit side (money in).
+const CASH_SIDE = {
+  receipt: 'debit',    // money in  -> debit cash/bank
+  payment: 'credit',   // money out -> credit cash/bank
+  sales: 'debit',
+  purchase: 'credit',
+};
+
+// ── Searchable account dropdown ──────────────────────────────────────────────
+function AccountSelect({ accounts, value, onChange, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const boxRef = useRef(null);
+
+  useEffect(() => {
+    const onDoc = (e) => { if (boxRef.current && !boxRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  const selected = accounts.find((a) => a._id === value);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return accounts.slice(0, 50);
+    return accounts.filter((a) =>
+      `${a.code} ${a.name}`.toLowerCase().includes(q)
+    ).slice(0, 50);
+  }, [query, accounts]);
+
+  const input = { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border, #D1D5DB)', fontSize: 14, boxSizing: 'border-box', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' };
+
+  return (
+    <div ref={boxRef} style={{ position: 'relative' }}>
+      <div style={input} onClick={() => { setOpen((o) => !o); setQuery(''); }}>
+        <span style={{ color: selected ? 'inherit' : '#9CA3AF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {selected ? `${selected.code} — ${selected.name}` : (placeholder || 'Select account…')}
+        </span>
+        {selected
+          ? <FiX size={15} onClick={(e) => { e.stopPropagation(); onChange(''); }} style={{ flexShrink: 0, color: '#9CA3AF' }} />
+          : <FiChevronDown size={15} style={{ flexShrink: 0, color: '#9CA3AF' }} />}
+      </div>
+      {open && (
+        <div style={{ position: 'absolute', top: '110%', left: 0, right: 0, zIndex: 30, background: '#fff', border: '1px solid var(--border, #D1D5DB)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', maxHeight: 280, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Type account code or name…"
+            style={{ padding: '10px 12px', border: 'none', borderBottom: '1px solid #EEE', fontSize: 14, outline: 'none' }}
+          />
+          <div style={{ overflowY: 'auto' }}>
+            {filtered.length === 0 ? (
+              <div style={{ padding: '12px', color: '#9CA3AF', fontSize: 13 }}>No matching accounts</div>
+            ) : filtered.map((a) => (
+              <div
+                key={a._id}
+                onClick={() => { onChange(a._id); setOpen(false); }}
+                style={{ padding: '10px 12px', fontSize: 14, cursor: 'pointer', background: a._id === value ? '#F2F6FC' : '#fff' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = '#F7FAFF')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = a._id === value ? '#F2F6FC' : '#fff')}
+              >
+                <strong>{a.code}</strong> — {a.name}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function VoucherFormPage() {
   const navigate = useNavigate();
@@ -37,15 +139,10 @@ export default function VoucherFormPage() {
   const [form, setForm] = useState({
     voucherType: 'payment',
     date: new Date().toISOString().slice(0, 10),
-    narration: '',
-    reference: '',
-    partyName: '',
+    narration: '', reference: '', partyName: '',
     mode: 'cash',
-    bankName: '',
-    instrumentNo: '',
-    debitAccount: '',
-    creditAccount: '',
-    amount: '',
+    debitAccount: '', creditAccount: '', amount: '',
+    paymentDetails: {},
   });
 
   useEffect(() => {
@@ -58,43 +155,33 @@ export default function VoucherFormPage() {
   }, []);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const setDetail = (k, v) => setForm((f) => ({ ...f, paymentDetails: { ...f.paymentDetails, [k]: v } }));
+
+  const currentType = VOUCHER_TYPES.find((t) => t.value === form.voucherType);
+  const modeFields = MODE_FIELDS[form.mode] || [];
   const acctLabel = (id) => {
     const a = accounts.find((x) => x._id === id);
     return a ? `${a.code} — ${a.name}` : '';
   };
 
-  const currentType = VOUCHER_TYPES.find((t) => t.value === form.voucherType);
-
   const handleSave = async (thenPost) => {
     if (!form.date || !form.debitAccount || !form.creditAccount || !form.amount) {
-      showToast('Fill in date, debit account, credit account and amount.', 'error');
-      return;
+      showToast('Fill in date, debit account, credit account and amount.', 'error'); return;
     }
     if (form.debitAccount === form.creditAccount) {
-      showToast('Debit and credit accounts must be different.', 'error');
-      return;
+      showToast('Debit and credit accounts must be different.', 'error'); return;
     }
-    if (Number(form.amount) <= 0) {
-      showToast('Amount must be greater than zero.', 'error');
-      return;
-    }
+    if (Number(form.amount) <= 0) { showToast('Amount must be greater than zero.', 'error'); return; }
+
     setSaving(true);
     try {
       const result = await voucherService.create({
-        voucherType: form.voucherType,
-        date: form.date,
-        narration: form.narration,
-        reference: form.reference,
-        partyName: form.partyName,
-        mode: form.mode,
-        bankName: form.bankName,
-        instrumentNo: form.instrumentNo,
-        debitAccount: form.debitAccount,
-        creditAccount: form.creditAccount,
-        amount: Number(form.amount),
+        voucherType: form.voucherType, date: form.date,
+        narration: form.narration, reference: form.reference, partyName: form.partyName,
+        mode: form.mode, paymentDetails: form.paymentDetails,
+        debitAccount: form.debitAccount, creditAccount: form.creditAccount, amount: Number(form.amount),
       });
       if (!result.success) { showToast(result.message || 'Failed', 'error'); setSaving(false); return; }
-
       if (thenPost) {
         const posted = await voucherService.post(result.data._id);
         showToast(posted.success ? posted.message : (posted.message || 'Saved as draft (post failed)'), posted.success ? 'success' : 'error');
@@ -104,14 +191,17 @@ export default function VoucherFormPage() {
       navigate('/vouchers');
     } catch (err) {
       showToast(err.response?.data?.message || 'Failed to save voucher', 'error');
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   const label = { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary, #6B7280)', marginBottom: 6 };
   const input = { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border, #D1D5DB)', fontSize: 14, boxSizing: 'border-box' };
   const card = { background: 'var(--surface, #fff)', border: '1px solid var(--border, #E5E7EB)', borderRadius: 12, padding: 20, marginBottom: 16 };
+
+  // Smart-default hint text based on voucher type.
+  const cashSide = CASH_SIDE[form.voucherType];
+  const debitHint = cashSide === 'debit' ? 'Cash / bank (money in)' : 'What is received / owed';
+  const creditHint = cashSide === 'credit' ? 'Cash / bank (money out)' : 'What is given / source';
 
   return (
     <div style={{ maxWidth: 780, margin: '0 auto' }}>
@@ -144,18 +234,12 @@ export default function VoucherFormPage() {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 16 }}>
           <div>
-            <label style={label}>Debit Account (what is received / owed)</label>
-            <select style={input} value={form.debitAccount} onChange={(e) => set('debitAccount', e.target.value)}>
-              <option value="">Select account…</option>
-              {accounts.map((a) => <option key={a._id} value={a._id}>{a.code} — {a.name}</option>)}
-            </select>
+            <label style={label}>Debit Account <span style={{ fontWeight: 400, color: '#9CA3AF' }}>· {debitHint}</span></label>
+            <AccountSelect accounts={accounts} value={form.debitAccount} onChange={(v) => set('debitAccount', v)} />
           </div>
           <div>
-            <label style={label}>Credit Account (what is given / source)</label>
-            <select style={input} value={form.creditAccount} onChange={(e) => set('creditAccount', e.target.value)}>
-              <option value="">Select account…</option>
-              {accounts.map((a) => <option key={a._id} value={a._id}>{a.code} — {a.name}</option>)}
-            </select>
+            <label style={label}>Credit Account <span style={{ fontWeight: 400, color: '#9CA3AF' }}>· {creditHint}</span></label>
+            <AccountSelect accounts={accounts} value={form.creditAccount} onChange={(v) => set('creditAccount', v)} />
           </div>
         </div>
       </div>
@@ -173,18 +257,19 @@ export default function VoucherFormPage() {
             </select>
           </div>
         </div>
-        {form.mode !== 'cash' && (
+
+        {/* Dynamic fields based on the chosen payment mode */}
+        {modeFields.length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 16 }}>
-            <div>
-              <label style={label}>Bank</label>
-              <input style={input} value={form.bankName} onChange={(e) => set('bankName', e.target.value)} placeholder="Bank name" />
-            </div>
-            <div>
-              <label style={label}>Instrument / Cheque No.</label>
-              <input style={input} value={form.instrumentNo} onChange={(e) => set('instrumentNo', e.target.value)} placeholder="Optional" />
-            </div>
+            {modeFields.map((f) => (
+              <div key={f.key}>
+                <label style={label}>{f.label}</label>
+                <input style={input} value={form.paymentDetails[f.key] || ''} onChange={(e) => setDetail(f.key, e.target.value)} placeholder={f.label} />
+              </div>
+            ))}
           </div>
         )}
+
         <div style={{ marginTop: 16 }}>
           <label style={label}>Narration</label>
           <input style={input} value={form.narration} onChange={(e) => set('narration', e.target.value)} placeholder="What is this voucher for?" />
@@ -199,12 +284,10 @@ export default function VoucherFormPage() {
         <div style={{ ...card, background: 'var(--surface-alt, #F2F6FC)' }}>
           <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--brand, #3485E9)', margin: '0 0 10px', textTransform: 'uppercase' }}>Accounting preview</p>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '4px 0' }}>
-            <span>Debit: {acctLabel(form.debitAccount)}</span>
-            <strong>{formatCurrency(Number(form.amount))}</strong>
+            <span>Debit: {acctLabel(form.debitAccount)}</span><strong>{formatCurrency(Number(form.amount))}</strong>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '4px 0' }}>
-            <span>Credit: {acctLabel(form.creditAccount)}</span>
-            <strong>{formatCurrency(Number(form.amount))}</strong>
+            <span>Credit: {acctLabel(form.creditAccount)}</span><strong>{formatCurrency(Number(form.amount))}</strong>
           </div>
         </div>
       )}

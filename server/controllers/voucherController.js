@@ -73,7 +73,7 @@ const createVoucher = async (req, res) => {
     const Account = getModel(req.tenantDb, 'Account');
     const {
       voucherType, date, narration, reference, partyName, customer, vendor,
-      mode, bankAccount, bankName, instrumentNo,
+      mode, bankAccount, bankName, instrumentNo, paymentDetails,
       // Simple mode:
       debitAccount, creditAccount, amount,
       // Multi-line mode:
@@ -115,6 +115,7 @@ const createVoucher = async (req, res) => {
       voucherNumber, voucherType, date, narration, reference,
       partyName, customer: customer || undefined, vendor: vendor || undefined,
       mode, bankAccount: bankAccount || undefined, bankName, instrumentNo,
+      paymentDetails: paymentDetails || {},
       amount: computedAmount,
       lines: enriched,
       totalDebit: validation.totalDebit, totalCredit: validation.totalCredit,
