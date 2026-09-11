@@ -24,6 +24,8 @@ import AccountListPage from './modules/accounts/AccountListPage';
 import AccountTypePage from './modules/accounts/AccountTypePage';
 import JournalListPage from './modules/journals/JournalListPage';
 import JournalFormPage from './modules/journals/JournalFormPage';
+import VoucherListPage from './modules/vouchers/VoucherListPage';
+import VoucherFormPage from './modules/vouchers/VoucherFormPage';
 
 // Phase 3
 import CustomerListPage from './modules/invoicing/CustomerListPage';
@@ -75,6 +77,17 @@ const journalsSidebar = [
   { path: '/journals/cash-receipts',label: 'Cash Receipts',        icon: FiDollarSign },
   { path: '/journals/cash-payments',label: 'Cash Payments',        icon: FiFileText },
   { path: '/journals/new',          label: '+ New Entry',          icon: FiPlusCircle },
+];
+
+const vouchersSidebar = [
+  { path: '/vouchers',          label: 'All Vouchers',   icon: FiList,        exact: true },
+  { path: '/vouchers/payment',  label: 'Payment',        icon: FiFileText },
+  { path: '/vouchers/receipt',  label: 'Receipt',        icon: FiDollarSign },
+  { path: '/vouchers/contra',   label: 'Contra',         icon: FiCornerDownLeft },
+  { path: '/vouchers/journal',  label: 'Journal',        icon: FiBookOpen },
+  { path: '/vouchers/purchase', label: 'Purchase',       icon: FiTrendingDown },
+  { path: '/vouchers/sales',    label: 'Sales',          icon: FiTrendingUp },
+  { path: '/vouchers/new',      label: '+ New Voucher',  icon: FiPlusCircle },
 ];
 
 const invoicingSidebar = [
@@ -190,6 +203,19 @@ export default function App() {
               <Route path="/journals/cash-receipts" element={<JournalListPage />} />
               <Route path="/journals/cash-payments" element={<JournalListPage />} />
               <Route path="/journals/new"           element={<JournalFormPage />} />
+            </Route>
+
+            {/* Vouchers */}
+            <Route element={<ProtectedRoute><ModuleShell moduleTitle="Vouchers" sidebarItems={vouchersSidebar} /></ProtectedRoute>}>
+              <Route path="/vouchers"          element={<VoucherListPage />} />
+              <Route path="/vouchers/payment"  element={<VoucherListPage />} />
+              <Route path="/vouchers/receipt"  element={<VoucherListPage />} />
+              <Route path="/vouchers/contra"   element={<VoucherListPage />} />
+              <Route path="/vouchers/journal"  element={<VoucherListPage />} />
+              <Route path="/vouchers/purchase" element={<VoucherListPage />} />
+              <Route path="/vouchers/sales"    element={<VoucherListPage />} />
+              <Route path="/vouchers/new"      element={<VoucherFormPage />} />
+              <Route path="/vouchers/:id"      element={<VoucherFormPage />} />
             </Route>
 
             {/* ── Invoicing ── */}
