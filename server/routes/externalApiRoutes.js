@@ -219,4 +219,100 @@ router.post('/vouchers', async (req, res) => {
   }
 });
 
+// Shared: create (and optionally post) a voucher from a Books-format payload.
+// Returns { status, body } so both the direct and mapped endpoints reuse it.
+async function createVoucherFromBooksPayload(req, payload) {
+  const Voucher = getModel(req.tenantDb, 'Voucher');
+  const Account = getModel(req.tenantDb, 'Account');
+  const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
+  const { validateDoubleEntry, generateEntryNumber } = require('../utils/accountingHelpers');
+  const { generateVoucherNumber, journalTypeForVoucher } = require('../utils/voucherHelpers');
+
+  const {
+    voucherType, date, amount, narration, reference, externalId,
+    partyName, mode, paymentDetails, debitAccountCode, creditAccountCode,
+    autopost = true,
+  } = payload;
+
+  const VALID_TYPES = ['payment','receipt','contra','transfer','journal','purchase','sales','debit_note','credit_note'];
+  if (!voucherType || !VALID_TYPES.includes(voucherType)) return { status: 400, body: { success:false, message:'Valid voucherType is required.' } };
+  if (!date || !amount || Number(amount) <= 0) return { status: 400, body: { success:false, message:'date and a positive amount are required.' } };
+  if (!debitAccountCode || !creditAccountCode) return { status: 400, body: { success:false, message:'debit/credit account codes are required.' } };
+  if (debitAccountCode === creditAccountCode) return { status: 400, body: { success:false, message:'Debit and credit accounts must differ.' } };
+  if (!externalId) return { status: 400, body: { success:false, message:'externalId is required (dedup).' } };
+
+  const existing = await Voucher.findOne({ externalId });
+  if (existing) return { status: 409, body: { success:false, message:'Already imported.', data:{ voucherNumber: existing.voucherNumber, id: existing._id } } };
+
+  const debitAcct = await Account.findOne({ code: String(debitAccountCode) });
+  if (!debitAcct) return { status: 400, body: { success:false, message:'Debit account code "'+debitAccountCode+'" not found.' } };
+  if (debitAcct.isActive === false) return { status: 400, body: { success:false, message:'Debit account "'+debitAccountCode+'" is inactive.' } };
+  const creditAcct = await Account.findOne({ code: String(creditAccountCode) });
+  if (!creditAcct) return { status: 400, body: { success:false, message:'Credit account code "'+creditAccountCode+'" not found.' } };
+  if (creditAcct.isActive === false) return { status: 400, body: { success:false, message:'Credit account "'+creditAccountCode+'" is inactive.' } };
+
+  const amt = Math.round(Number(amount) * 100) / 100;
+  const lines = [
+    { account: debitAcct._id, accountCode: debitAcct.code, accountName: debitAcct.name, debit: amt, credit: 0, description: narration || '' },
+    { account: creditAcct._id, accountCode: creditAcct.code, accountName: creditAcct.name, debit: 0, credit: amt, description: narration || '' },
+  ];
+  const validation = validateDoubleEntry(lines);
+  if (!validation.valid) return { status: 400, body: { success:false, message: validation.error } };
+
+  const voucherNumber = await generateVoucherNumber(Voucher, voucherType);
+  const voucher = await Voucher.create({
+    voucherNumber, voucherType, date, narration, reference,
+    partyName, mode: mode || 'other', paymentDetails: paymentDetails || {},
+    amount: amt, lines,
+    totalDebit: validation.totalDebit, totalCredit: validation.totalCredit,
+    status: 'draft', createdBy: null,
+    createdViaApi: true, apiKeyId: req.apiKey._id, externalId,
+  });
+
+  let journalEntry = null;
+  if (autopost) {
+    const entryNumber = await generateEntryNumber(JournalEntry);
+    journalEntry = await JournalEntry.create({
+      entryNumber, date: voucher.date, journalType: journalTypeForVoucher(voucherType),
+      description: narration || (voucherType + ' voucher ' + voucherNumber),
+      reference: voucherNumber, lines,
+      totalDebit: validation.totalDebit, totalCredit: validation.totalCredit,
+      status: 'posted', createdBy: null, createdViaApi: true, apiKeyId: req.apiKey._id,
+    });
+    voucher.status = 'posted';
+    voucher.journalEntry = journalEntry._id;
+    await voucher.save();
+  }
+
+  return { status: 201, body: { success:true, message: 'Voucher '+voucherNumber+' '+(autopost?'created and posted':'created as draft')+'.', data: { voucherNumber: voucher.voucherNumber, id: voucher._id, status: voucher.status, journalEntryNumber: journalEntry ? journalEntry.entryNumber : null } } };
+}
+
+// POST /external/v1/vouchers/mapped — RAW external payload, translated via a
+// saved ExternalMapping for the given source, then created as a voucher.
+// Body: { "source": "kgr_php_gold", "record": { ...raw external fields... } }
+router.post('/vouchers/mapped', async (req, res) => {
+  if (!req.apiPermissions.includes('write') && !req.apiPermissions.includes('journals')) {
+    return res.status(403).json({ success: false, message: 'This API key does not have write permission.' });
+  }
+  try {
+    const { applyMapping } = require('../utils/externalMappingHelper');
+    const ExternalMapping = getModel(req.tenantDb, 'ExternalMapping');
+    const { source, record } = req.body;
+    if (!source || !record) return res.status(400).json({ success: false, message: 'source and record are required.' });
+
+    const mapping = await ExternalMapping.findOne({ source, active: true }).lean();
+    if (!mapping) return res.status(404).json({ success: false, message: 'No active mapping found for source "' + source + '".' });
+
+    const translated = applyMapping(mapping, record);
+    if (!translated.ok) return res.status(400).json({ success: false, message: translated.error });
+
+    const result = await createVoucherFromBooksPayload(req, translated.voucher);
+    return res.status(result.status).json(result.body);
+  } catch (error) {
+    if (error.code === 11000) return res.status(409).json({ success: false, message: 'Duplicate record (already imported).' });
+    console.error('[ExternalAPI] Mapped voucher error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to import mapped voucher.' });
+  }
+});
+
 module.exports = router;
