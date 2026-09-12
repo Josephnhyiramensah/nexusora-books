@@ -91,7 +91,7 @@ function AccountSelect({ accounts, value, onChange, placeholder }) {
   const input = { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border, #D1D5DB)', fontSize: 14, boxSizing: 'border-box', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between' };
 
   return (
-    <div ref={boxRef} style={{ position: 'relative' }}>
+    <div ref={boxRef} style={{ position: 'relative', maxWidth: '100%' /* mobile-safe */ }}>
       <div style={input} onClick={() => { setOpen((o) => !o); setQuery(''); }}>
         <span style={{ color: selected ? 'inherit' : '#9CA3AF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {selected ? `${selected.code} — ${selected.name}` : (placeholder || 'Select account…')}
@@ -116,7 +116,7 @@ function AccountSelect({ accounts, value, onChange, placeholder }) {
               <div
                 key={a._id}
                 onClick={() => { onChange(a._id); setOpen(false); }}
-                style={{ padding: '10px 12px', fontSize: 14, cursor: 'pointer', background: a._id === value ? '#F2F6FC' : '#fff' }}
+                style={{ padding: '10px 12px', fontSize: 14, cursor: 'pointer', background: a._id === value ? '#F2F6FC' : '#fff', wordBreak: 'break-word' }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = '#F7FAFF')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = a._id === value ? '#F2F6FC' : '#fff')}
               >
@@ -247,7 +247,7 @@ export default function VoucherFormPage() {
       <div style={card}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div>
-            <label style={label}>Party (payee / received from)</label>
+            <label style={label}>Party</label>
             <input style={input} value={form.partyName} onChange={(e) => set('partyName', e.target.value)} placeholder="e.g. ABC Ltd" />
           </div>
           <div>

@@ -26,6 +26,7 @@ import JournalListPage from './modules/journals/JournalListPage';
 import JournalFormPage from './modules/journals/JournalFormPage';
 import VoucherListPage from './modules/vouchers/VoucherListPage';
 import VoucherFormPage from './modules/vouchers/VoucherFormPage';
+import ExternalMappingPage from './modules/integrations/ExternalMappingPage';
 
 // Phase 3
 import CustomerListPage from './modules/invoicing/CustomerListPage';
@@ -216,6 +217,11 @@ export default function App() {
               <Route path="/vouchers/sales"    element={<VoucherListPage />} />
               <Route path="/vouchers/new"      element={<VoucherFormPage />} />
               <Route path="/vouchers/:id"      element={<VoucherFormPage />} />
+            </Route>
+
+            {/* Integrations — external system mapping (admin) */}
+            <Route element={<ProtectedRoute roles={['super_admin','admin']}><ModuleShell moduleTitle="Integrations" sidebarItems={[{ path: '/integrations/mapping', label: 'External Mapping', icon: FiList, exact: true }]} /></ProtectedRoute>}>
+              <Route path="/integrations/mapping" element={<ExternalMappingPage />} />
             </Route>
 
             {/* ── Invoicing ── */}
