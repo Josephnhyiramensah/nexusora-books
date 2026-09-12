@@ -18,7 +18,7 @@ const defaultChartOfAccounts = [
   { code: '1000', name: 'Cash', type: 'asset', category: 'Current Asset', normalBalance: 'debit', isSystemAccount: true, description: 'Cash on hand' },
   { code: '1010', name: 'Petty Cash', type: 'asset', category: 'Current Asset', normalBalance: 'debit', isSystemAccount: true, description: 'Petty cash fund' },
   { code: '1020', name: 'Bank Accounts', type: 'asset', category: 'Current Asset', normalBalance: 'debit', isSystemAccount: true, description: 'Bank account balances' },
-  { code: '1030', name: 'Mobile Money', type: 'asset', category: 'Current Asset', normalBalance: 'debit', isSystemAccount: true, description: 'Mobile money float and wallets' },
+  { code: '1015', name: 'Mobile Money Wallet', type: 'asset', category: 'Current Asset', normalBalance: 'debit', isSystemAccount: true, description: 'Mobile money float and wallets' },
   { code: '1100', name: 'Accounts Receivable', type: 'asset', category: 'Current Asset', normalBalance: 'debit', isSystemAccount: true, description: 'Amounts owed by customers' },
   { code: '1110', name: 'Allowance for Doubtful Debts', type: 'asset', category: 'Current Asset', normalBalance: 'credit', isSystemAccount: true, description: 'Provision against uncollectible receivables' },
   { code: '1120', name: 'Staff Advances & Loans', type: 'asset', category: 'Current Asset', normalBalance: 'debit', isSystemAccount: true, description: 'Advances and loans to employees' },
