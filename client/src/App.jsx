@@ -91,6 +91,15 @@ const vouchersSidebar = [
   { path: '/vouchers/new',      label: '+ New Voucher',  icon: FiPlusCircle },
 ];
 
+const taxSidebar = [
+  { path: '/tax',          label: 'All Tax',        icon: FiList,       exact: true },
+  { path: '/tax/vat',      label: 'VAT / GST',      icon: FiPercent },
+  { path: '/tax/paye',     label: 'PAYE',           icon: FiFileText },
+  { path: '/tax/ssnit',    label: 'SSNIT',          icon: FiDollarSign },
+  { path: '/tax/wht',      label: 'Withholding Tax',icon: FiTrendingDown },
+  { path: '/tax/corporate',label: 'Corporate Tax',  icon: FiBookOpen },
+];
+
 const invoicingSidebar = [
   { path: '/invoicing/customers',       label: 'Customers',        icon: FiUsers },
   { path: '/invoicing/invoices',        label: 'Invoices',         icon: FiSend },
@@ -273,8 +282,13 @@ export default function App() {
             </Route>
 
             {/* ── Tax ── */}
-            <Route element={<ProtectedRoute permission="tax.view" roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Tax" sidebarItems={g('/tax','Tax')} /></ProtectedRoute>}>
+            <Route element={<ProtectedRoute permission="tax.view" roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Tax" sidebarItems={taxSidebar} /></ProtectedRoute>}>
               <Route path="/tax" element={<TaxPage />} />
+              <Route path="/tax/vat" element={<TaxPage />} />
+              <Route path="/tax/paye" element={<TaxPage />} />
+              <Route path="/tax/ssnit" element={<TaxPage />} />
+              <Route path="/tax/wht" element={<TaxPage />} />
+              <Route path="/tax/corporate" element={<TaxPage />} />
             </Route>
 
             {/* ── Reports ── */}
