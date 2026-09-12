@@ -12,12 +12,13 @@ import {
 } from 'react-icons/fi';
 import { useAuth } from '../../context/AuthContext';
 import PayrollRatesEditor from './PayrollRatesEditor';
+import ExternalMappingPage from '../integrations/ExternalMappingPage';
 import { useTenant } from '../../context/TenantContext';
 import { useToast } from '../../hooks/useToast';
 import Modal from '../../components/common/Modal';
 import api from '../../services/api';
 import { motion } from 'framer-motion';
-import { FiCode } from 'react-icons/fi';
+import { FiCode, FiLink } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 import { FiEdit3 } from 'react-icons/fi';   // if not already imported
 import { FiDollarSign } from 'react-icons/fi';
@@ -1599,6 +1600,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
     
 ...(['super_admin', 'admin'].includes(user?.role) ? [{ key: 'payrollRates', label: 'Payroll Rates', icon: FiDollarSign }] : []),
 { key: 'api', label: 'API Keys', icon: FiCode },
+...(['super_admin', 'admin'].includes(user?.role) ? [{ key: 'integrations', label: 'Integrations', icon: FiLink }] : []),
 { key: 'whitelabel', label: 'White-label', icon: FiEdit3 },
   ];
 
@@ -1670,6 +1672,10 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
       )}
 
       {/* API Keys Tab */}
+      {activeTab === 'integrations' && isAdmin && (
+        <ExternalMappingPage />
+      )}
+
       {activeTab === 'api' && (
         <div>
           {/* Plan gate */}
