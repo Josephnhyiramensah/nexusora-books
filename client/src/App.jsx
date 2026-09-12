@@ -16,7 +16,7 @@ import FinancialAnalyticsPage from './modules/accounts/FinancialAnalyticsPage';
 import {
   FiList, FiFileText, FiPlusCircle, FiDollarSign, FiBookOpen,
   FiTrendingUp, FiTrendingDown, FiUsers, FiSend, FiCornerDownLeft,
-  FiCreditCard, FiShoppingBag, FiPieChart, FiBarChart2, FiZap,
+  FiCreditCard, FiShoppingBag, FiPieChart, FiBarChart2, FiZap, FiPercent,
 } from 'react-icons/fi';
 
 // Phase 2
