@@ -77,10 +77,9 @@ const defaultChartOfAccounts = [
   { code: '4400', name: 'Gain on Disposal of Assets', type: 'revenue', category: 'Other Income', normalBalance: 'credit', isSystemAccount: true, description: 'Profit on sale of fixed assets' },
 
   // ── COST OF SALES (5000–5999) ──────────────────────────────────────────────
-  { code: '5000', name: 'Cost of Goods Sold', type: 'cogs', category: 'Cost of Goods Sold', normalBalance: 'debit', isSystemAccount: true, description: 'Cost of goods sold' },
-  { code: '5010', name: 'Purchases', type: 'cogs', category: 'Cost of Goods Sold', normalBalance: 'debit', parentCode: '5000', isSystemAccount: true, description: 'Purchases of goods for resale' },
-  { code: '5020', name: 'Purchase Returns', type: 'cogs', category: 'Cost of Goods Sold', normalBalance: 'credit', parentCode: '5000', isSystemAccount: true, description: 'Returns to suppliers (contra)' },
-  { code: '5030', name: 'Freight & Carriage Inwards', type: 'cogs', category: 'Cost of Goods Sold', normalBalance: 'debit', parentCode: '5000', isSystemAccount: true, description: 'Delivery costs on purchases' },
+  { code: '5000', name: 'Purchases', type: 'cogs', category: 'Cost of Goods Sold', normalBalance: 'debit', isSystemAccount: true, description: 'Purchases of goods for resale' },
+  { code: '5020', name: 'Purchase Returns', type: 'cogs', category: 'Cost of Goods Sold', normalBalance: 'credit', isSystemAccount: true, description: 'Returns to suppliers (contra)' },
+  { code: '5030', name: 'Freight & Carriage Inwards', type: 'cogs', category: 'Cost of Goods Sold', normalBalance: 'debit', isSystemAccount: true, description: 'Delivery costs on purchases' },
   { code: '5100', name: 'Direct Labour', type: 'cogs', category: 'Cost of Goods Sold', normalBalance: 'debit', isSystemAccount: true, description: 'Direct labour costs' },
   { code: '5200', name: 'Manufacturing Overhead', type: 'cogs', category: 'Cost of Goods Sold', normalBalance: 'debit', isSystemAccount: true, description: 'Factory overhead costs' },
 
