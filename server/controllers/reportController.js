@@ -102,53 +102,94 @@ const getProfitLoss = async (req, res) => {
     const cogsAccounts = await Account.find({ type: 'cogs', isActive: true }).sort({ code: 1 }).lean();
     const expenseAccounts = await Account.find({ type: 'expense', isActive: true }).sort({ code: 1 }).lean();
 
-    // Calculate period balances from journals if date range given
-    const calcPeriodBalance = async (accountId) => {
-      if (!useJournals) return null;
-
+    // Fetch journal entries ONCE (not per account) and tally net movement per
+    // account id in a single pass — avoids an N+1 query over the chart.
+    let movementByAccount = null;
+    if (useJournals) {
+      movementByAccount = {};
       const entries = await JournalEntry.find(dateFilter).lean();
-      let total = 0;
-
       for (const entry of entries) {
         for (const line of entry.lines) {
-          if (line.account.toString() === accountId.toString()) {
-            total += (line.credit || 0) - (line.debit || 0);
-          }
+          const id = line.account.toString();
+          movementByAccount[id] = (movementByAccount[id] || 0) + ((line.credit || 0) - (line.debit || 0));
         }
       }
-      return Math.round(total * 100) / 100;
+    }
+
+    // Balance for one account: period movement (if date range) or standing balance.
+    const acctBalance = (acct) => {
+      if (useJournals) {
+        return Math.round((movementByAccount[acct._id.toString()] || 0) * 100) / 100;
+      }
+      return acct.balance || 0;
     };
 
-    const buildSection = async (accounts) => {
+    // Build a flat section (list of accounts + total). Uses absolute values so
+    // the statement reads naturally regardless of debit/credit normal side.
+    const buildSection = (accounts) => {
       const items = [];
-      let sectionTotal = 0;
-
+      let total = 0;
       for (const acct of accounts) {
-        let balance;
-        if (useJournals) {
-          balance = await calcPeriodBalance(acct._id);
-        } else {
-          balance = acct.balance || 0;
-        }
-        items.push({ code: acct.code, name: acct.name, balance: Math.abs(balance) });
-        sectionTotal += Math.abs(balance);
+        const bal = Math.abs(acctBalance(acct));
+        items.push({ code: acct.code, name: acct.name, balance: bal });
+        total += bal;
       }
-
-      return { items, total: Math.round(sectionTotal * 100) / 100 };
+      return { items, total: Math.round(total * 100) / 100 };
     };
 
-    const revenue = await buildSection(revenueAccounts);
-    const cogs = await buildSection(cogsAccounts);
-    const expenses = await buildSection(expenseAccounts);
+    // Group a set of accounts BY their category, each group with its own total.
+    const buildGrouped = (accounts) => {
+      const groupsMap = {};
+      let grandTotal = 0;
+      for (const acct of accounts) {
+        const cat = acct.category || 'Other';
+        const bal = Math.abs(acctBalance(acct));
+        if (!groupsMap[cat]) groupsMap[cat] = { category: cat, items: [], total: 0 };
+        groupsMap[cat].items.push({ code: acct.code, name: acct.name, balance: bal });
+        groupsMap[cat].total += bal;
+        grandTotal += bal;
+      }
+      const groups = Object.values(groupsMap).map((g) => ({ ...g, total: Math.round(g.total * 100) / 100 }));
+      // Stable, readable order.
+      groups.sort((a, b) => a.category.localeCompare(b.category));
+      return { groups, total: Math.round(grandTotal * 100) / 100 };
+    };
 
+    // Split revenue into operating vs other income by category.
+    const operatingRevenueAccts = revenueAccounts.filter((a) => (a.category || '').toLowerCase().includes('operating'));
+    const otherIncomeAccts = revenueAccounts.filter((a) => !(a.category || '').toLowerCase().includes('operating'));
+
+    // Split expense accounts into operating vs finance/other/tax by category.
+    const isFinance = (a) => (a.category || '').toLowerCase().includes('finance');
+    const isTax = (a) => (a.category || '').toLowerCase() === 'tax';
+    const isOtherExp = (a) => (a.category || '').toLowerCase().includes('other expense');
+    const operatingExpenseAccts = expenseAccounts.filter((a) => !isFinance(a) && !isTax(a) && !isOtherExp(a));
+    const financeCostAccts = expenseAccounts.filter(isFinance);
+    const otherExpenseAccts = expenseAccounts.filter(isOtherExp);
+    const taxAccts = expenseAccounts.filter(isTax);
+
+    // Sections
+    const revenue = buildSection(operatingRevenueAccts);
+    const cogs = buildSection(cogsAccounts);
     const grossProfit = Math.round((revenue.total - cogs.total) * 100) / 100;
-    const netIncome = Math.round((grossProfit - expenses.total) * 100) / 100;
+
+    const operatingExpensesGrouped = buildGrouped(operatingExpenseAccts);
+    const operatingProfit = Math.round((grossProfit - operatingExpensesGrouped.total) * 100) / 100;
+
+    const otherIncome = buildSection(otherIncomeAccts);
+    const financeCosts = buildSection(financeCostAccts);
+    const otherExpenses = buildSection(otherExpenseAccts);
+    const profitBeforeTax = Math.round((operatingProfit + otherIncome.total - financeCosts.total - otherExpenses.total) * 100) / 100;
+
+    const taxExpense = buildSection(taxAccts);
+    const netProfit = Math.round((profitBeforeTax - taxExpense.total) * 100) / 100;
+
+    // Backward-compatible flat operating-expenses list (old consumers).
+    const operatingExpensesFlat = buildSection(operatingExpenseAccts);
 
     await logAudit(req.tenantDb, {
-      userId: req.user._id,
-      action: 'read',
-      module: 'reports',
-      description: `Generated Profit & Loss report${startDate ? ` (${startDate} to ${endDate})` : ''}`,
+      userId: req.user._id, action: 'read', module: 'reports',
+      description: 'Generated Profit & Loss report' + (startDate ? ' (' + startDate + ' to ' + endDate + ')' : ''),
     }, req);
 
     res.json({
@@ -160,8 +201,18 @@ const getProfitLoss = async (req, res) => {
         revenue,
         costOfGoodsSold: cogs,
         grossProfit,
-        operatingExpenses: expenses,
-        netIncome,
+        operatingExpenseGroups: operatingExpensesGrouped.groups,
+        operatingExpensesTotal: operatingExpensesGrouped.total,
+        operatingProfit,
+        otherIncome,
+        financeCosts,
+        otherExpenses,
+        profitBeforeTax,
+        taxExpense,
+        netProfit,
+        // ── backward-compatible fields ──
+        operatingExpenses: operatingExpensesFlat,
+        netIncome: netProfit,
       },
     });
   } catch (error) {
