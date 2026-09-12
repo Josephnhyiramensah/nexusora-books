@@ -1,5 +1,6 @@
 // client/src/modules/vouchers/VoucherFormPage.jsx
 import { useState, useEffect, useRef, useMemo } from 'react';
+import useIsMobile from '../../hooks/useIsMobile';
 import { useNavigate } from 'react-router-dom';
 import { FiSave, FiArrowLeft, FiChevronDown, FiX } from 'react-icons/fi';
 import voucherService from '../../services/voucherService';
@@ -131,6 +132,7 @@ function AccountSelect({ accounts, value, onChange, placeholder }) {
 }
 
 export default function VoucherFormPage() {
+  const isMobile = useIsMobile();
   const navigate = useNavigate();
   const { showToast, ToastComponent } = useToast();
 
@@ -222,7 +224,7 @@ export default function VoucherFormPage() {
       </div>
 
       <div style={card}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
           <div>
             <label style={label}>Date</label>
             <input type="date" style={input} value={form.date} onChange={(e) => set('date', e.target.value)} />
@@ -232,7 +234,7 @@ export default function VoucherFormPage() {
             <input type="number" step="0.01" style={input} value={form.amount} onChange={(e) => set('amount', e.target.value)} placeholder="0.00" />
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginTop: 16 }}>
           <div>
             <label style={label}>Debit Account <span style={{ fontWeight: 400, color: '#9CA3AF' }}>· {debitHint}</span></label>
             <AccountSelect accounts={accounts} value={form.debitAccount} onChange={(v) => set('debitAccount', v)} />
@@ -245,7 +247,7 @@ export default function VoucherFormPage() {
       </div>
 
       <div style={card}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
           <div>
             <label style={label}>Party</label>
             <input style={input} value={form.partyName} onChange={(e) => set('partyName', e.target.value)} placeholder="e.g. ABC Ltd" />
@@ -260,7 +262,7 @@ export default function VoucherFormPage() {
 
         {/* Dynamic fields based on the chosen payment mode */}
         {modeFields.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginTop: 16 }}>
             {modeFields.map((f) => (
               <div key={f.key}>
                 <label style={label}>{f.label}</label>

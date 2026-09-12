@@ -1,6 +1,7 @@
 // client/src/modules/journals/JournalFormPage.jsx
 
 import { useState, useEffect, useRef } from 'react';
+import useIsMobile from '../../hooks/useIsMobile';
 import { useNavigate } from 'react-router-dom';
 import { FiPlus, FiTrash2, FiSave, FiSend, FiAlertCircle } from 'react-icons/fi';
 import accountService from '../../services/accountService';
@@ -11,6 +12,7 @@ import SmartAccountSelect from '../../components/common/SmartAccountSelect';
 const emptyLine = () => ({ account: '', accountData: null, debit: '', credit: '', description: '' });
 
 export default function JournalFormPage() {
+  const isMobile = useIsMobile();
   const navigate = useNavigate();
   const { showToast, ToastComponent } = useToast();
   const lastLineRef = useRef(null);
@@ -218,7 +220,7 @@ export default function JournalFormPage() {
       <div style={{ background: '#fff', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: 28 }}>
 
         {/* Header Fields */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 16, marginBottom: 24 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr 1fr', gap: 16, marginBottom: 24 }}>
           <div>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: errors.date ? 'var(--danger)' : 'var(--text-secondary)', marginBottom: 6 }}>
               Date <span style={{ color: 'var(--danger)' }}>*</span>
@@ -272,8 +274,8 @@ export default function JournalFormPage() {
         </div>
 
         {/* Journal Lines Table */}
-        <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', marginBottom: 20 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflowX: 'auto', WebkitOverflowScrolling: 'touch', marginBottom: 20 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
             <thead>
               <tr style={{ background: 'var(--deep-navy)' }}>
                 <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#fff', width: '4%' }}>#</th>
