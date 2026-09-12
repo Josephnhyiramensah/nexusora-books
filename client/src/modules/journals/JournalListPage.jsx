@@ -1,6 +1,7 @@
 // client/src/modules/journals/JournalListPage.jsx
 
 import { useState, useEffect } from 'react';
+import useIsMobile from '../../hooks/useIsMobile';
 import { useNavigate , useLocation } from 'react-router-dom';
 import { FiDownload, FiPlus, FiEye, FiCornerDownLeft, FiSearch } from 'react-icons/fi';
 import { exportJournals } from '../reports/dataExports';
@@ -22,6 +23,7 @@ const PATH_JOURNAL_TYPE = {
 };
 
 export default function JournalListPage() {
+  const isMobile = useIsMobile();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('');
@@ -179,8 +181,52 @@ export default function JournalListPage() {
         </button>
       </div>
 
-      {/* Table */}
-      <div style={{ background: '#fff', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', overflow: 'hidden' }}>
+      {/* Mobile: stacked cards */}
+      {isMobile ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {loading ? (
+            <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</div>
+          ) : entries.length === 0 ? (
+            <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>No journal entries yet.</div>
+          ) : entries.map((entry) => {
+            const dotColor = entry.status === 'posted' ? '#059669' : entry.status === 'reversed' ? '#DC2626' : entry.status === 'awaiting_approval' ? '#EA580C' : '#D97706';
+            return (
+              <div key={entry._id} style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <button onClick={() => openView(entry._id)} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--tech-blue)', fontWeight: 700, fontFamily: 'monospace', fontSize: 14, cursor: 'pointer' }}>
+                    <span style={{ color: dotColor, marginRight: 6 }}>●</span>{entry.entryNumber}
+                  </button>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{formatDate(entry.date)}</span>
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8, textTransform: 'capitalize' }}>
+                  {entry.journalType?.replace('_', ' ')} · {entry.description || '—'}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontFamily: 'monospace', marginBottom: 10 }}>
+                  <span>Dr {formatCurrency(entry.totalDebit)}</span>
+                  <span>Cr {formatCurrency(entry.totalCredit)}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {entry.status === 'draft' && (<>
+                    <button onClick={() => handlePost(entry._id)} style={{ flex: 1, padding: '8px', borderRadius: 'var(--radius-sm)', color: 'var(--success)', fontSize: 12, fontWeight: 600, border: '1px solid var(--success)', background: '#fff' }}>Post</button>
+                    <button onClick={() => handleDelete(entry._id)} style={{ flex: 1, padding: '8px', borderRadius: 'var(--radius-sm)', color: 'var(--danger)', fontSize: 12, border: '1px solid var(--danger)', background: '#fff' }}>Delete</button>
+                  </>)}
+                  {entry.status === 'awaiting_approval' && canApprove && (<>
+                    <button onClick={() => handleApprove(entry._id)} style={{ flex: 1, padding: '8px', borderRadius: 'var(--radius-sm)', color: 'var(--success)', fontSize: 12, fontWeight: 600, border: '1px solid var(--success)', background: '#fff' }}>Approve</button>
+                    <button onClick={() => handleReject(entry._id)} style={{ flex: 1, padding: '8px', borderRadius: 'var(--radius-sm)', color: 'var(--danger)', fontSize: 12, fontWeight: 600, border: '1px solid var(--danger)', background: '#fff' }}>Reject</button>
+                  </>)}
+                  {entry.status === 'awaiting_approval' && !canApprove && (
+                    <span style={{ fontSize: 12, color: '#EA580C', fontWeight: 600 }}>Awaiting approval</span>
+                  )}
+                  {entry.status === 'posted' && (
+                    <button onClick={() => handleReverse(entry._id)} style={{ flex: 1, padding: '8px', borderRadius: 'var(--radius-sm)', color: 'var(--warning)', fontSize: 12, fontWeight: 600, border: '1px solid var(--warning)', background: '#fff' }}>Reverse</button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+      <div style={{ background: '#fff', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ background: 'var(--bg-app)', borderBottom: '1px solid var(--border)' }}>
@@ -248,6 +294,7 @@ export default function JournalListPage() {
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }
