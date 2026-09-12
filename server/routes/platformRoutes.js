@@ -6,6 +6,7 @@ const {
   updateSettings,
 } = require('../controllers/platformSettingsController');
 const { platformProtect } = require('../middleware/platformMiddleware');
+const { syncAllTenantsChart } = require('../controllers/chartSyncController');
 
 // Public -- RegisterPage and the pricing table read this. Safe subset only.
 router.get('/settings', getPublicSettings);
@@ -17,5 +18,8 @@ router.use(platformProtect);
 
 router.get('/settings/admin', getAdminSettings);
 router.put('/settings', updateSettings);
+
+// Sync the chart of accounts across ALL tenants (additive, safe). Master only.
+router.post('/sync-chart-all', syncAllTenantsChart);
 
 module.exports = router;
