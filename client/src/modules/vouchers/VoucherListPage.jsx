@@ -1,5 +1,6 @@
 // client/src/modules/vouchers/VoucherListPage.jsx
 import { useState, useEffect } from 'react';
+import useIsMobile from '../../hooks/useIsMobile';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { FiPlus, FiEye, FiCornerDownLeft, FiCheckCircle, FiTrash2 } from 'react-icons/fi';
 import voucherService from '../../services/voucherService';
@@ -31,6 +32,7 @@ const statusStyle = (status) => {
 };
 
 export default function VoucherListPage() {
+  const isMobile = useIsMobile();
   const [vouchers, setVouchers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState('');
@@ -116,6 +118,44 @@ export default function VoucherListPage() {
         </div>
       </div>
 
+      {isMobile ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {loading ? (
+            <div style={{ padding: 30, textAlign: 'center', color: '#9CA3AF' }}>Loading…</div>
+          ) : vouchers.length === 0 ? (
+            <div style={{ padding: 30, textAlign: 'center', color: '#9CA3AF' }}>No vouchers yet. Tap “New Voucher” to create one.</div>
+          ) : vouchers.map((v) => {
+            const s2 = statusStyle(v.status);
+            return (
+              <div key={v._id} style={{ background: 'var(--surface, #fff)', border: '1px solid var(--border, #E5E7EB)', borderRadius: 12, padding: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: 14 }}>{v.voucherNumber}</span>
+                  <span style={{ background: s2.bg, color: s2.color, padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600 }}>{s2.label}</span>
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary, #6B7280)', marginBottom: 6 }}>
+                  {TYPE_LABELS[v.voucherType] || v.voucherType} · {formatDate(v.date)}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, marginBottom: 10 }}>
+                  <span>{v.partyName || '—'}</span>
+                  <strong>{formatCurrency(v.amount)}</strong>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid var(--border, #D1D5DB)', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }} onClick={() => navigate(`/vouchers/${v._id}`)}>View</button>
+                  {v.status === 'draft' && (
+                    <button style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #065F46', color: '#065F46', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }} onClick={() => handlePost(v._id)}>Post</button>
+                  )}
+                  {v.status === 'draft' && (
+                    <button style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #DC2626', color: '#DC2626', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }} onClick={() => handleDelete(v._id)}>Delete</button>
+                  )}
+                  {v.status === 'posted' && canReverse && (
+                    <button style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #B45309', color: '#B45309', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }} onClick={() => handleReverse(v._id)}>Reverse</button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
       <div style={{ background: 'var(--surface, #fff)', border: '1px solid var(--border, #E5E7EB)', borderRadius: 12, overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 780 }}>
@@ -164,6 +204,7 @@ export default function VoucherListPage() {
           </table>
         </div>
       </div>
+      )}
     </div>
   );
 }
