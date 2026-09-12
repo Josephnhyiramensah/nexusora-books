@@ -1365,6 +1365,19 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
   const { showToast, ToastComponent } = useToast();
   const location = useLocation();
   const [activeTab, setActiveTab] = useState(location.state?.tab || 'profile');
+  // Sidebar SPA: the active section follows the URL path. Navigation is handled
+  // by the module sidebar (App.jsx settingsSidebar), so the old in-page tab bar
+  // is no longer rendered.
+  const PATH_TO_TAB = {
+    '/settings/profile': 'profile', '/settings/company': 'company',
+    '/settings/users': 'users', '/settings/security': 'security',
+    '/settings/payroll-rates': 'payrollRates', '/settings/api': 'api',
+    '/settings/integrations': 'integrations', '/settings/whitelabel': 'whitelabel',
+  };
+  useEffect(() => {
+    const t = PATH_TO_TAB[location.pathname];
+    if (t) setActiveTab(t);
+  }, [location.pathname]);
   const [users, setUsers] = useState([]);
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -1592,7 +1605,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
       showToast(err.response?.data?.message || 'Failed', 'error');
     }
   };
-  const tabs = [
+  const _tabsDefs = [
     { key: 'profile', label: 'My Profile', icon: FiUser },
     { key: 'company', label: 'Company & Letterhead', icon: FiGlobe },
     { key: 'users', label: 'Users & Roles', icon: FiUsers },
@@ -1603,6 +1616,9 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
 ...(['super_admin', 'admin'].includes(user?.role) ? [{ key: 'integrations', label: 'Integrations', icon: FiLink }] : []),
 { key: 'whitelabel', label: 'White-label', icon: FiEdit3 },
   ];
+  // Sidebar drives navigation now; no in-page tab bar.
+  const tabs = [];
+  void _tabsDefs;
 
   const isAdmin = ['super_admin', 'admin'].includes(user?.role);
 

@@ -7,7 +7,8 @@ import LoginPage from './pages/LoginPage';
 import HomeScreen from './pages/HomeScreen';
 import ModuleShell from './components/layout/ModuleShell';
 import AuditLogPage from './modules/audit/AuditLogPage';
-import { FiRefreshCw, FiShield } from 'react-icons/fi';
+import { FiRefreshCw, FiShield , FiGlobe, FiCode, FiLink, FiEdit3
+} from 'react-icons/fi';
 
 import FinancialAnalyticsPage from './modules/accounts/FinancialAnalyticsPage';
 
@@ -123,6 +124,17 @@ const reportsSidebar = [
 ];
 
 
+
+const settingsSidebar = [
+  { path: '/settings/profile',      label: 'My Profile',           icon: FiList,        exact: true },
+  { path: '/settings/company',      label: 'Company & Letterhead', icon: FiGlobe },
+  { path: '/settings/users',        label: 'Users & Roles',        icon: FiUsers },
+  { path: '/settings/security',     label: 'Security',             icon: FiShield },
+  { path: '/settings/payroll-rates',label: 'Payroll Rates',        icon: FiDollarSign },
+  { path: '/settings/api',          label: 'API Keys',             icon: FiCode },
+  { path: '/settings/integrations', label: 'Integrations',         icon: FiLink },
+  { path: '/settings/whitelabel',   label: 'White-label',          icon: FiEdit3 },
+];
 
 const g = (path, label) => [{ path, label: `All ${label}`, icon: FiList, exact: true }];
 
@@ -317,8 +329,16 @@ export default function App() {
             </Route>
 
             {/* ── Settings ── */}
-            <Route element={<ProtectedRoute><ModuleShell moduleTitle="Settings" sidebarItems={g('/settings','Settings')} /></ProtectedRoute>}>
-              <Route path="/settings" element={<SettingsPage />} />
+            <Route element={<ProtectedRoute><ModuleShell moduleTitle="Settings" sidebarItems={settingsSidebar} /></ProtectedRoute>}>
+              <Route path="/settings"              element={<SettingsPage />} />
+              <Route path="/settings/profile"      element={<SettingsPage />} />
+              <Route path="/settings/company"      element={<SettingsPage />} />
+              <Route path="/settings/users"        element={<SettingsPage />} />
+              <Route path="/settings/security"     element={<SettingsPage />} />
+              <Route path="/settings/payroll-rates" element={<SettingsPage />} />
+              <Route path="/settings/api"          element={<SettingsPage />} />
+              <Route path="/settings/integrations" element={<SettingsPage />} />
+              <Route path="/settings/whitelabel"   element={<SettingsPage />} />
             </Route>
             {/* Audit Log */}
 <Route element={<ProtectedRoute permission="audit.view" roles={['super_admin','admin']}><ModuleShell moduleTitle="Audit Log" sidebarItems={[{ path: '/audit', label: 'Audit Trail', icon: FiShield, exact: true }]} /></ProtectedRoute>}>
