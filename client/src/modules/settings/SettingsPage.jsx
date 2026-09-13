@@ -326,7 +326,8 @@ function CompanyTab({
       </div>
 
       {/* ── Card 2: Document Numbering ─────────────────────────────────── */}
-      <div style={styles.card}>
+      {/* card-order */}
+      <div style={{ ...styles.card, order: 3 }}>
         <h2 style={styles.cardTitle}>Document Numbering</h2>
         <p style={styles.cardSub}>
           Customise how new numbers look for invoices, bills and payments. Leave a row on its defaults to keep the standard format. Existing documents keep their numbers. (Journal entries always use the system numbering.)
@@ -363,7 +364,7 @@ function CompanyTab({
       </div>
 
       {/* ── Card 3: Custom Fields ──────────────────────────────────────── */}
-      <div style={styles.card}>
+      <div style={{ ...styles.card, order: 2 }}>
         <h2 style={styles.cardTitle}>Custom Fields</h2>
         <p style={styles.cardSub}>
           Add your own fields (LPO number, project code, delivery date, etc.) to appear on invoices and bills. Leave empty if you don't need any.
@@ -649,15 +650,17 @@ function UsersTab({
         </button>
       </div>
 
+      {/* users-table-scroll */}
       <div
         style={{
           background: '#fff',
           borderRadius: 'var(--radius-md)',
           border: '1px solid var(--border)',
-          overflow: 'hidden',
+          overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch',
         }}
       >
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 620 }}>
           <thead>
             <tr style={{ background: 'var(--bg-app)', borderBottom: '1px solid var(--border)' }}>
               <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Name</th>
@@ -1235,6 +1238,7 @@ function ApiKeysManager({ subdomain }) {
       {/* API documentation */}
       <div style={{ marginTop: 24, padding: 20, background: 'var(--bg-app)', borderRadius: 12, border: '1px solid var(--border)' }}>
         <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>📖 How to use your API key</h4>
+        <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.5 }}>To send transactions IN from an external system (e.g. a POS or gold app), create a key with the <strong>write</strong> permission, then set up the translation in the <strong>Integrations</strong> tab. The external system posts to <code>/external/v1/vouchers/mapped</code>.</p>
         <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10 }}>Include the key in your request header:</p>
         <div style={{ background: '#1A3560', borderRadius: 8, padding: '12px 16px', fontFamily: 'monospace', fontSize: 12, color: '#C9A227', marginBottom: 12 }}>
           {`Authorization: Bearer nbk_${subdomain}_your_key_here`}
@@ -1246,6 +1250,8 @@ function ApiKeysManager({ subdomain }) {
           { method: 'GET',  endpoint: `/external/v1/accounts`,           desc: 'Chart of accounts' },
           { method: 'GET',  endpoint: `/external/v1/reports/trial-balance`, desc: 'Trial balance' },
           { method: 'POST', endpoint: `/external/v1/journals`,           desc: 'Create journal entry (write permission)' },
+          { method: 'POST', endpoint: `/external/v1/vouchers`,           desc: 'Create a voucher (write permission)' },
+          { method: 'POST', endpoint: `/external/v1/vouchers/mapped`,    desc: 'Import a voucher via a saved Integration mapping (write)' },
         ].map((ep, i) => (
           <div key={i} style={{ display: 'flex', gap: 10, padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
             <span style={{ padding: '2px 8px', borderRadius: 6, background: ep.method === 'GET' ? '#D1FAE5' : '#DBEAFE', color: ep.method === 'GET' ? '#065F46' : '#1E40AF', fontWeight: 700, fontFamily: 'monospace', flexShrink: 0 }}>{ep.method}</span>
