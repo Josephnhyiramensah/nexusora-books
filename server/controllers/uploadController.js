@@ -66,4 +66,49 @@ const uploadLetterhead = async (req, res) => {
   }
 };
 
-module.exports = { uploadLogo, uploadLetterhead };
+// Upload a source document (receipt, payment voucher, contract...) for a record.
+// Accepts an image or a PDF as base64 in fileData. Returns the URL + Cloudinary
+// public_id so the caller can link it to a voucher (and delete it later).
+const uploadDocument = async (req, res) => {
+  try {
+    const { fileData, subdomain, filename } = req.body;
+    if (!fileData) return res.status(400).json({ success: false, message: 'No file data provided.' });
+
+    const cl = getCloudinary();
+    const result = await cl.uploader.upload(fileData, {
+      folder: `nexusora-books/${subdomain || 'general'}/documents`,
+      resource_type: 'auto',      // accepts images AND pdf/raw
+      use_filename: true,
+      unique_filename: true,
+      timeout: 300000,
+      chunk_size: 6000000,
+    });
+
+    res.json({
+      success: true,
+      url: result.secure_url,
+      publicId: result.public_id,
+      resourceType: result.resource_type,
+      filename: filename || result.original_filename || 'document',
+      message: 'Document uploaded.',
+    });
+  } catch (error) {
+    console.error('[Upload] Document error:', JSON.stringify(error));
+    res.status(500).json({ success: false, message: 'Document upload failed: ' + (error?.message || error?.error?.message || JSON.stringify(error)) });
+  }
+};
+
+// Delete a document from Cloudinary by public_id (when a user removes an attachment).
+const deleteDocument = async (req, res) => {
+  try {
+    const { publicId, resourceType } = req.body;
+    if (!publicId) return res.status(400).json({ success: false, message: 'No publicId provided.' });
+    const cl = getCloudinary();
+    await cl.uploader.destroy(publicId, { resource_type: resourceType || 'image' });
+    res.json({ success: true, message: 'Document deleted.' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Delete failed: ' + (error?.message || 'unknown') });
+  }
+};
+
+module.exports = { uploadLogo, uploadLetterhead, uploadDocument, deleteDocument };

@@ -27,6 +27,7 @@ import JournalListPage from './modules/journals/JournalListPage';
 import JournalFormPage from './modules/journals/JournalFormPage';
 import VoucherListPage from './modules/vouchers/VoucherListPage';
 import VoucherFormPage from './modules/vouchers/VoucherFormPage';
+import VoucherViewPage from './modules/vouchers/VoucherViewPage';
 import ExternalMappingPage from './modules/integrations/ExternalMappingPage';
 
 // Phase 3
@@ -237,7 +238,7 @@ export default function App() {
               <Route path="/vouchers/purchase" element={<VoucherListPage />} />
               <Route path="/vouchers/sales"    element={<VoucherListPage />} />
               <Route path="/vouchers/new"      element={<VoucherFormPage />} />
-              <Route path="/vouchers/:id"      element={<VoucherFormPage />} />
+              <Route path="/vouchers/:id"      element={<VoucherViewPage />} />
             </Route>
 
             {/* Integrations — external system mapping (admin) */}

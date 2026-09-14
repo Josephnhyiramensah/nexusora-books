@@ -3,8 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { protect, authorise } = require('../middleware/authMiddleware');
 const {
-  getVouchers, getVoucher, createVoucher, postVoucher, reverseVoucher, deleteVoucher,
-} = require('../controllers/voucherController');
+  getVouchers, getVoucher, createVoucher, postVoucher, reverseVoucher, deleteVoucher, addAttachment, removeAttachment } = require('../controllers/voucherController');
 
 router.use(protect);
 
@@ -16,5 +15,9 @@ router.post('/', authorise('super_admin', 'admin', 'accountant'), createVoucher)
 router.post('/:id/post', authorise('super_admin', 'admin', 'accountant'), postVoucher);
 router.post('/:id/reverse', authorise('super_admin', 'admin'), reverseVoucher);
 router.delete('/:id', authorise('super_admin', 'admin', 'accountant'), deleteVoucher);
+
+// Attachments (source documents) on a voucher.
+router.post('/:id/attachments', authorise('super_admin', 'admin', 'accountant'), addAttachment);
+router.delete('/:id/attachments/:attachmentId', authorise('super_admin', 'admin', 'accountant'), removeAttachment);
 
 module.exports = router;

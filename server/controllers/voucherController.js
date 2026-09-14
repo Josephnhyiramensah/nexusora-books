@@ -259,6 +259,49 @@ const deleteVoucher = async (req, res) => {
   }
 };
 
+// Link an already-uploaded document (from /upload/document) to a voucher.
+const addAttachment = async (req, res) => {
+  try {
+    const Voucher = getModel(req.tenantDb, 'Voucher');
+    const voucher = await Voucher.findById(req.params.id);
+    if (!voucher) return res.status(404).json({ success: false, message: 'Voucher not found.' });
+    const { url, publicId, filename, resourceType } = req.body;
+    if (!url) return res.status(400).json({ success: false, message: 'No document url provided.' });
+    voucher.attachments.push({ url, publicId, filename, resourceType, uploadedBy: req.user._id, uploadedAt: new Date() });
+    await voucher.save();
+    await logAudit(req.tenantDb, {
+      userId: req.user._id, action: 'update', module: 'journals',
+      entityId: voucher._id, entityType: 'Voucher',
+      description: 'Attached document "' + (filename || 'document') + '" to voucher ' + voucher.voucherNumber,
+    }, req);
+    res.json({ success: true, message: 'Document attached.', data: voucher.attachments });
+  } catch (error) {
+    console.error('[Vouchers] addAttachment error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to attach document.' });
+  }
+};
+
+// Remove an attachment from a voucher (by attachment _id).
+const removeAttachment = async (req, res) => {
+  try {
+    const Voucher = getModel(req.tenantDb, 'Voucher');
+    const voucher = await Voucher.findById(req.params.id);
+    if (!voucher) return res.status(404).json({ success: false, message: 'Voucher not found.' });
+    const before = voucher.attachments.length;
+    voucher.attachments = voucher.attachments.filter((a) => String(a._id) !== String(req.params.attachmentId));
+    if (voucher.attachments.length === before) return res.status(404).json({ success: false, message: 'Attachment not found.' });
+    await voucher.save();
+    await logAudit(req.tenantDb, {
+      userId: req.user._id, action: 'update', module: 'journals',
+      entityId: voucher._id, entityType: 'Voucher',
+      description: 'Removed a document from voucher ' + voucher.voucherNumber,
+    }, req);
+    res.json({ success: true, message: 'Attachment removed.', data: voucher.attachments });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to remove attachment.' });
+  }
+};
+
 module.exports = {
   getVouchers, getVoucher, createVoucher, postVoucher, reverseVoucher, deleteVoucher,
-};
+, addAttachment, removeAttachment };
