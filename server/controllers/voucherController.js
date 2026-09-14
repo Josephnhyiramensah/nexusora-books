@@ -304,4 +304,4 @@ const removeAttachment = async (req, res) => {
 
 module.exports = {
   getVouchers, getVoucher, createVoucher, postVoucher, reverseVoucher, deleteVoucher,
-, addAttachment, removeAttachment };
+  addAttachment, removeAttachment };
