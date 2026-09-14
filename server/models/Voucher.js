@@ -96,6 +96,20 @@ const voucherSchema = new mongoose.Schema(
     apiKeyId: { type: mongoose.Schema.Types.ObjectId, ref: 'ApiKey' },
     externalId: String,                // the source system's own id, for dedupe
 
+    // Itemized detail (for sales/purchase-style vouchers). Optional — when empty
+    // the voucher is a simple single-amount voucher. The line-item total feeds
+    // the voucher amount; the double-entry (lines[]) still posts ONE total.
+    lineItems: [{
+      description: String,
+      quantity: { type: Number, default: 1 },
+      unit: String,                         // Kg, Box, Litre, pcs...
+      unitPrice: { type: Number, default: 0 },
+      amount: { type: Number, default: 0 }, // quantity * unitPrice
+    }],
+    subtotal: { type: Number, default: 0 },
+    discount: { type: Number, default: 0 },
+    isItemized: { type: Boolean, default: false },
+
     // Scanned/attached source documents (receipts, payment vouchers, contracts)
     // stored in Cloudinary and linked here for the audit trail.
     attachments: [{

@@ -74,6 +74,7 @@ const createVoucher = async (req, res) => {
     const {
       voucherType, date, narration, reference, partyName, customer, vendor,
       mode, bankAccount, bankName, instrumentNo, paymentDetails,
+      lineItems, subtotal, discount, isItemized,
       // Simple mode:
       debitAccount, creditAccount, amount,
       // Multi-line mode:
@@ -108,6 +109,24 @@ const createVoucher = async (req, res) => {
     const { enriched, error } = await enrichLines(Account, lines);
     if (error) return res.status(400).json({ success: false, message: error });
 
+    // If itemized, compute subtotal from line items and the effective amount
+    // (subtotal - discount). This becomes the voucher amount + the posting total.
+    let itemizedTotal = null;
+    let cleanItems = [];
+    if (isItemized && Array.isArray(lineItems) && lineItems.length > 0) {
+      cleanItems = lineItems
+        .filter((it) => (Number(it.quantity) || 0) > 0 || (Number(it.unitPrice) || 0) > 0 || it.description)
+        .map((it) => {
+          const qty = Number(it.quantity) || 0;
+          const price = Number(it.unitPrice) || 0;
+          const amt = Math.round(qty * price * 100) / 100;
+          return { description: it.description || '', quantity: qty, unit: it.unit || '', unitPrice: price, amount: amt };
+        });
+      const sub = cleanItems.reduce((sM, it) => sM + it.amount, 0);
+      const disc = Number(discount) || 0;
+      itemizedTotal = Math.round((sub - disc) * 100) / 100;
+    }
+
     const voucherNumber = await generateVoucherNumber(Voucher, voucherType);
     const computedAmount = amount != null ? Number(amount) : validation.totalDebit;
 
@@ -116,7 +135,11 @@ const createVoucher = async (req, res) => {
       partyName, customer: customer || undefined, vendor: vendor || undefined,
       mode, bankAccount: bankAccount || undefined, bankName, instrumentNo,
       paymentDetails: paymentDetails || {},
-      amount: computedAmount,
+      amount: itemizedTotal != null ? itemizedTotal : computedAmount,
+      lineItems: cleanItems,
+      subtotal: isItemized ? Math.round(cleanItems.reduce((sM, it) => sM + it.amount, 0) * 100) / 100 : 0,
+      discount: Number(discount) || 0,
+      isItemized: !!isItemized,
       lines: enriched,
       totalDebit: validation.totalDebit, totalCredit: validation.totalCredit,
       status: 'draft', createdBy: req.user._id,
