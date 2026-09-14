@@ -38,6 +38,9 @@ const defaultChartOfAccounts = [
   { code: '1440', name: 'Computers & IT Equipment', type: 'asset', category: 'Non-Current Asset', normalBalance: 'debit', parentCode: '1400', isSystemAccount: true, description: 'Computers, servers, IT hardware' },
   { code: '1500', name: 'Accumulated Depreciation', type: 'asset', category: 'Non-Current Asset', normalBalance: 'credit', isSystemAccount: true, description: 'Total depreciation on PPE (contra-asset)' },
   { code: '1600', name: 'Intangible Assets', type: 'asset', category: 'Non-Current Asset', normalBalance: 'debit', isSystemAccount: true, description: 'Software, goodwill, licences' },
+  { code: '1610', name: 'Software', type: 'asset', category: 'Non-Current Asset', normalBalance: 'debit', parentCode: '1600', isSystemAccount: true, description: 'Capitalised software (intangible asset)' },
+  { code: '1620', name: 'Goodwill', type: 'asset', category: 'Non-Current Asset', normalBalance: 'debit', parentCode: '1600', isSystemAccount: true, description: 'Goodwill (intangible asset)' },
+  { code: '1630', name: 'Licences & Intellectual Property', type: 'asset', category: 'Non-Current Asset', normalBalance: 'debit', parentCode: '1600', isSystemAccount: true, description: 'Licences, patents and IP (intangible asset)' },
   { code: '1700', name: 'Long-Term Investments', type: 'asset', category: 'Non-Current Asset', normalBalance: 'debit', isSystemAccount: true, description: 'Investments held long-term' },
 
   // ── LIABILITIES (2000–2999) ────────────────────────────────────────────────
@@ -89,6 +92,7 @@ const defaultChartOfAccounts = [
   { code: '6010', name: 'Employer SSNIT Contribution', type: 'expense', category: 'Staff Costs', normalBalance: 'debit', isSystemAccount: true, description: "Employer's SSNIT contribution" },
   { code: '6020', name: 'Staff Bonuses & Allowances', type: 'expense', category: 'Staff Costs', normalBalance: 'debit', isSystemAccount: true, description: 'Bonuses, allowances and benefits' },
   { code: '6030', name: 'Staff Training & Welfare', type: 'expense', category: 'Staff Costs', normalBalance: 'debit', isSystemAccount: true, description: 'Training, welfare and staff development' },
+  { code: '6040', name: 'Training & Development', type: 'expense', category: 'Staff Costs', normalBalance: 'debit', isSystemAccount: true, description: 'Employee training and professional development' },
   // Occupancy
   { code: '6100', name: 'Rent Expense', type: 'expense', category: 'Occupancy', normalBalance: 'debit', isSystemAccount: true, description: 'Office and facility rent' },
   { code: '6110', name: 'Rates & Property Taxes', type: 'expense', category: 'Occupancy', normalBalance: 'debit', isSystemAccount: true, description: 'Property rates and local taxes' },
@@ -98,7 +102,7 @@ const defaultChartOfAccounts = [
   { code: '6300', name: 'Office Supplies & Stationery', type: 'expense', category: 'Administrative', normalBalance: 'debit', isSystemAccount: true, description: 'Stationery and office materials' },
   { code: '6310', name: 'Printing & Postage', type: 'expense', category: 'Administrative', normalBalance: 'debit', isSystemAccount: true, description: 'Printing, postage and courier' },
   { code: '6320', name: 'Telephone & Communication', type: 'expense', category: 'Administrative', normalBalance: 'debit', isSystemAccount: true, description: 'Phone, airtime, data' },
-  { code: '6330', name: 'Subscriptions & Software', type: 'expense', category: 'Administrative', normalBalance: 'debit', isSystemAccount: true, description: 'Software licences and subscriptions' },
+  { code: '6330', name: 'Subscriptions', type: 'expense', category: 'Administrative', normalBalance: 'debit', isSystemAccount: true, description: 'Software and service subscriptions (recurring)' },
   { code: '6340', name: 'Travel & Transport', type: 'expense', category: 'Administrative', normalBalance: 'debit', isSystemAccount: true, description: 'Business travel and transport' },
   { code: '6350', name: 'Fuel & Vehicle Running', type: 'expense', category: 'Administrative', normalBalance: 'debit', isSystemAccount: true, description: 'Fuel and vehicle running costs' },
   // Selling & distribution
@@ -115,6 +119,7 @@ const defaultChartOfAccounts = [
   { code: '6610', name: 'Amortisation Expense', type: 'expense', category: 'Operating Expense', normalBalance: 'debit', isSystemAccount: true, description: 'Amortisation of intangibles' },
   { code: '6620', name: 'Bad Debt Expense', type: 'expense', category: 'Operating Expense', normalBalance: 'debit', isSystemAccount: true, description: 'Receivables written off / provided' },
   { code: '6800', name: 'Bank & Mobile Money Charges', type: 'expense', category: 'Operating Expense', normalBalance: 'debit', isSystemAccount: true, description: 'Bank fees and MoMo charges' },
+  { code: '6650', name: 'Research & Development', type: 'expense', category: 'Operating Expense', normalBalance: 'debit', isSystemAccount: true, description: 'Research and development costs (expensed)' },
   { code: '6900', name: 'Miscellaneous Expenses', type: 'expense', category: 'Operating Expense', normalBalance: 'debit', isSystemAccount: true, description: 'Other uncategorised expenses' },
 
   // ── FINANCE, OTHER & TAX (7000–7999) ───────────────────────────────────────
