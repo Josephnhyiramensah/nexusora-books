@@ -75,6 +75,7 @@ const createVoucher = async (req, res) => {
       voucherType, date, narration, reference, partyName, customer, vendor,
       mode, bankAccount, bankName, instrumentNo, paymentDetails,
       lineItems, subtotal, discount, isItemized,
+      dueDate, terms, vatEnabled, vatRate,
       // Simple mode:
       debitAccount, creditAccount, amount,
       // Multi-line mode:
@@ -96,6 +97,32 @@ const createVoucher = async (req, res) => {
         success: false,
         message: 'Provide either 2+ lines, or debitAccount + creditAccount + amount.',
       });
+    }
+
+    // ── VAT: rebuild as a 3-line entry when enabled ──
+    // Base amount (subtotal after discount) = the amount computed so far MINUS
+    // the vat portion. Front end sends vatRate; we compute vat here from the
+    // "amount" (which the front end sent as the VAT-INCLUSIVE total for itemized,
+    // or the typed amount for simple). To keep it robust we treat the incoming
+    // amount as the grand total and derive the net + vat from vatRate.
+    let vatAmountComputed = 0;
+    if (vatEnabled && Number(vatRate) > 0 && debitAccount && creditAccount) {
+      const Account2 = getModel(req.tenantDb, 'Account');
+      const vatAcct = await Account2.findOne({ code: '2410' });
+      const grand = Number(amount) || (validation && validation.totalDebit) || 0;
+      // grand = net + net*rate  => net = grand / (1 + rate/100)
+      const rate = Number(vatRate) / 100;
+      const net = Math.round((grand / (1 + rate)) * 100) / 100;
+      vatAmountComputed = Math.round((grand - net) * 100) / 100;
+      if (vatAcct && vatAmountComputed > 0) {
+        // Dr debitAccount grand ; Cr creditAccount net ; Cr VAT Payable vat
+        lines = [
+          { account: debitAccount, debit: grand, credit: 0, description: narration || '' },
+          { account: creditAccount, debit: 0, credit: net, description: narration || '' },
+          { account: vatAcct._id, debit: 0, credit: vatAmountComputed, description: 'VAT @ ' + vatRate + '%' },
+        ];
+      }
+      // If 2410 is missing, we leave the 2-line entry as-is (no split) — safe fallback.
     }
 
     // Validate balance (debits == credits) up front.
@@ -140,6 +167,8 @@ const createVoucher = async (req, res) => {
       subtotal: isItemized ? Math.round(cleanItems.reduce((sM, it) => sM + it.amount, 0) * 100) / 100 : 0,
       discount: Number(discount) || 0,
       isItemized: !!isItemized,
+      dueDate: dueDate || undefined, terms: terms || '',
+      vatEnabled: !!vatEnabled, vatRate: Number(vatRate) || 0, vatAmount: vatAmountComputed,
       lines: enriched,
       totalDebit: validation.totalDebit, totalCredit: validation.totalCredit,
       status: 'draft', createdBy: req.user._id,

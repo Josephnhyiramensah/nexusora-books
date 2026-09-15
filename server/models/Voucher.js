@@ -109,6 +109,11 @@ const voucherSchema = new mongoose.Schema(
     subtotal: { type: Number, default: 0 },
     discount: { type: Number, default: 0 },
     isItemized: { type: Boolean, default: false },
+    dueDate: { type: Date },
+    terms: String,                          // terms & conditions / notes for print
+    vatEnabled: { type: Boolean, default: false },
+    vatRate: { type: Number, default: 0 },  // e.g. 15
+    vatAmount: { type: Number, default: 0 },
 
     // Scanned/attached source documents (receipts, payment vouchers, contracts)
     // stored in Cloudinary and linked here for the audit trail.

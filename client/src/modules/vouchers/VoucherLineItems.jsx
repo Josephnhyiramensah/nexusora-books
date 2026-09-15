@@ -1,31 +1,53 @@
 // client/src/modules/vouchers/VoucherLineItems.jsx
-// Reusable itemized line-items editor for sales/purchase-style vouchers.
-// Columns: Description, Qty, Unit, Price/Unit, Amount. Computes subtotal,
-// applies a discount, and reports the effective total up to the parent.
-// The parent posts ONE total to the ledger; these items are supporting detail.
+// Itemized line-items editor with Subtotal, Discount, optional VAT, and Total.
+// The parent posts the total (and, when VAT is on, splits VAT to VAT Payable).
 import { FiPlus, FiTrash2 } from 'react-icons/fi';
 
 const money = (n) => (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export default function VoucherLineItems({ items, discount, onItemsChange, onDiscountChange, isMobile }) {
+export default function VoucherLineItems({
+  items, discount, vatEnabled, vatRate,
+  onItemsChange, onDiscountChange, onVatToggle, onVatRateChange, isMobile,
+}) {
   const rows = items && items.length ? items : [{ description: '', quantity: 1, unit: '', unitPrice: 0 }];
 
-  const setRow = (i, key, val) => {
-    const next = rows.map((r, idx) => idx === i ? { ...r, [key]: val } : r);
-    onItemsChange(next);
-  };
+  const setRow = (i, key, val) => onItemsChange(rows.map((r, idx) => idx === i ? { ...r, [key]: val } : r));
   const addRow = () => onItemsChange([...rows, { description: '', quantity: 1, unit: '', unitPrice: 0 }]);
   const delRow = (i) => onItemsChange(rows.filter((_, idx) => idx !== i));
 
   const lineAmount = (r) => (Number(r.quantity) || 0) * (Number(r.unitPrice) || 0);
   const subtotal = rows.reduce((s, r) => s + lineAmount(r), 0);
-  const total = Math.round((subtotal - (Number(discount) || 0)) * 100) / 100;
+  const afterDiscount = subtotal - (Number(discount) || 0);
+  const vatAmount = vatEnabled ? Math.round(afterDiscount * ((Number(vatRate) || 0) / 100) * 100) / 100 : 0;
+  const total = Math.round((afterDiscount + vatAmount) * 100) / 100;
 
   const cell = { padding: '6px', fontSize: 13 };
   const input = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #D1D5DB)', fontSize: 13, boxSizing: 'border-box' };
   const th = { padding: '8px', fontSize: 11, fontWeight: 700, color: '#fff', textAlign: 'left', textTransform: 'uppercase' };
 
-  // Mobile: stacked cards per line. Desktop: table.
+  const Totals = () => (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '5px 0' }}><span>Subtotal</span><strong>{money(subtotal)}</strong></div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '5px 0', alignItems: 'center' }}>
+        <span>Discount</span>
+        <input style={{ ...input, width: 120, textAlign: 'right' }} type="number" value={discount || 0} onChange={(e) => onDiscountChange(e.target.value)} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '5px 0', alignItems: 'center' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+          <input type="checkbox" checked={!!vatEnabled} onChange={(e) => onVatToggle(e.target.checked)} /> VAT
+        </label>
+        {vatEnabled ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input style={{ ...input, width: 70, textAlign: 'right' }} type="number" value={vatRate} onChange={(e) => onVatRateChange(e.target.value)} />
+            <span style={{ fontSize: 13, color: '#6B7280' }}>%</span>
+            <strong style={{ minWidth: 90, textAlign: 'right' }}>{money(vatAmount)}</strong>
+          </div>
+        ) : <span style={{ fontSize: 13, color: '#9CA3AF' }}>off</span>}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, fontWeight: 800, padding: '10px 0', color: 'var(--deep-navy, #012158)', borderTop: '2px solid var(--border, #E5E7EB)' }}><span>Total</span><span>{money(total)}</span></div>
+    </div>
+  );
+
   if (isMobile) {
     return (
       <div>
@@ -44,14 +66,7 @@ export default function VoucherLineItems({ items, discount, onItemsChange, onDis
           </div>
         ))}
         <button onClick={addRow} style={{ padding: '9px 14px', borderRadius: 8, border: '1px dashed var(--border, #C9A227)', background: 'transparent', color: '#B8860B', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 12 }}><FiPlus size={14} /> Add Item</button>
-        <div style={{ borderTop: '2px solid var(--border, #E5E7EB)', paddingTop: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '4px 0' }}><span>Subtotal</span><strong>{money(subtotal)}</strong></div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '4px 0', alignItems: 'center' }}>
-            <span>Discount</span>
-            <input style={{ ...input, width: 120, textAlign: 'right' }} type="number" value={discount || 0} onChange={(e) => onDiscountChange(e.target.value)} />
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, fontWeight: 800, padding: '8px 0', color: 'var(--deep-navy, #012158)', borderTop: '1px solid #EEE' }}><span>Total</span><span>{money(total)}</span></div>
-        </div>
+        <div style={{ borderTop: '2px solid var(--border, #E5E7EB)', paddingTop: 10 }}><Totals /></div>
       </div>
     );
   }
@@ -85,16 +100,8 @@ export default function VoucherLineItems({ items, discount, onItemsChange, onDis
         </table>
       </div>
       <button onClick={addRow} style={{ marginTop: 10, padding: '9px 14px', borderRadius: 8, border: '1px dashed var(--border, #C9A227)', background: 'transparent', color: '#B8860B', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}><FiPlus size={14} /> Add Item</button>
-
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-        <div style={{ width: 300 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '6px 0' }}><span>Subtotal</span><strong>{money(subtotal)}</strong></div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '6px 0', alignItems: 'center' }}>
-            <span>Discount</span>
-            <input style={{ ...input, width: 130, textAlign: 'right' }} type="number" value={discount || 0} onChange={(e) => onDiscountChange(e.target.value)} />
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, fontWeight: 800, padding: '10px 0', color: 'var(--deep-navy, #012158)', borderTop: '2px solid var(--border, #E5E7EB)' }}><span>Total</span><span>{money(total)}</span></div>
-        </div>
+        <div style={{ width: 320 }}><Totals /></div>
       </div>
     </div>
   );
