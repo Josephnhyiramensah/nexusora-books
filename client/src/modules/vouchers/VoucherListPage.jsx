@@ -1,5 +1,6 @@
 // client/src/modules/vouchers/VoucherListPage.jsx
 import { useState, useEffect } from 'react';
+import VoucherActionsMenu from './VoucherActionsMenu';
 import useIsMobile from '../../hooks/useIsMobile';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { FiPlus, FiEye, FiCornerDownLeft, FiCheckCircle, FiTrash2 } from 'react-icons/fi';
@@ -82,6 +83,8 @@ export default function VoucherListPage() {
       else showToast(result.message || 'Reverse failed', 'error');
     } catch (err) { showToast(err.response?.data?.message || 'Failed to reverse', 'error'); }
   };
+
+  const handlePrint = (id) => navigate(`/vouchers/${id}`);
 
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this draft voucher? This cannot be undone.')) return;
@@ -186,16 +189,15 @@ export default function VoucherListPage() {
                     <td style={{ ...td, fontWeight: 600 }}>{formatCurrency(v.amount)}</td>
                     <td style={td}><span style={{ background: s.bg, color: s.color, padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600 }}>{s.label}</span></td>
                     <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <button title="View" style={iconBtn} onClick={() => navigate(`/vouchers/${v._id}`)}><FiEye size={14} /></button>
-                      {v.status === 'draft' && (
-                        <button title="Post" style={{ ...iconBtn, color: '#065F46' }} onClick={() => handlePost(v._id)}><FiCheckCircle size={14} /></button>
-                      )}
-                      {v.status === 'draft' && (
-                        <button title="Delete" style={{ ...iconBtn, color: '#DC2626' }} onClick={() => handleDelete(v._id)}><FiTrash2 size={14} /></button>
-                      )}
-                      {v.status === 'posted' && canReverse && (
-                        <button title="Reverse" style={{ ...iconBtn, color: '#B45309' }} onClick={() => handleReverse(v._id)}><FiCornerDownLeft size={14} /></button>
-                      )}
+                      <VoucherActionsMenu
+                        voucher={v}
+                        canReverse={canReverse}
+                        onView={() => navigate(`/vouchers/${v._id}`)}
+                        onPrint={() => handlePrint(v._id)}
+                        onPost={() => handlePost(v._id)}
+                        onReverse={() => handleReverse(v._id)}
+                        onDelete={() => handleDelete(v._id)}
+                      />
                     </td>
                   </tr>
                 );
