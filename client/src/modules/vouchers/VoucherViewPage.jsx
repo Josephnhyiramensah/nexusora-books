@@ -2,6 +2,10 @@
 // Professional, printable voucher DOCUMENT — company header (logo + info),
 // bordered layout, itemized table, totals. Plus actions (post/reverse) and
 // source-document attachments. The document area prints cleanly.
+//
+// Journal Vouchers get a dedicated multi-line Debit/Credit table (Account |
+// Description | Debit | Credit) with a balanced TOTAL footer, and the party /
+// payment-mode strip + single-total block are hidden (a JV has neither).
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { FiArrowLeft, FiCheckCircle, FiCornerDownLeft, FiPrinter } from 'react-icons/fi';
@@ -85,6 +89,11 @@ export default function VoucherViewPage() {
   const cellL = { padding: '9px 12px', fontSize: 13, borderBottom: '1px solid #E5E7EB' };
   const th = { padding: '10px 12px', fontSize: 12, fontWeight: 700, color: '#fff', textAlign: 'left' };
 
+  // Journal vouchers get their own document layout.
+  const isJournal = voucher.voucherType === 'journal';
+  const jvTotalDebit = (voucher.lines || []).reduce((sum, l) => sum + (Number(l.debit) || 0), 0);
+  const jvTotalCredit = (voucher.lines || []).reduce((sum, l) => sum + (Number(l.credit) || 0), 0);
+
   return (
     <div style={{ maxWidth: 780, margin: '0 auto' }}>
       {ToastComponent}
@@ -134,21 +143,51 @@ export default function VoucherViewPage() {
           </div>
         </div>
 
-        {/* Party / details strip */}
-        <div style={{ display: 'flex', borderBottom: '1px solid #E5E7EB' }}>
-          <div style={{ flex: 1, padding: '14px 20px', borderRight: '1px solid #E5E7EB' }}>
-            <div style={{ fontSize: 11, color: '#9CA3AF', textTransform: 'uppercase', fontWeight: 700 }}>Party</div>
-            <div style={{ fontSize: 14, fontWeight: 600, marginTop: 3 }}>{voucher.partyName || '—'}</div>
+        {/* Party / details strip — not shown for journal vouchers (no party / mode) */}
+        {!isJournal && (
+          <div style={{ display: 'flex', borderBottom: '1px solid #E5E7EB' }}>
+            <div style={{ flex: 1, padding: '14px 20px', borderRight: '1px solid #E5E7EB' }}>
+              <div style={{ fontSize: 11, color: '#9CA3AF', textTransform: 'uppercase', fontWeight: 700 }}>Party</div>
+              <div style={{ fontSize: 14, fontWeight: 600, marginTop: 3 }}>{voucher.partyName || '—'}</div>
+            </div>
+            <div style={{ flex: 1, padding: '14px 20px' }}>
+              <div style={{ fontSize: 11, color: '#9CA3AF', textTransform: 'uppercase', fontWeight: 700 }}>Payment Mode</div>
+              <div style={{ fontSize: 14, fontWeight: 600, marginTop: 3 }}>{MODE_LABELS[voucher.mode] || voucher.mode}</div>
+            </div>
           </div>
-          <div style={{ flex: 1, padding: '14px 20px' }}>
-            <div style={{ fontSize: 11, color: '#9CA3AF', textTransform: 'uppercase', fontWeight: 700 }}>Payment Mode</div>
-            <div style={{ fontSize: 14, fontWeight: 600, marginTop: 3 }}>{MODE_LABELS[voucher.mode] || voucher.mode}</div>
-          </div>
-        </div>
+        )}
 
-        {/* Body: itemized table OR simple accounting */}
+        {/* Body: journal table · itemized table · simple accounting */}
         <div style={{ padding: 20 }}>
-          {voucher.isItemized && (voucher.lineItems || []).length > 0 ? (
+          {isJournal ? (
+            <table>
+              <thead>
+                <tr style={{ background: NAVY }}>
+                  <th style={th}>Account</th>
+                  <th style={th}>Description</th>
+                  <th style={{ ...th, textAlign: 'right', width: 110 }}>Debit</th>
+                  <th style={{ ...th, textAlign: 'right', width: 110 }}>Credit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(voucher.lines || []).map((l, i) => (
+                  <tr key={i} style={{ background: i % 2 ? '#F9FAFB' : '#fff' }}>
+                    <td style={cellL}><strong>{l.accountCode}</strong>{l.accountName ? ` · ${l.accountName}` : ''}</td>
+                    <td style={cellL}>{l.description || ''}</td>
+                    <td style={{ ...cellL, textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{(Number(l.debit) || 0) > 0 ? money(l.debit) : ''}</td>
+                    <td style={{ ...cellL, textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{(Number(l.credit) || 0) > 0 ? money(l.credit) : ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ background: '#F3F4F6', borderTop: `2px solid ${NAVY}` }}>
+                  <td style={{ ...cellL, fontWeight: 800, borderBottom: 'none' }} colSpan={2}>TOTAL</td>
+                  <td style={{ ...cellL, textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, borderBottom: 'none' }}>{money(jvTotalDebit)}</td>
+                  <td style={{ ...cellL, textAlign: 'right', fontFamily: 'monospace', fontWeight: 800, borderBottom: 'none' }}>{money(jvTotalCredit)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          ) : voucher.isItemized && (voucher.lineItems || []).length > 0 ? (
             <table>
               <thead>
                 <tr style={{ background: NAVY }}>
@@ -186,23 +225,25 @@ export default function VoucherViewPage() {
             </table>
           )}
 
-          {/* Totals block (right-aligned) */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-            <div style={{ width: 280 }}>
-              {voucher.isItemized && (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', fontSize: 13 }}><span style={{ color: '#6B7280' }}>Subtotal</span><span>{money(voucher.subtotal)}</span></div>
-                  {(voucher.discount || 0) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', fontSize: 13 }}><span style={{ color: '#6B7280' }}>Discount</span><span>−{money(voucher.discount)}</span></div>}
-                </>
-              )}
-              {voucher.vatEnabled && (voucher.vatAmount || 0) > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', fontSize: 13 }}><span style={{ color: '#6B7280' }}>VAT ({voucher.vatRate}%)</span><span>{money(voucher.vatAmount)}</span></div>
-              )}
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', marginTop: 4, background: NAVY, color: '#fff', borderRadius: 4, fontSize: 15, fontWeight: 800 }}>
-                <span>TOTAL</span><span>{money(voucher.amount)}</span>
+          {/* Totals block (right-aligned) — not shown for journal vouchers (the JV table carries its own balanced total) */}
+          {!isJournal && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+              <div style={{ width: 280 }}>
+                {voucher.isItemized && (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', fontSize: 13 }}><span style={{ color: '#6B7280' }}>Subtotal</span><span>{money(voucher.subtotal)}</span></div>
+                    {(voucher.discount || 0) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', fontSize: 13 }}><span style={{ color: '#6B7280' }}>Discount</span><span>−{money(voucher.discount)}</span></div>}
+                  </>
+                )}
+                {voucher.vatEnabled && (voucher.vatAmount || 0) > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', fontSize: 13 }}><span style={{ color: '#6B7280' }}>VAT ({voucher.vatRate}%)</span><span>{money(voucher.vatAmount)}</span></div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', marginTop: 4, background: NAVY, color: '#fff', borderRadius: 4, fontSize: 15, fontWeight: 800 }}>
+                  <span>TOTAL</span><span>{money(voucher.amount)}</span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {voucher.narration && (
             <div style={{ marginTop: 16, fontSize: 12, color: '#6B7280' }}><strong>Narration: </strong>{voucher.narration}</div>

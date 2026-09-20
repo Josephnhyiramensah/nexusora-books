@@ -8,6 +8,7 @@ import { formatCurrency } from '../../utils/formatters';
 import { useToast } from '../../hooks/useToast';
 import useIsMobile from '../../hooks/useIsMobile';
 import VoucherLineItems from './VoucherLineItems';
+import JournalVoucherLines from './JournalVoucherLines';
 
 const VOUCHER_TYPES = [
   { value: 'payment',     label: 'Payment Voucher',  hint: 'Pay money out (e.g. expenses, suppliers)' },
@@ -48,6 +49,12 @@ const MODE_FIELDS = {
 
 const CASH_SIDE = { receipt: 'debit', payment: 'credit', sales: 'debit', purchase: 'credit' };
 const ITEMIZED_TYPES = ['sales', 'purchase'];
+
+// A fresh pair of empty journal lines.
+const emptyJvLines = () => ([
+  { account: '', description: '', debit: '', credit: '' },
+  { account: '', description: '', debit: '', credit: '' },
+]);
 
 // ── Searchable account dropdown ──────────────────────────────────────────────
 function AccountSelect({ accounts, value, onChange, placeholder }) {
@@ -114,6 +121,7 @@ export default function VoucherFormPage() {
     lineItems: [{ description: '', quantity: 1, unit: '', unitPrice: 0 }],
     discount: 0, isItemized: false,
     vatEnabled: false, vatRate: 15,
+    lines: emptyJvLines(),   // journal-voucher lines (Account | Desc | Debit | Credit)
   });
 
   useEffect(() => {
@@ -127,8 +135,15 @@ export default function VoucherFormPage() {
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const setDetail = (k, v) => setForm((f) => ({ ...f, paymentDetails: { ...f.paymentDetails, [k]: v } }));
-  const setType = (t) => setForm((f) => ({ ...f, voucherType: t, isItemized: ITEMIZED_TYPES.includes(t) }));
+  const setLines = (lines) => setForm((f) => ({ ...f, lines }));
+  const setType = (t) => setForm((f) => ({
+    ...f,
+    voucherType: t,
+    isItemized: ITEMIZED_TYPES.includes(t),
+    ...(t === 'journal' ? { vatEnabled: false } : {}),
+  }));
 
+  const isJournal = form.voucherType === 'journal';
   const currentType = VOUCHER_TYPES.find((t) => t.value === form.voucherType);
   const modeFields = MODE_FIELDS[form.mode] || [];
   const acctLabel = (id) => { const a = accounts.find((x) => x._id === id); return a ? `${a.code} — ${a.name}` : ''; };
@@ -140,7 +155,72 @@ export default function VoucherFormPage() {
   const vatAmount = form.vatEnabled ? Math.round(afterDiscount * ((Number(form.vatRate) || 0) / 100) * 100) / 100 : 0;
   const grandTotal = Math.round((afterDiscount + vatAmount) * 100) / 100;
 
+  // Journal-voucher totals (independent of the single-entry amount above).
+  const jvTotalDebit = (form.lines || []).reduce((s, r) => s + (Number(r.debit) || 0), 0);
+  const jvTotalCredit = (form.lines || []).reduce((s, r) => s + (Number(r.credit) || 0), 0);
+  const jvDiff = Math.round((jvTotalDebit - jvTotalCredit) * 100) / 100;
+  const jvBalanced = jvDiff === 0 && jvTotalDebit > 0;
+
+  // ── Save: journal voucher (multi-line, must balance) ───────────────────────
+  const handleSaveJournal = async (thenPost) => {
+    if (!form.date) { showToast('Please choose a date.', 'error'); return; }
+
+    const cleanLines = (form.lines || [])
+      .map((r) => ({
+        account: r.account,
+        description: (r.description || '').trim(),
+        debit: Number(r.debit) || 0,
+        credit: Number(r.credit) || 0,
+      }))
+      .filter((r) => r.account && (r.debit > 0 || r.credit > 0));
+
+    if (cleanLines.length < 2) {
+      showToast('A journal voucher needs at least two lines with an account and an amount.', 'error'); return;
+    }
+    if (cleanLines.some((r) => r.debit > 0 && r.credit > 0)) {
+      showToast('Each line must be either a debit or a credit, not both.', 'error'); return;
+    }
+    const tD = Math.round(cleanLines.reduce((s, r) => s + r.debit, 0) * 100) / 100;
+    const tC = Math.round(cleanLines.reduce((s, r) => s + r.credit, 0) * 100) / 100;
+    if (tD <= 0) { showToast('Enter the debit and credit amounts.', 'error'); return; }
+    if (tD !== tC) {
+      showToast(`Journal must balance — debit ${money(tD)} vs credit ${money(tC)} (difference ${money(Math.abs(tD - tC))}).`, 'error'); return;
+    }
+    if (!form.narration || !form.narration.trim()) {
+      showToast('Please enter a narration describing this journal entry.', 'error'); return;
+    }
+
+    setSaving(true);
+    try {
+      const result = await voucherService.create({
+        voucherType: 'journal',
+        date: form.date,
+        dueDate: form.dueDate || undefined,
+        narration: form.narration.trim(),
+        reference: form.reference,
+        terms: form.terms,
+        lines: cleanLines,
+        amount: tD,          // overall value of the JV (= total debit = total credit)
+        isItemized: false,
+        lineItems: [],
+        discount: 0,
+        vatEnabled: false, vatRate: 0,
+      });
+      if (!result.success) { showToast(result.message || 'Failed', 'error'); setSaving(false); return; }
+      if (thenPost) {
+        const posted = await voucherService.post(result.data._id);
+        showToast(posted.success ? posted.message : (posted.message || 'Saved as draft (post failed)'), posted.success ? 'success' : 'error');
+      } else { showToast(result.message, 'success'); }
+      navigate('/vouchers');
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Failed to save voucher', 'error');
+    } finally { setSaving(false); }
+  };
+
+  // ── Save: single-entry vouchers (payment/receipt/…, itemized, VAT) ─────────
   const handleSave = async (thenPost) => {
+    if (isJournal) return handleSaveJournal(thenPost);
+
     if (!form.date || !form.debitAccount || !form.creditAccount || !(grandTotal > 0)) {
       showToast('Fill in date, debit account, credit account and amount (or items).', 'error'); return;
     }
@@ -178,7 +258,7 @@ export default function VoucherFormPage() {
   const debitHint = cashSide === 'debit' ? 'Cash / bank (money in)' : 'What is received / owed';
   const creditHint = cashSide === 'credit' ? 'Cash / bank (money out)' : 'What is given / source';
 
-  // The summary sidebar (right on desktop, bottom on mobile).
+  // The single-entry summary sidebar (right on desktop, bottom on mobile).
   const summary = (
     <div style={{ ...card, position: isMobile ? 'static' : 'sticky', top: 16 }}>
       <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--brand, #3485E9)', margin: '0 0 12px', textTransform: 'uppercase' }}>Summary</p>
@@ -219,6 +299,33 @@ export default function VoucherFormPage() {
     </div>
   );
 
+  // The journal-voucher summary sidebar: totals + balance status.
+  const jvSummary = (
+    <div style={{ ...card, position: isMobile ? 'static' : 'sticky', top: 16 }}>
+      <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--brand, #3485E9)', margin: '0 0 12px', textTransform: 'uppercase' }}>Journal Summary</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '5px 0' }}><span style={{ color: '#6B7280' }}>Total Debit</span><strong>{money(jvTotalDebit)}</strong></div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '5px 0' }}><span style={{ color: '#6B7280' }}>Total Credit</span><strong>{money(jvTotalCredit)}</strong></div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, fontWeight: 800, padding: '10px 0', borderTop: '2px solid var(--border, #E5E7EB)', marginTop: 4, color: jvBalanced ? '#065F46' : '#DC2626' }}>
+        <span>{jvBalanced ? '✓ Balanced' : 'Difference'}</span>
+        <span>{jvBalanced ? money(jvTotalDebit) : money(Math.abs(jvDiff))}</span>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
+        <button onClick={() => handleSave(true)} disabled={saving || !jvBalanced}
+          style={{ padding: '12px', borderRadius: 8, border: 'none', background: (saving || !jvBalanced) ? '#E5E7EB' : 'var(--nexusora-gold, #FD9C09)', color: (saving || !jvBalanced) ? '#9CA3AF' : 'var(--deep-navy, #012158)', fontWeight: 700, fontSize: 14, cursor: (saving || !jvBalanced) ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <FiSave size={15} /> {saving ? 'Saving…' : 'Save & Post'}
+        </button>
+        <button onClick={() => handleSave(false)} disabled={saving || !jvBalanced}
+          style={{ padding: '11px', borderRadius: 8, border: '1px solid var(--border, #D1D5DB)', background: 'transparent', color: (saving || !jvBalanced) ? '#9CA3AF' : 'inherit', fontWeight: 600, fontSize: 14, cursor: (saving || !jvBalanced) ? 'not-allowed' : 'pointer' }}>
+          Save as Draft
+        </button>
+        {!jvBalanced && (
+          <p style={{ fontSize: 12, color: '#9CA3AF', margin: '2px 0 0', textAlign: 'center' }}>Debits and credits must balance before saving.</p>
+        )}
+      </div>
+    </div>
+  );
+
   // The main form column.
   const mainForm = (
     <div>
@@ -230,85 +337,118 @@ export default function VoucherFormPage() {
         {currentType && <p style={{ fontSize: 12, color: 'var(--text-secondary, #6B7280)', marginTop: 8, marginBottom: 0 }}>{currentType.hint}</p>}
       </div>
 
-      <div style={card}>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
-          <div><label style={label}>Date</label><input type="date" style={input} value={form.date} onChange={(e) => set('date', e.target.value)} /></div>
-          <div><label style={label}>Due Date <span style={{ fontWeight: 400, color: '#9CA3AF' }}>(optional)</span></label><input type="date" style={input} value={form.dueDate} onChange={(e) => set('dueDate', e.target.value)} /></div>
-        </div>
-        {!form.isItemized && (
-          <div style={{ marginTop: 16 }}>
-            <label style={label}>Amount (GHS)</label>
-            <input type="number" step="0.01" style={input} value={form.amount} onChange={(e) => set('amount', e.target.value)} placeholder="0.00" />
+      {isJournal ? (
+        <>
+          {/* Journal voucher: date + multi-line debit/credit table */}
+          <div style={card}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
+              <div><label style={label}>Date</label><input type="date" style={input} value={form.date} onChange={(e) => set('date', e.target.value)} /></div>
+            </div>
+            <div style={{ marginTop: 16 }}>
+              <label style={{ ...label, marginBottom: 10 }}>Journal Lines</label>
+              <JournalVoucherLines
+                lines={form.lines}
+                accounts={accounts}
+                onLinesChange={setLines}
+                isMobile={isMobile}
+              />
+            </div>
           </div>
-        )}
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginTop: 16 }}>
-          <div>
-            <label style={label}>Debit Account <span style={{ fontWeight: 400, color: '#9CA3AF' }}>· {debitHint}</span></label>
-            <AccountSelect accounts={accounts} value={form.debitAccount} onChange={(v) => set('debitAccount', v)} />
-          </div>
-          <div>
-            <label style={label}>Credit Account <span style={{ fontWeight: 400, color: '#9CA3AF' }}>· {creditHint}</span></label>
-            <AccountSelect accounts={accounts} value={form.creditAccount} onChange={(v) => set('creditAccount', v)} />
-          </div>
-        </div>
-      </div>
 
-      <div style={card}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', marginBottom: form.isItemized ? 14 : 0 }}>
-          <input type="checkbox" checked={form.isItemized} onChange={(e) => set('isItemized', e.target.checked)} /> Itemized voucher (list items, quantities and prices)
-        </label>
-        {form.isItemized && (
-          <VoucherLineItems
-            items={form.lineItems} discount={form.discount}
-            vatEnabled={form.vatEnabled} vatRate={form.vatRate}
-            onItemsChange={(items) => set('lineItems', items)}
-            onDiscountChange={(d) => set('discount', d)}
-            onVatToggle={(v) => set('vatEnabled', v)}
-            onVatRateChange={(r) => set('vatRate', r)}
-            isMobile={isMobile}
-          />
-        )}
-      </div>
+          {/* Journal voucher: narration / reference / terms (no party, no payment mode) */}
+          <div style={card}>
+            <div><label style={label}>Narration</label><input style={input} value={form.narration} onChange={(e) => set('narration', e.target.value)} placeholder="e.g. Being depreciation for September" /></div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginTop: 16 }}>
+              <div><label style={label}>Reference (optional)</label><input style={input} value={form.reference} onChange={(e) => set('reference', e.target.value)} placeholder="External reference no." /></div>
+              <div><label style={label}>Terms / Notes (optional)</label><input style={input} value={form.terms} onChange={(e) => set('terms', e.target.value)} placeholder="Notes for print" /></div>
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={card}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
+              <div><label style={label}>Date</label><input type="date" style={input} value={form.date} onChange={(e) => set('date', e.target.value)} /></div>
+              <div><label style={label}>Due Date <span style={{ fontWeight: 400, color: '#9CA3AF' }}>(optional)</span></label><input type="date" style={input} value={form.dueDate} onChange={(e) => set('dueDate', e.target.value)} /></div>
+            </div>
+            {!form.isItemized && (
+              <div style={{ marginTop: 16 }}>
+                <label style={label}>Amount (GHS)</label>
+                <input type="number" step="0.01" style={input} value={form.amount} onChange={(e) => set('amount', e.target.value)} placeholder="0.00" />
+              </div>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginTop: 16 }}>
+              <div>
+                <label style={label}>Debit Account <span style={{ fontWeight: 400, color: '#9CA3AF' }}>· {debitHint}</span></label>
+                <AccountSelect accounts={accounts} value={form.debitAccount} onChange={(v) => set('debitAccount', v)} />
+              </div>
+              <div>
+                <label style={label}>Credit Account <span style={{ fontWeight: 400, color: '#9CA3AF' }}>· {creditHint}</span></label>
+                <AccountSelect accounts={accounts} value={form.creditAccount} onChange={(v) => set('creditAccount', v)} />
+              </div>
+            </div>
+          </div>
 
-      {/* VAT toggle for NON-itemized vouchers (itemized has it in the items totals) */}
-      {!form.isItemized && (
-        <div style={card}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
-            <input type="checkbox" checked={form.vatEnabled} onChange={(e) => set('vatEnabled', e.target.checked)} /> Apply VAT
-          </label>
-          {form.vatEnabled && (
-            <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-              <label style={{ fontSize: 13, color: '#6B7280' }}>VAT rate</label>
-              <input type="number" style={{ ...input, width: 100 }} value={form.vatRate} onChange={(e) => set('vatRate', e.target.value)} />
-              <span style={{ fontSize: 13, color: '#6B7280' }}>%  (the amount above is treated as VAT-inclusive)</span>
+          <div style={card}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', marginBottom: form.isItemized ? 14 : 0 }}>
+              <input type="checkbox" checked={form.isItemized} onChange={(e) => set('isItemized', e.target.checked)} /> Itemized voucher (list items, quantities and prices)
+            </label>
+            {form.isItemized && (
+              <VoucherLineItems
+                items={form.lineItems} discount={form.discount}
+                vatEnabled={form.vatEnabled} vatRate={form.vatRate}
+                onItemsChange={(items) => set('lineItems', items)}
+                onDiscountChange={(d) => set('discount', d)}
+                onVatToggle={(v) => set('vatEnabled', v)}
+                onVatRateChange={(r) => set('vatRate', r)}
+                isMobile={isMobile}
+              />
+            )}
+          </div>
+
+          {/* VAT toggle for NON-itemized vouchers (itemized has it in the items totals) */}
+          {!form.isItemized && (
+            <div style={card}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.vatEnabled} onChange={(e) => set('vatEnabled', e.target.checked)} /> Apply VAT
+              </label>
+              {form.vatEnabled && (
+                <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <label style={{ fontSize: 13, color: '#6B7280' }}>VAT rate</label>
+                  <input type="number" style={{ ...input, width: 100 }} value={form.vatRate} onChange={(e) => set('vatRate', e.target.value)} />
+                  <span style={{ fontSize: 13, color: '#6B7280' }}>%  (the amount above is treated as VAT-inclusive)</span>
+                </div>
+              )}
             </div>
           )}
-        </div>
-      )}
 
-      <div style={card}>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
-          <div><label style={label}>Party (payee / received from)</label><input style={input} value={form.partyName} onChange={(e) => set('partyName', e.target.value)} placeholder="e.g. ABC Ltd" /></div>
-          <div>
-            <label style={label}>Payment Mode</label>
-            <select style={input} value={form.mode} onChange={(e) => set('mode', e.target.value)}>{MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}</select>
+          <div style={card}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
+              <div><label style={label}>Party (payee / received from)</label><input style={input} value={form.partyName} onChange={(e) => set('partyName', e.target.value)} placeholder="e.g. ABC Ltd" /></div>
+              <div>
+                <label style={label}>Payment Mode</label>
+                <select style={input} value={form.mode} onChange={(e) => set('mode', e.target.value)}>{MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}</select>
+              </div>
+            </div>
+            {modeFields.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginTop: 16 }}>
+                {modeFields.map((f) => (
+                  <div key={f.key}><label style={label}>{f.label}</label><input style={input} value={form.paymentDetails[f.key] || ''} onChange={(e) => setDetail(f.key, e.target.value)} placeholder={f.label} /></div>
+                ))}
+              </div>
+            )}
+            <div style={{ marginTop: 16 }}><label style={label}>Narration</label><input style={input} value={form.narration} onChange={(e) => set('narration', e.target.value)} placeholder="What is this voucher for?" /></div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginTop: 16 }}>
+              <div><label style={label}>Reference (optional)</label><input style={input} value={form.reference} onChange={(e) => set('reference', e.target.value)} placeholder="External reference no." /></div>
+              <div><label style={label}>Terms / Notes (optional)</label><input style={input} value={form.terms} onChange={(e) => set('terms', e.target.value)} placeholder="Terms, conditions or notes for print" /></div>
+            </div>
           </div>
-        </div>
-        {modeFields.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginTop: 16 }}>
-            {modeFields.map((f) => (
-              <div key={f.key}><label style={label}>{f.label}</label><input style={input} value={form.paymentDetails[f.key] || ''} onChange={(e) => setDetail(f.key, e.target.value)} placeholder={f.label} /></div>
-            ))}
-          </div>
-        )}
-        <div style={{ marginTop: 16 }}><label style={label}>Narration</label><input style={input} value={form.narration} onChange={(e) => set('narration', e.target.value)} placeholder="What is this voucher for?" /></div>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16, marginTop: 16 }}>
-          <div><label style={label}>Reference (optional)</label><input style={input} value={form.reference} onChange={(e) => set('reference', e.target.value)} placeholder="External reference no." /></div>
-          <div><label style={label}>Terms / Notes (optional)</label><input style={input} value={form.terms} onChange={(e) => set('terms', e.target.value)} placeholder="Terms, conditions or notes for print" /></div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
+
+  const activeSummary = isJournal ? jvSummary : summary;
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto' }}>
@@ -321,11 +461,11 @@ export default function VoucherFormPage() {
       </div>
 
       {isMobile ? (
-        <div>{mainForm}{summary}</div>
+        <div>{mainForm}{activeSummary}</div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20, alignItems: 'start' }}>
           {mainForm}
-          {summary}
+          {activeSummary}
         </div>
       )}
     </div>
