@@ -1,72 +1,72 @@
-// client/src/modules/vouchers/JournalVoucherLines.jsx
-// Professional Journal Voucher entry: a multi-line table where each line hits
-// one account with EITHER a debit OR a credit. Shows live Total Debit / Total
-// Credit / Difference and enforces balance. No party, no payment mode — a pure
-// accounting adjustment (depreciation, accruals, corrections, etc.).
+// client/src/modules/vouchers/VoucherLineItems.jsx
+// Itemized line-items editor with Subtotal, Discount, optional VAT, and Total.
+// The parent posts the total (and, when VAT is on, splits VAT to VAT Payable).
 import { FiPlus, FiTrash2 } from 'react-icons/fi';
 
 const money = (n) => (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-// Small inline searchable account picker (kept simple: native select is fine for
-// journal lines; the parent passes the accounts list).
-function AccountPick({ accounts, value, onChange }) {
+export default function VoucherLineItems({
+  items, discount, vatEnabled, vatRate,
+  onItemsChange, onDiscountChange, onVatToggle, onVatRateChange, isMobile,
+}) {
+  const rows = items && items.length ? items : [{ description: '', quantity: 1, unit: '', unitPrice: 0 }];
+
+  const setRow = (i, key, val) => onItemsChange(rows.map((r, idx) => idx === i ? { ...r, [key]: val } : r));
+  const addRow = () => onItemsChange([...rows, { description: '', quantity: 1, unit: '', unitPrice: 0 }]);
+  const delRow = (i) => onItemsChange(rows.filter((_, idx) => idx !== i));
+
+  const lineAmount = (r) => (Number(r.quantity) || 0) * (Number(r.unitPrice) || 0);
+  const subtotal = rows.reduce((s, r) => s + lineAmount(r), 0);
+  const afterDiscount = subtotal - (Number(discount) || 0);
+  const vatAmount = vatEnabled ? Math.round(afterDiscount * ((Number(vatRate) || 0) / 100) * 100) / 100 : 0;
+  const total = Math.round((afterDiscount + vatAmount) * 100) / 100;
+
+  const cell = { padding: '6px', fontSize: 13 };
   const input = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #D1D5DB)', fontSize: 13, boxSizing: 'border-box' };
-  return (
-    <select style={input} value={value || ''} onChange={(e) => onChange(e.target.value)}>
-      <option value="">Select account…</option>
-      {accounts.map((a) => <option key={a._id} value={a._id}>{a.code} — {a.name}</option>)}
-    </select>
+  const th = { padding: '8px', fontSize: 11, fontWeight: 700, color: '#fff', textAlign: 'left', textTransform: 'uppercase' };
+
+  const Totals = () => (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '5px 0' }}><span>Subtotal</span><strong>{money(subtotal)}</strong></div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '5px 0', alignItems: 'center' }}>
+        <span>Discount</span>
+        <input style={{ ...input, width: 120, textAlign: 'right' }} type="number" value={discount || 0} onChange={(e) => onDiscountChange(e.target.value)} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '5px 0', alignItems: 'center' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+          <input type="checkbox" checked={!!vatEnabled} onChange={(e) => onVatToggle(e.target.checked)} /> VAT
+        </label>
+        {vatEnabled ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input style={{ ...input, width: 70, textAlign: 'right' }} type="number" value={vatRate} onChange={(e) => onVatRateChange(e.target.value)} />
+            <span style={{ fontSize: 13, color: '#6B7280' }}>%</span>
+            <strong style={{ minWidth: 90, textAlign: 'right' }}>{money(vatAmount)}</strong>
+          </div>
+        ) : <span style={{ fontSize: 13, color: '#9CA3AF' }}>off</span>}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, fontWeight: 800, padding: '10px 0', color: 'var(--deep-navy, #012158)', borderTop: '2px solid var(--border, #E5E7EB)' }}><span>Total</span><span>{money(total)}</span></div>
+    </div>
   );
-}
 
-export default function JournalVoucherLines({ lines, accounts, onLinesChange, isMobile }) {
-  const rows = lines && lines.length ? lines : [
-    { account: '', description: '', debit: '', credit: '' },
-    { account: '', description: '', debit: '', credit: '' },
-  ];
-
-  const setRow = (i, key, val) => {
-    let next = rows.map((r, idx) => idx === i ? { ...r, [key]: val } : r);
-    // A line is either a debit or a credit — clear the opposite when one is typed.
-    if (key === 'debit' && val) next = next.map((r, idx) => idx === i ? { ...r, credit: '' } : r);
-    if (key === 'credit' && val) next = next.map((r, idx) => idx === i ? { ...r, debit: '' } : r);
-    onLinesChange(next);
-  };
-  const addRow = () => onLinesChange([...rows, { account: '', description: '', debit: '', credit: '' }]);
-  const delRow = (i) => onLinesChange(rows.filter((_, idx) => idx !== i));
-
-  const totalDebit = rows.reduce((s, r) => s + (Number(r.debit) || 0), 0);
-  const totalCredit = rows.reduce((s, r) => s + (Number(r.credit) || 0), 0);
-  const diff = Math.round((totalDebit - totalCredit) * 100) / 100;
-  const balanced = diff === 0 && totalDebit > 0;
-
-  const cell = { padding: '6px', fontSize: 13, verticalAlign: 'top' };
-  const input = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #D1D5DB)', fontSize: 13, boxSizing: 'border-box' };
-  const th = { padding: '9px 8px', fontSize: 11, fontWeight: 700, color: '#fff', textAlign: 'left', textTransform: 'uppercase' };
-
-  // Mobile: card per line.
   if (isMobile) {
     return (
       <div>
         {rows.map((r, i) => (
           <div key={i} style={{ border: '1px solid var(--border, #E5E7EB)', borderRadius: 8, padding: 12, marginBottom: 10 }}>
-            <div style={{ marginBottom: 8 }}><AccountPick accounts={accounts} value={r.account} onChange={(v) => setRow(i, 'account', v)} /></div>
-            <input style={{ ...input, marginBottom: 8 }} placeholder="Description (optional)" value={r.description || ''} onChange={(e) => setRow(i, 'description', e.target.value)} />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <input style={input} type="number" placeholder="Debit" value={r.debit} onChange={(e) => setRow(i, 'debit', e.target.value)} />
-              <input style={input} type="number" placeholder="Credit" value={r.credit} onChange={(e) => setRow(i, 'credit', e.target.value)} />
+            <input style={{ ...input, marginBottom: 8 }} placeholder="Description" value={r.description || ''} onChange={(e) => setRow(i, 'description', e.target.value)} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+              <input style={input} type="number" placeholder="Qty" value={r.quantity} onChange={(e) => setRow(i, 'quantity', e.target.value)} />
+              <input style={input} placeholder="Unit (Kg, pcs)" value={r.unit || ''} onChange={(e) => setRow(i, 'unit', e.target.value)} />
             </div>
-            <button onClick={() => delRow(i)} style={{ marginTop: 8, color: '#DC2626', background: 'none', border: 'none', fontSize: 12, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}><FiTrash2 size={13} /> Remove line</button>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, alignItems: 'center' }}>
+              <input style={input} type="number" placeholder="Price/Unit" value={r.unitPrice} onChange={(e) => setRow(i, 'unitPrice', e.target.value)} />
+              <div style={{ textAlign: 'right', fontWeight: 600, fontSize: 14 }}>{money(lineAmount(r))}</div>
+            </div>
+            <button onClick={() => delRow(i)} style={{ marginTop: 8, color: '#DC2626', background: 'none', border: 'none', fontSize: 12, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}><FiTrash2 size={13} /> Remove</button>
           </div>
         ))}
-        <button onClick={addRow} style={{ padding: '9px 14px', borderRadius: 8, border: '1px dashed var(--border, #C9A227)', background: 'transparent', color: '#B8860B', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 12 }}><FiPlus size={14} /> Add Line</button>
-        <div style={{ borderTop: '2px solid var(--border, #E5E7EB)', paddingTop: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '4px 0' }}><span>Total Debit</span><strong>{money(totalDebit)}</strong></div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '4px 0' }}><span>Total Credit</span><strong>{money(totalCredit)}</strong></div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '8px 0', fontWeight: 700, color: balanced ? '#065F46' : '#DC2626' }}>
-            <span>{balanced ? '✓ Balanced' : 'Difference'}</span><span>{balanced ? money(totalDebit) : money(Math.abs(diff))}</span>
-          </div>
-        </div>
+        <button onClick={addRow} style={{ padding: '9px 14px', borderRadius: 8, border: '1px dashed var(--border, #C9A227)', background: 'transparent', color: '#B8860B', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 12 }}><FiPlus size={14} /> Add Item</button>
+        <div style={{ borderTop: '2px solid var(--border, #E5E7EB)', paddingTop: 10 }}><Totals /></div>
       </div>
     );
   }
@@ -77,39 +77,31 @@ export default function JournalVoucherLines({ lines, accounts, onLinesChange, is
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: 'var(--deep-navy, #012158)' }}>
-              <th style={{ ...th, width: '32%' }}>Account</th>
-              <th style={th}>Description</th>
-              <th style={{ ...th, textAlign: 'right', width: 120 }}>Debit</th>
-              <th style={{ ...th, textAlign: 'right', width: 120 }}>Credit</th>
+              <th style={{ ...th, width: '40%' }}>Description</th>
+              <th style={{ ...th, width: 70 }}>Qty</th>
+              <th style={{ ...th, width: 90 }}>Unit</th>
+              <th style={{ ...th, textAlign: 'right' }}>Price/Unit</th>
+              <th style={{ ...th, textAlign: 'right' }}>Amount</th>
               <th style={{ ...th, width: 36 }}></th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r, i) => (
               <tr key={i} style={{ borderBottom: '1px solid #F0F0F0' }}>
-                <td style={cell}><AccountPick accounts={accounts} value={r.account} onChange={(v) => setRow(i, 'account', v)} /></td>
-                <td style={cell}><input style={input} placeholder="Line note (optional)" value={r.description || ''} onChange={(e) => setRow(i, 'description', e.target.value)} /></td>
-                <td style={cell}><input style={{ ...input, textAlign: 'right' }} type="number" placeholder="0.00" value={r.debit} onChange={(e) => setRow(i, 'debit', e.target.value)} /></td>
-                <td style={cell}><input style={{ ...input, textAlign: 'right' }} type="number" placeholder="0.00" value={r.credit} onChange={(e) => setRow(i, 'credit', e.target.value)} /></td>
+                <td style={cell}><input style={input} placeholder="Item description" value={r.description || ''} onChange={(e) => setRow(i, 'description', e.target.value)} /></td>
+                <td style={cell}><input style={input} type="number" value={r.quantity} onChange={(e) => setRow(i, 'quantity', e.target.value)} /></td>
+                <td style={cell}><input style={input} placeholder="Kg" value={r.unit || ''} onChange={(e) => setRow(i, 'unit', e.target.value)} /></td>
+                <td style={cell}><input style={{ ...input, textAlign: 'right' }} type="number" value={r.unitPrice} onChange={(e) => setRow(i, 'unitPrice', e.target.value)} /></td>
+                <td style={{ ...cell, textAlign: 'right', fontFamily: 'monospace', fontWeight: 600 }}>{money(lineAmount(r))}</td>
                 <td style={cell}><button onClick={() => delRow(i)} title="Remove" style={{ color: '#DC2626', background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}><FiTrash2 size={14} /></button></td>
               </tr>
             ))}
           </tbody>
-          <tfoot>
-            <tr style={{ background: '#F9FAFB', borderTop: '2px solid var(--border, #E5E7EB)' }}>
-              <td style={{ ...cell, fontWeight: 700 }} colSpan={2}>TOTAL</td>
-              <td style={{ ...cell, textAlign: 'right', fontWeight: 700, fontFamily: 'monospace' }}>{money(totalDebit)}</td>
-              <td style={{ ...cell, textAlign: 'right', fontWeight: 700, fontFamily: 'monospace' }}>{money(totalCredit)}</td>
-              <td style={cell}></td>
-            </tr>
-          </tfoot>
         </table>
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
-        <button onClick={addRow} style={{ padding: '9px 14px', borderRadius: 8, border: '1px dashed var(--border, #C9A227)', background: 'transparent', color: '#B8860B', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}><FiPlus size={14} /> Add Line</button>
-        <span style={{ fontSize: 13, fontWeight: 700, color: balanced ? '#065F46' : '#DC2626' }}>
-          {balanced ? '✓ Balanced' : (totalDebit === 0 && totalCredit === 0 ? 'Enter debits and credits' : 'Difference: ' + money(Math.abs(diff)))}
-        </span>
+      <button onClick={addRow} style={{ marginTop: 10, padding: '9px 14px', borderRadius: 8, border: '1px dashed var(--border, #C9A227)', background: 'transparent', color: '#B8860B', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}><FiPlus size={14} /> Add Item</button>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+        <div style={{ width: 320 }}><Totals /></div>
       </div>
     </div>
   );
