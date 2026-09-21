@@ -17,81 +17,31 @@ import {
 } from 'react-icons/fi';
 import TwoFactorNudge from '../components/common/TwoFactorNudge';
 
-// Modules grouped into accounting sections. Each tile is unchanged (label,
-// subtitle, path, accentColor, icon) — only the grouping around them is new.
-const moduleSections = [
-  {
-    section: 'Ledger & Accounts',
-    tiles: [
-      { label: 'Dashboard',    subtitle: 'Financial overview',                path: '/dashboard',    accentColor: '#1A3560', icon: FiGrid },
-      { label: 'Assets',       subtitle: 'Cash, bank, receivables',           path: '/assets',       accentColor: '#0D9488', icon: FiArchive },
-      { label: 'Liabilities',  subtitle: 'Payables, loans, accruals',         path: '/liabilities',  accentColor: '#DC2626', icon: FiAlertCircle },
-      { label: 'Equity',       subtitle: 'Capital, retained earnings',        path: '/equity',       accentColor: '#7C3AED', icon: FiShield },
-      { label: 'Revenue',      subtitle: 'Sales, service income',             path: '/revenue',      accentColor: '#16A34A', icon: FiTrendingUp },
-      { label: 'Expenses',     subtitle: 'Operating costs, COGS',             path: '/expenses',     accentColor: '#EA580C', icon: FiMinusCircle },
-      { label: 'Journals',     subtitle: 'General, sales, purchases',         path: '/journals',     accentColor: '#2563EB', icon: FiBookOpen },
-      { label: 'Vouchers',     subtitle: 'Payment, receipt, contra, journal', path: '/vouchers',     accentColor: '#0EA5E9', icon: FiFileText },
-    ],
-  },
-  {
-    section: 'Sales & Receivables',
-    tiles: [
-      { label: 'Invoicing',    subtitle: 'Customer invoices & receipts',      path: '/invoicing',    accentColor: '#0891B2', icon: FiSend },
-    ],
-  },
-  {
-    section: 'Purchases & Payables',
-    tiles: [
-      { label: 'Bills & Payments', subtitle: 'Vendor bills & payments',       path: '/bills',        accentColor: '#D97706', icon: FiCreditCard },
-    ],
-  },
-  {
-    section: 'Money',
-    tiles: [
-      { label: 'Banking',      subtitle: 'Bank accounts',                     path: '/banking',      accentColor: '#0284C7', icon: FiBankIcon },
-      { label: 'Budget',       subtitle: 'Budget vs actual & variance',       path: '/budget',       accentColor: '#65A30D', icon: FiTarget },
-    ],
-  },
-  {
-    section: 'Payroll & People',
-    tiles: [
-      { label: 'Payroll',      subtitle: 'Salaries, PAYE, SSNIT',             path: '/payroll',      accentColor: '#DB2777', icon: FiUsers },
-    ],
-  },
-  {
-    section: 'Inventory & Assets',
-    tiles: [
-      { label: 'Inventory',    subtitle: 'Stock tracking & valuation',        path: '/inventory',    accentColor: '#4F46E5', icon: FiPackage },
-      { label: 'Fixed Assets', subtitle: 'Asset register & depreciation',     path: '/fixed-assets', accentColor: '#475569', icon: FiTruck },
-    ],
-  },
-  {
-    section: 'Reports & Tax',
-    tiles: [
-      { label: 'Reports',      subtitle: 'Financial statements & exports',    path: '/reports',          accentColor: '#8B5CF6', icon: FiBarChart2 },
-      { label: 'Tax',          subtitle: 'VAT, PAYE, corporate tax',          path: '/tax',              accentColor: '#78716C', icon: FiPercent },
-      { label: 'Analytics',    subtitle: 'Charts, ratios & financial insights', path: '/assets/analytics', accentColor: '#C9A227', icon: FiBarChart2 },
-      { label: 'Audit Log',    subtitle: 'Security & activity trail',         path: '/audit',            accentColor: '#1A3560', icon: FiActivity },
-    ],
-  },
-  {
-    section: 'Workspace',
-    tiles: [
-      { label: 'Notes',        subtitle: 'Personal, company, announcements',  path: '/notes',        accentColor: '#CA8A04', icon: FiEdit3 },
-      { label: 'To-Do',        subtitle: 'Tasks, assignments, checklists',    path: '/todos',        accentColor: '#E11D48', icon: FiCheckSquare },
-      { label: 'AI Assistant', subtitle: 'Anomaly detection & forecasting',   path: '/ai',           accentColor: '#C9A227', icon: FiZap },
-    ],
-  },
-  {
-    section: 'Admin',
-    tiles: [
-      { label: 'Settings',     subtitle: 'Users, roles, company profile',     path: '/settings',     accentColor: '#6B7280', icon: FiSettings },
-    ],
-  },
+const moduleTiles = [
+  { label: 'Dashboard',           subtitle: 'Financial overview',            path: '/dashboard',            accentColor: '#1A3560', icon: FiGrid },
+  { label: 'Assets',              subtitle: 'Cash, bank, receivables',       path: '/assets',               accentColor: '#0D9488', icon: FiArchive },
+  { label: 'Liabilities',         subtitle: 'Payables, loans, accruals',     path: '/liabilities',          accentColor: '#DC2626', icon: FiAlertCircle },
+  { label: 'Equity',              subtitle: 'Capital, retained earnings',     path: '/equity',               accentColor: '#7C3AED', icon: FiShield },
+  { label: 'Revenue',             subtitle: 'Sales, service income',          path: '/revenue',              accentColor: '#16A34A', icon: FiTrendingUp },
+  { label: 'Expenses',            subtitle: 'Operating costs, COGS',          path: '/expenses',             accentColor: '#EA580C', icon: FiMinusCircle },
+  { label: 'Journals',            subtitle: 'General, sales, purchases',      path: '/journals',             accentColor: '#2563EB', icon: FiBookOpen },
+  { label: 'Vouchers',            subtitle: 'Payment, receipt, contra, journal', path: '/vouchers',             accentColor: '#0EA5E9', icon: FiFileText },
+  { label: 'Invoicing',           subtitle: 'Customer invoices & receipts',   path: '/invoicing',            accentColor: '#0891B2', icon: FiSend },
+  { label: 'Bills & Payments',    subtitle: 'Vendor bills & payments',        path: '/bills',                accentColor: '#D97706', icon: FiCreditCard },
+  { label: 'Inventory',           subtitle: 'Stock tracking & valuation',     path: '/inventory',            accentColor: '#4F46E5', icon: FiPackage },
+  { label: 'Fixed Assets',        subtitle: 'Asset register & depreciation',  path: '/fixed-assets',         accentColor: '#475569', icon: FiTruck },
+  { label: 'Payroll',             subtitle: 'Salaries, PAYE, SSNIT',          path: '/payroll',              accentColor: '#DB2777', icon: FiUsers },
+  { label: 'Banking',             subtitle: 'Bank accounts',                  path: '/banking',              accentColor: '#0284C7', icon: FiBankIcon },
+  { label: 'Budget',              subtitle: 'Budget vs actual & variance',    path: '/budget',               accentColor: '#65A30D', icon: FiTarget },
+  { label: 'Tax',                 subtitle: 'VAT, PAYE, corporate tax',       path: '/tax',                  accentColor: '#78716C', icon: FiPercent },
+  { label: 'Reports',             subtitle: 'Financial statements & exports', path: '/reports',              accentColor: '#8B5CF6', icon: FiBarChart2 },
+  { label: 'Notes',               subtitle: 'Personal, company, announcements', path: '/notes',              accentColor: '#CA8A04', icon: FiEdit3 },
+  { label: 'To-Do',               subtitle: 'Tasks, assignments, checklists', path: '/todos',               accentColor: '#E11D48', icon: FiCheckSquare },
+  { label: 'AI Assistant',        subtitle: 'Anomaly detection & forecasting', path: '/ai',                  accentColor: '#C9A227', icon: FiZap },
+  { label: 'Audit Log',           subtitle: 'Security & activity trail', path: '/audit', accentColor: '#1A3560', icon: FiActivity },
+  { label: 'Settings',            subtitle: 'Users, roles, company profile',  path: '/settings',             accentColor: '#6B7280', icon: FiSettings },
+  { label: 'Analytics', subtitle: 'Charts, ratios & financial insights', path: '/assets/analytics', accentColor: '#C9A227', icon: FiBarChart2 },
 ];
-
-// Flat list preserved for the mobile drawer / anything expecting every tile.
-const moduleTiles = moduleSections.flatMap((s) => s.tiles);
 
 function HeroStatCard({ label, value, gradient, icon: Icon }) {
   return (
@@ -156,13 +106,6 @@ export default function HomeScreen() {
     : isTablet
       ? 'repeat(3, 1fr)'
       : 'repeat(5, 1fr)';
-
-  // Shared style for each section's eyebrow label (matches the old "Modules" label).
-  const sectionLabel = {
-    fontSize: 11, fontWeight: 700, color: 'var(--text-muted)',
-    textTransform: 'uppercase', letterSpacing: '0.1em',
-    marginBottom: isMobile ? 10 : 16,
-  };
 
   return (
     <motion.div
@@ -238,26 +181,30 @@ export default function HomeScreen() {
           ))}
         </StaggerContainer>
 
-        {/* Module tiles, grouped into accounting sections */}
-        {moduleSections.map((sec) => (
-          <div key={sec.section} style={{ marginBottom: isMobile ? 20 : 28 }}>
-            <p style={sectionLabel}>{sec.section}</p>
-            <StaggerContainer
-              staggerDelay={0.04}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: tileColumns,
-                gap: isMobile ? 10 : 16,
-              }}
-            >
-              {sec.tiles.map((tile) => (
-                <StaggerItem key={tile.path}>
-                  <HomeTile {...tile} compact={isMobile} />
-                </StaggerItem>
-              ))}
-            </StaggerContainer>
-          </div>
-        ))}
+        {/* Section label */}
+        <p style={{
+          fontSize: 11, fontWeight: 700, color: 'var(--text-muted)',
+          textTransform: 'uppercase', letterSpacing: '0.1em',
+          marginBottom: isMobile ? 10 : 16,
+        }}>
+          Modules
+        </p>
+
+        {/* Module tiles */}
+        <StaggerContainer
+          staggerDelay={0.04}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: tileColumns,
+            gap: isMobile ? 10 : 16,
+          }}
+        >
+          {moduleTiles.map((tile) => (
+            <StaggerItem key={tile.path}>
+              <HomeTile {...tile} compact={isMobile} />
+            </StaggerItem>
+          ))}
+        </StaggerContainer>
       </div>
     </motion.div>
   );
