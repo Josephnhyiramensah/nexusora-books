@@ -5,18 +5,32 @@ const { logAudit } = require('../middleware/auditMiddleware');
 const {
   validateDoubleEntry, generateEntryNumber, calculateBalanceChange,
 } = require('../utils/accountingHelpers');
+const { scopedFilter, resolveBranchScope } = require('../utils/branchScope');
+
+// Head Office fallback so a manual entry / reversal is never left unbranched.
+async function headOfficeId(req) {
+  const Branch = getModel(req.tenantDb, 'Branch');
+  const ho = await Branch.findOne({ isHeadOffice: true }).select('_id').lean();
+  return ho ? ho._id : null;
+}
+async function resolveJournalBranch(req) {
+  const scope = resolveBranchScope(req);
+  if (scope.activeBranch) return scope.activeBranch;
+  return headOfficeId(req);
+}
 
 const getJournals = async (req, res) => {
   try {
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
-    const filter = {};
-    if (req.query.status) filter.status = req.query.status;
-    if (req.query.journalType) filter.journalType = req.query.journalType;
+    const base = {};
+    if (req.query.status) base.status = req.query.status;
+    if (req.query.journalType) base.journalType = req.query.journalType;
     if (req.query.startDate || req.query.endDate) {
-      filter.date = {};
-      if (req.query.startDate) filter.date.$gte = new Date(req.query.startDate);
-      if (req.query.endDate) filter.date.$lte = new Date(req.query.endDate);
+      base.date = {};
+      if (req.query.startDate) base.date.$gte = new Date(req.query.startDate);
+      if (req.query.endDate) base.date.$lte = new Date(req.query.endDate);
     }
+    const filter = scopedFilter(req, base);
 
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 50;
@@ -40,7 +54,7 @@ const getJournals = async (req, res) => {
 const getJournal = async (req, res) => {
   try {
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
-    const entry = await JournalEntry.findById(req.params.id)
+    const entry = await JournalEntry.findOne(scopedFilter(req, { _id: req.params.id }))
       .populate('createdBy', 'firstName lastName email')
       .populate('postedBy', 'firstName lastName email');
     if (!entry) {
@@ -88,12 +102,14 @@ const createJournal = async (req, res) => {
     }
 
     const entryNumber = await generateEntryNumber(JournalEntry);
+    const branch = await resolveJournalBranch(req);
 
     const entry = await JournalEntry.create({
       entryNumber, date, journalType, description, reference,
       lines: enrichedLines,
       totalDebit: validation.totalDebit, totalCredit: validation.totalCredit,
       status: 'draft', createdBy: req.user._id,
+      branch,
     });
 
     await logAudit(req.tenantDb, {
@@ -114,7 +130,7 @@ const updateJournal = async (req, res) => {
   try {
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
     const Account = getModel(req.tenantDb, 'Account');
-    const entry = await JournalEntry.findById(req.params.id);
+    const entry = await JournalEntry.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!entry) return res.status(404).json({ success: false, message: 'Journal entry not found.' });
     if (entry.status !== 'draft') {
       return res.status(400).json({ success: false, message: `Cannot edit a ${entry.status} journal entry. Only drafts can be modified.` });
@@ -162,7 +178,7 @@ const postJournal = async (req, res) => {
   try {
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
     const Account = getModel(req.tenantDb, 'Account');
-    const entry = await JournalEntry.findById(req.params.id);
+    const entry = await JournalEntry.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!entry) return res.status(404).json({ success: false, message: 'Journal entry not found.' });
     if (entry.status !== 'draft') {
       return res.status(400).json({ success: false, message: `Cannot post a ${entry.status} entry. Only drafts can be posted.` });
@@ -219,7 +235,7 @@ const reverseJournal = async (req, res) => {
   try {
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
     const Account = getModel(req.tenantDb, 'Account');
-    const original = await JournalEntry.findById(req.params.id);
+    const original = await JournalEntry.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!original) return res.status(404).json({ success: false, message: 'Journal entry not found.' });
     if (original.status !== 'posted') {
       return res.status(400).json({ success: false, message: 'Only posted entries can be reversed.' });
@@ -240,6 +256,7 @@ const reverseJournal = async (req, res) => {
       totalDebit: original.totalCredit, totalCredit: original.totalDebit,
       status: 'posted', reversalOf: original._id,
       postedBy: req.user._id, postedAt: new Date(), createdBy: req.user._id,
+      branch: original.branch || await headOfficeId(req),
     });
 
     for (const line of reversedLines) {
@@ -274,13 +291,13 @@ const reverseJournal = async (req, res) => {
 const deleteJournal = async (req, res) => {
   try {
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
-    const entry = await JournalEntry.findById(req.params.id);
+    const entry = await JournalEntry.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!entry) return res.status(404).json({ success: false, message: 'Journal entry not found.' });
     if (entry.status !== 'draft') {
       return res.status(400).json({ success: false, message: `Cannot delete a ${entry.status} entry. Only drafts can be deleted.` });
     }
 
-    await JournalEntry.findByIdAndDelete(req.params.id);
+    await JournalEntry.findByIdAndDelete(entry._id);
 
     await logAudit(req.tenantDb, {
       userId: req.user._id, action: 'delete', module: 'journals',
@@ -302,7 +319,7 @@ const approveJournal = async (req, res) => {
   try {
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
     const Account = getModel(req.tenantDb, 'Account');
-    const entry = await JournalEntry.findById(req.params.id);
+    const entry = await JournalEntry.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!entry) return res.status(404).json({ success: false, message: 'Journal entry not found.' });
     if (entry.status !== 'awaiting_approval') {
       return res.status(400).json({ success: false, message: 'Only entries awaiting approval can be approved.' });
@@ -346,7 +363,7 @@ const approveJournal = async (req, res) => {
 const rejectJournal = async (req, res) => {
   try {
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
-    const entry = await JournalEntry.findById(req.params.id);
+    const entry = await JournalEntry.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!entry) return res.status(404).json({ success: false, message: 'Journal entry not found.' });
     if (entry.status !== 'awaiting_approval') {
       return res.status(400).json({ success: false, message: 'Only entries awaiting approval can be rejected.' });
