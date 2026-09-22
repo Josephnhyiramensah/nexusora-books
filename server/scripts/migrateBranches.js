@@ -66,6 +66,11 @@ async function backfillBranchTags(conn, hoId, { dry }) {
   const bColl = conn.collection(collectionName(conn, 'Bill', 'bills'));
   const pColl = conn.collection(collectionName(conn, 'Payment', 'payments'));
   const prColl = conn.collection(collectionName(conn, 'PayrollRun', 'payrollruns'));
+  const csColl = conn.collection(collectionName(conn, 'CasualPaymentSheet', 'casualpaymentsheets'));
+  const baColl = conn.collection(collectionName(conn, 'BankAccount', 'bankaccounts'));
+  const faColl = conn.collection(collectionName(conn, 'FixedAsset', 'fixedassets'));
+  const buColl = conn.collection(collectionName(conn, 'Budget', 'budgets'));
+  const rsColl = conn.collection(collectionName(conn, 'ReconciliationSession', 'reconciliationsessions'));
 
   const vMissing = await vColl.countDocuments({ branch: { $exists: false } });
   const jMissing = await jColl.countDocuments({ branch: { $exists: false } });
@@ -73,11 +78,16 @@ async function backfillBranchTags(conn, hoId, { dry }) {
   const bMissing = await bColl.countDocuments({ branch: { $exists: false } });
   const pMissing = await pColl.countDocuments({ branch: { $exists: false } });
   const prMissing = await prColl.countDocuments({ branch: { $exists: false } });
+  const csMissing = await csColl.countDocuments({ branch: { $exists: false } });
+  const baMissing = await baColl.countDocuments({ branch: { $exists: false } });
+  const faMissing = await faColl.countDocuments({ branch: { $exists: false } });
+  const buMissing = await buColl.countDocuments({ branch: { $exists: false } });
+  const rsMissing = await rsColl.countDocuments({ branch: { $exists: false } });
 
-  const anyMissing = vMissing + jMissing + iMissing + bMissing + pMissing + prMissing;
-  if (dry) return { vouchers: vMissing, journals: jMissing, invoices: iMissing, bills: bMissing, payments: pMissing, payrolls: prMissing, dry: true };
-  if (anyMissing === 0) return { vouchers: 0, journals: 0, invoices: 0, bills: 0, payments: 0, payrolls: 0 };
-  if (!hoId) return { vouchers: vMissing, journals: jMissing, invoices: iMissing, bills: bMissing, payments: pMissing, payrolls: prMissing, skipped: 'no head office id' };
+  const anyMissing = vMissing + jMissing + iMissing + bMissing + pMissing + prMissing + csMissing + baMissing + faMissing + buMissing + rsMissing;
+  if (dry) return { vouchers: vMissing, journals: jMissing, invoices: iMissing, bills: bMissing, payments: pMissing, payrolls: prMissing, casualSheets: csMissing, bankAccounts: baMissing, fixedAssets: faMissing, budgets: buMissing, reconciliations: rsMissing, dry: true };
+  if (anyMissing === 0) return { vouchers: 0, journals: 0, invoices: 0, bills: 0, payments: 0, payrolls: 0, casualSheets: 0, bankAccounts: 0, fixedAssets: 0, budgets: 0, reconciliations: 0 };
+  if (!hoId) return { vouchers: vMissing, journals: jMissing, invoices: iMissing, bills: bMissing, payments: pMissing, payrolls: prMissing, casualSheets: csMissing, bankAccounts: baMissing, fixedAssets: faMissing, budgets: buMissing, reconciliations: rsMissing, skipped: 'no head office id' };
 
   const setHo = async (coll, n) => (n ? (await coll.updateMany({ branch: { $exists: false } }, { $set: { branch: hoId } })).modifiedCount : 0);
   const vMod = await setHo(vColl, vMissing);
@@ -86,7 +96,12 @@ async function backfillBranchTags(conn, hoId, { dry }) {
   const bMod = await setHo(bColl, bMissing);
   const pMod = await setHo(pColl, pMissing);
   const prMod = await setHo(prColl, prMissing);
-  return { vouchers: vMod, journals: jMod, invoices: iMod, bills: bMod, payments: pMod, payrolls: prMod };
+  const csMod = await setHo(csColl, csMissing);
+  const baMod = await setHo(baColl, baMissing);
+  const faMod = await setHo(faColl, faMissing);
+  const buMod = await setHo(buColl, buMissing);
+  const rsMod = await setHo(rsColl, rsMissing);
+  return { vouchers: vMod, journals: jMod, invoices: iMod, bills: bMod, payments: pMod, payrolls: prMod, casualSheets: csMod, bankAccounts: baMod, fixedAssets: faMod, budgets: buMod, reconciliations: rsMod };
 }
 
 // Run all steps for one already-open tenant connection.
@@ -129,9 +144,9 @@ async function run({ dry, onlyTenant }) {
       const hoNote = r.ho.created ? (dry ? 'HO would be created' : 'HO created') : 'HO present';
       const uNote = r.users.modified > 0 ? `${r.users.modified} user(s) ${dry ? 'would be set' : 'set'}` : 'users set';
       const bf = r.backfill;
-      const bTagged = (bf.vouchers||0)+(bf.journals||0)+(bf.invoices||0)+(bf.bills||0)+(bf.payments||0)+(bf.payrolls||0);
+      const bTagged = (bf.vouchers||0)+(bf.journals||0)+(bf.invoices||0)+(bf.bills||0)+(bf.payments||0)+(bf.payrolls||0)+(bf.casualSheets||0)+(bf.bankAccounts||0)+(bf.fixedAssets||0)+(bf.budgets||0)+(bf.reconciliations||0);
       const bNote = bTagged > 0
-        ? `tagged ${dry ? '(would) ' : ''}v:${bf.vouchers} j:${bf.journals} inv:${bf.invoices} bill:${bf.bills} pay:${bf.payments} pr:${bf.payrolls}`
+        ? `tagged ${dry ? '(would) ' : ''}v:${bf.vouchers} j:${bf.journals} inv:${bf.invoices} bill:${bf.bills} pay:${bf.payments} pr:${bf.payrolls} cs:${bf.casualSheets} ba:${bf.bankAccounts} fa:${bf.fixedAssets} bu:${bf.budgets} rs:${bf.reconciliations}`
         : 'records already tagged';
       console.log(`  ✓ ${tag}\n      ${hoNote}; ${uNote}; ${bNote}`);
       summary.push({ tenant: t.subdomain, ...r, ok: true });

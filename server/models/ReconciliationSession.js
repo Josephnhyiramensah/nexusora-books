@@ -29,6 +29,7 @@ const statementLineSchema = new mongoose.Schema({
 
 const reconciliationSessionSchema = new mongoose.Schema({
   sessionNumber: { type: String, required: true, unique: true },
+  branch: { type: mongoose.Schema.Types.ObjectId, ref: 'Branch' },
   source: { type: String, enum: ['momo', 'bank'], required: true },
 
   // The wallet/bank account being reconciled (a BankAccount; MoMo wallets are

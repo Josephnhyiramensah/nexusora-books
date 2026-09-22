@@ -5,8 +5,22 @@ const { validateBankFile } = require('../utils/bankStatement/bankFileGuard');
 const { parseBankStatement, previewColumns, parseWithMapping } = require('../utils/bankStatement');
 const seedContraRules = require('../utils/bankStatement/seedContraRules');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
+const { scopedFilter, resolveBranchScope } = require('../utils/branchScope');
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+// Head Office fallback so a reconciliation session / posted journal is never
+// left unbranched.
+async function headOfficeId(req) {
+  const Branch = getModel(req.tenantDb, 'Branch');
+  const ho = await Branch.findOne({ isHeadOffice: true }).select('_id').lean();
+  return ho ? ho._id : null;
+}
+async function resolveSessionBranch(req) {
+  const scope = resolveBranchScope(req);
+  if (scope.activeBranch) return scope.activeBranch;
+  return headOfficeId(req);
+}
 
 // Import a statement. The client sends the file base64-encoded in the JSON body
 // (matching how logo/letterhead uploads already work — the app doesn't use
@@ -53,6 +67,7 @@ const persistBankSession = async (req, opts) => {
     lines: freshLines,
     totalIn: r2(result.totals.totalIn), totalOut: r2(result.totals.totalOut), totalFees: r2(result.totals.totalFees || 0),
     status: 'draft', importedBy: req.user._id,
+    branch: await resolveSessionBranch(req),
   });
   await logAudit(req.tenantDb, {
     userId: req.user._id, action: 'reconcile_bank', module: 'bank',
@@ -67,7 +82,7 @@ const readerError = (res, e) => {
     return res.status(422).json({ success: false, code: e.code, message: e.message || 'This file has no readable table. Scanned or image-only documents are not supported — please provide a text-based CSV/Excel export or a text (non-scanned) PDF.' });
   }
   if (e && e.code === 'INCONSISTENT_SHEETS') {
-    return res.status(422).json({ success: false, code: e.code, message: e.message || 'This file\'s sheets have inconsistent columns (common with PDF-to-Excel conversions). Use your bank\'s native CSV/Excel export, or import the original PDF through the bank importer.' });
+    return res.status(422).json({ success: false, code: e.code, message: e.message || 'This file\'s sheets have inconsistent columns (common with PDF-to-Excel conversions). Use your bank\'s native CSV/Excel export, or import the original PDFthrough the bank importer.' });
   }
   return res.status(422).json({ success: false, message: 'Could not read file: ' + (e && e.message ? e.message : 'unknown error') });
 };
@@ -129,7 +144,7 @@ const importStatement = async (req, res) => {
                 if (p.empty) {
                   return res.status(409).json({ success: false, message: 'Every transaction in this statement has already been imported (' + p.skipped + ' duplicates skipped).' });
                 }
-                return res.json({ success: true, autoMapped: true, message: 'Imported ' + p.session.sessionNumber + ' (' + p.freshCount + ' lines) using your saved ' + saved.bankName + ' mapping.', data: p.session, skipped: p.skipped });
+                return res.json({ success: true, autoMapped: true, message: 'Imported ' + p.session.sessionNumber + ' ('+ p.freshCount + ' lines) using your saved ' + saved.bankName + ' mapping.', data: p.session, skipped: p.skipped });
               }
             }
           }
@@ -179,6 +194,7 @@ const importStatement = async (req, res) => {
       totalFees: r2(parsed.totals.totalFees || 0),
       status: 'draft',
       importedBy: req.user._id,
+      branch: await resolveSessionBranch(req),
     });
 
     await logAudit(req.tenantDb, {
@@ -303,7 +319,7 @@ const importMapped = async (req, res) => {
 const getSessions = async (req, res) => {
   try {
     const Session = getModel(req.tenantDb, 'ReconciliationSession');
-    const sessions = await Session.find({}, { lines: 0 }).sort({ createdAt: -1 }).lean();
+    const sessions = await Session.find(scopedFilter(req, {}), { lines: 0 }).sort({ createdAt: -1 }).lean();
     res.json({ success: true, data: sessions, count: sessions.length });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch sessions.' });
@@ -313,7 +329,7 @@ const getSessions = async (req, res) => {
 const getSession = async (req, res) => {
   try {
     const Session = getModel(req.tenantDb, 'ReconciliationSession');
-    const session = await Session.findById(req.params.id).lean();
+    const session = await Session.findOne(scopedFilter(req, { _id: req.params.id })).lean();
     if (!session) return res.status(404).json({ success: false, message: 'Session not found.' });
     res.json({ success: true, data: session });
   } catch (error) {
@@ -324,7 +340,7 @@ const getSession = async (req, res) => {
 const deleteSession = async (req, res) => {
   try {
     const Session = getModel(req.tenantDb, 'ReconciliationSession');
-    const session = await Session.findById(req.params.id);
+    const session = await Session.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!session) return res.status(404).json({ success: false, message: 'Session not found.' });
     if (session.status === 'reconciled') {
       return res.status(400).json({ success: false, message: 'A reconciled session cannot be deleted.' });
@@ -370,7 +386,7 @@ const postLine = async (req, res) => {
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
     const BankAccount = getModel(req.tenantDb, 'BankAccount');
 
-    const session = await Session.findById(req.params.id);
+    const session = await Session.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!session) return res.status(404).json({ success: false, message: 'Session not found.' });
 
     const line = session.lines.id(lineId);
@@ -390,7 +406,7 @@ const postLine = async (req, res) => {
     // already reflected in the running balance. Never blind-post them: require
     // an explicit category override, otherwise send them to Ignore/link.
     if (isBank && line.bucket === 'reversal' && !req.body.categoryAccountId) {
-      return res.status(400).json({ success: false, message: 'This is a reversal / returned item — no journal is posted. Ignore it, or choose an account explicitly to override.' });
+      return res.status(400).json({ success: false, message: 'This is a reversal / returned item — no journal is posted.Ignore it, or choose an account explicitly to override.' });
     }
 
     if (!categoryAccountId) {
@@ -414,7 +430,7 @@ const postLine = async (req, res) => {
       return Account.findOne({ code: '1020' });
     }
     const fixed = await resolveFixedAccount();
-    if (!fixed) return res.status(400).json({ success: false, message: isBank ? 'No bank ledger account (1020) found.' : 'No wallet account.' });
+    if (!fixed) return res.status(400).json({ success: false, message: isBank ? 'No bank ledger account (1020) found.' :'No wallet account.' });
 
     const feeAcct = await Account.findOne({ code: '6800' });
     const amount = r2(line.amount);
@@ -435,7 +451,7 @@ const postLine = async (req, res) => {
       // MoMo out (unchanged)
       jlines.push({ account: category._id, accountCode: category.code, accountName: category.name, debit: amount, credit: 0, description: line.description || line.type });
       if (fee > 0 && feeAcct) {
-        jlines.push({ account: feeAcct._id, accountCode: feeAcct.code, accountName: feeAcct.name, debit: fee, credit: 0, description: 'MoMo fee' });
+        jlines.push({ account: feeAcct._id, accountCode: feeAcct.code, accountName: feeAcct.name, debit: fee, credit: 0,description: 'MoMo fee' });
       }
       jlines.push({ account: fixed._id, accountCode: fixed.code, accountName: fixed.name, debit: 0, credit: r2(amount + fee), description: 'MoMo wallet' });
     } else {
@@ -443,7 +459,7 @@ const postLine = async (req, res) => {
       jlines.push({ account: fixed._id, accountCode: fixed.code, accountName: fixed.name, debit: amount, credit: 0, description: 'MoMo wallet' });
       jlines.push({ account: category._id, accountCode: category.code, accountName: category.name, debit: 0, credit: amount, description: line.description || line.type });
       if (fee > 0 && feeAcct) {
-        jlines.push({ account: feeAcct._id, accountCode: feeAcct.code, accountName: feeAcct.name, debit: fee, credit: 0, description: 'MoMo fee' });
+        jlines.push({ account: feeAcct._id, accountCode: feeAcct.code, accountName: feeAcct.name, debit: fee, credit: 0,description: 'MoMo fee' });
         jlines.push({ account: fixed._id, accountCode: fixed.code, accountName: fixed.name, debit: 0, credit: fee, description: 'MoMo fee deducted' });
       }
     }
@@ -459,6 +475,7 @@ const postLine = async (req, res) => {
       reference: line.externalId || session.sessionNumber,
       lines: jlines, totalDebit, totalCredit,
       status: 'posted', postedBy: req.user._id, postedAt: new Date(), createdBy: req.user._id,
+      branch: session.branch || await headOfficeId(req),
     });
 
     for (const jl of jlines) {
@@ -481,7 +498,7 @@ const postLine = async (req, res) => {
 const ignoreLine = async (req, res) => {
   try {
     const Session = getModel(req.tenantDb, 'ReconciliationSession');
-    const session = await Session.findById(req.params.id);
+    const session = await Session.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!session) return res.status(404).json({ success: false, message: 'Session not found.' });
     const line = session.lines.id(req.body.lineId);
     if (!line) return res.status(404).json({ success: false, message: 'Line not found.' });
@@ -508,7 +525,7 @@ const autoMatch = async (req, res) => {
     const Account = getModel(req.tenantDb, 'Account');
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
 
-    const session = await Session.findById(req.params.id);
+    const session = await Session.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!session) return res.status(404).json({ success: false, message: 'Session not found.' });
 
     const wallet = await Account.findOne({ code: '1015' });
@@ -546,7 +563,7 @@ const autoMatch = async (req, res) => {
         const bankSuggestion = (session.source === 'bank');
         if (bankSuggestion) {
           if (l.bucket === 'reversal') {
-            return { lineId: l._id, kind: 'reversal', note: 'Reversal / returned item — no action needed (ignore or link to original).' };
+            return { lineId: l._id, kind: 'reversal', note: 'Reversal / returned item — no action needed (ignore or linkto original).' };
           }
           if (l.suggestedContra) {
             return { lineId: l._id, kind: 'suggest',
@@ -648,7 +665,7 @@ const confirmMatch = async (req, res) => {
   try {
     const { lineId, entryId } = req.body;
     const Session = getModel(req.tenantDb, 'ReconciliationSession');
-    const session = await Session.findById(req.params.id);
+    const session = await Session.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!session) return res.status(404).json({ success: false, message: 'Session not found.' });
     const line = session.lines.id(lineId);
     if (!line) return res.status(404).json({ success: false, message: 'Line not found.' });
@@ -671,7 +688,7 @@ const reconcileSession = async (req, res) => {
     const Session = getModel(req.tenantDb, 'ReconciliationSession');
     const Account = getModel(req.tenantDb, 'Account');
 
-    const session = await Session.findById(req.params.id);
+    const session = await Session.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!session) return res.status(404).json({ success: false, message: 'Session not found.' });
 
     const lines = session.lines || [];
