@@ -1,6 +1,8 @@
 // server/controllers/dashboardController.js
 
 const { getModel } = require('../utils/getModel');
+const { scopedFilter } = require('../utils/branchScope');
+const { ledgerMovement, acctSignedBalance } = require('../utils/branchLedger');
 
 const getDashboardSummary = async (req, res) => {
   try {
@@ -12,41 +14,52 @@ const getDashboardSummary = async (req, res) => {
     const Vendor = getModel(req.tenantDb, 'Vendor');
     const ToDo = getModel(req.tenantDb, 'ToDo');
 
+    // Branch-aware balances: consolidated reads stored balance; a scoped request
+    // computes from that branch's posted journal lines.
+    const movement = await ledgerMovement(req, JournalEntry);
+
     const cashAccounts = await Account.find({ code: { $in: ['1000', '1010', '1020'] } }).lean();
-    const cashBalance = cashAccounts.reduce((s, a) => s + (a.balance || 0), 0);
+    const cashBalance = cashAccounts.reduce((s, a) => s + acctSignedBalance(a, movement), 0);
 
     const revenueAccounts = await Account.find({ type: 'revenue' }).lean();
     const expenseAccounts = await Account.find({ type: { $in: ['expense', 'cogs'] } }).lean();
-    const totalRevenue = revenueAccounts.reduce((s, a) => s + (a.balance || 0), 0);
-    const totalExpenses = expenseAccounts.reduce((s, a) => s + (a.balance || 0), 0);
+    // Revenue is credit-normal (negative signed); expenses debit-normal (positive).
+    // Present as positive magnitudes, matching the previous stored-balance output.
+    const totalRevenue = revenueAccounts.reduce((s, a) => s + Math.abs(acctSignedBalance(a, movement)), 0);
+    const totalExpenses = expenseAccounts.reduce((s, a) => s + Math.abs(acctSignedBalance(a, movement)), 0);
     const netIncome = Math.round((totalRevenue - totalExpenses) * 100) / 100;
 
     const arAccount = await Account.findOne({ code: '1100' }).lean();
     const apAccount = await Account.findOne({ code: '2000' }).lean();
+    const outstandingAR = arAccount ? Math.abs(acctSignedBalance(arAccount, movement)) : 0;
+    const outstandingAP = apAccount ? Math.abs(acctSignedBalance(apAccount, movement)) : 0;
 
-    const invoiceCount = await Invoice.countDocuments({});
-    const billCount = await Bill.countDocuments({});
-    const overdueInvoices = await Invoice.countDocuments({ status: 'overdue' });
-    const overdueBills = await Bill.countDocuments({ status: 'overdue' });
-    const draftJournals = await JournalEntry.countDocuments({ status: 'draft' });
+    // Counts + lists: scoped so a branch view only reflects its own documents.
+    const invoiceCount = await Invoice.countDocuments(scopedFilter(req, {}));
+    const billCount = await Bill.countDocuments(scopedFilter(req, {}));
+    const overdueInvoices = await Invoice.countDocuments(scopedFilter(req, { status: 'overdue' }));
+    const overdueBills = await Bill.countDocuments(scopedFilter(req, { status: 'overdue' }));
+    const draftJournals = await JournalEntry.countDocuments(scopedFilter(req, { status: 'draft' }));
+    // Customers & vendors are company-wide (shared masters) — not branch-scoped.
     const customerCount = await Customer.countDocuments({ isActive: true });
     const vendorCount = await Vendor.countDocuments({ isActive: true });
 
+    // To-dos are personal (by user), not branch-scoped.
     const pendingTodos = await ToDo.countDocuments({
       $or: [{ createdBy: req.user._id }, { assignedTo: req.user._id }],
       status: { $ne: 'completed' },
     });
 
-    const recentJournals = await JournalEntry.find({ status: 'posted' })
+    const recentJournals = await JournalEntry.find(scopedFilter(req, { status: 'posted' }))
       .sort({ postedAt: -1 }).limit(5)
       .select('entryNumber date journalType description totalDebit').lean();
 
-    const unpaidInvoices = await Invoice.find({ status: { $in: ['sent', 'partially_paid'] } })
+    const unpaidInvoices = await Invoice.find(scopedFilter(req, { status: { $in: ['sent', 'partially_paid'] } }))
       .populate('customer', 'name')
       .sort({ dueDate: 1 }).limit(5)
       .select('invoiceNumber customer dueDate total balance status').lean();
 
-    const unpaidBills = await Bill.find({ status: { $in: ['approved', 'partially_paid'] } })
+    const unpaidBills = await Bill.find(scopedFilter(req, { status: { $in: ['approved', 'partially_paid'] } }))
       .populate('vendor', 'name')
       .sort({ dueDate: 1 }).limit(5)
       .select('billNumber vendor dueDate total balance status').lean();
@@ -58,8 +71,8 @@ const getDashboardSummary = async (req, res) => {
         totalRevenue: Math.round(totalRevenue * 100) / 100,
         totalExpenses: Math.round(totalExpenses * 100) / 100,
         netIncome,
-        outstandingAR: Math.round((arAccount?.balance || 0) * 100) / 100,
-        outstandingAP: Math.round((apAccount?.balance || 0) * 100) / 100,
+        outstandingAR: Math.round(outstandingAR * 100) / 100,
+        outstandingAP: Math.round(outstandingAP * 100) / 100,
         invoiceCount, billCount, overdueInvoices, overdueBills,
         draftJournals, customerCount, vendorCount, pendingTodos,
         recentJournals, unpaidInvoices, unpaidBills,
