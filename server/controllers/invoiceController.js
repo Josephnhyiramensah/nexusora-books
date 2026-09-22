@@ -1,6 +1,20 @@
 const { getModel } = require('../utils/getModel');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
+const { scopedFilter, resolveBranchScope } = require('../utils/branchScope');
+
+// The tenant's Head Office branch id — safe default so nothing is left unbranched.
+async function headOfficeId(req) {
+  const Branch = getModel(req.tenantDb, 'Branch');
+  const ho = await Branch.findOne({ isHeadOffice: true }).select('_id').lean();
+  return ho ? ho._id : null;
+}
+// Branch to stamp a NEW invoice with: the request's active branch, else Head Office.
+async function resolveInvoiceBranch(req) {
+  const scope = resolveBranchScope(req);
+  if (scope.activeBranch) return scope.activeBranch;
+  return headOfficeId(req);
+}
 
 // Generate the next invoice number. A tenant can customise the series via
 // settings.documentNumbers.invoice = { prefix, padding, startNumber }. When no
@@ -35,9 +49,10 @@ async function generateInvoiceNumber(Invoice, cfg = {}) {
 const getInvoices = async (req, res) => {
   try {
     const Invoice = getModel(req.tenantDb, 'Invoice');
-    const filter = {};
-    if (req.query.status) filter.status = req.query.status;
-    if (req.query.customer) filter.customer = req.query.customer;
+    const base = {};
+    if (req.query.status) base.status = req.query.status;
+    if (req.query.customer) base.customer = req.query.customer;
+    const filter = scopedFilter(req, base);
     const invoices = await Invoice.find(filter).populate('createdBy', 'firstName lastName')
       .populate('customer', 'name email phone')
       .sort({ date: -1 }).lean();
@@ -51,7 +66,7 @@ const getInvoices = async (req, res) => {
 const getInvoice = async (req, res) => {
   try {
     const Invoice = getModel(req.tenantDb, 'Invoice');
-    const invoice = await Invoice.findById(req.params.id)
+    const invoice = await Invoice.findOne(scopedFilter(req, { _id: req.params.id }))
       .populate('customer', 'name email phone address taxId')
       .populate('journalEntry');
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found.' });
@@ -89,6 +104,7 @@ const createInvoice = async (req, res) => {
     const baseTaxAmount = Math.round(tax * fxRate * 100) / 100;
     const baseTotal = Math.round(total * fxRate * 100) / 100;
     const invoiceNumber = await generateInvoiceNumber(Invoice, req.tenant?.settings?.documentNumbers?.invoice);
+    const branch = await resolveInvoiceBranch(req);
 
     const invoice = await Invoice.create({
       invoiceNumber, customer, date, dueDate,
@@ -98,6 +114,7 @@ const createInvoice = async (req, res) => {
       currency: currency || '', exchangeRate: fxRate,
       baseSubtotal, baseTaxAmount, baseTotal,
       status: 'draft', notes, createdBy: req.user._id,
+      branch,
     });
 
     await logAudit(req.tenantDb, {
@@ -116,7 +133,7 @@ const createInvoice = async (req, res) => {
 const updateInvoice = async (req, res) => {
   try {
     const Invoice = getModel(req.tenantDb, 'Invoice');
-    const invoice = await Invoice.findById(req.params.id);
+    const invoice = await Invoice.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found.' });
     if (invoice.status !== 'draft') {
       return res.status(400).json({ success: false, message: 'Only draft invoices can be edited.' });
@@ -159,7 +176,7 @@ const sendInvoice = async (req, res) => {
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
     const Customer = getModel(req.tenantDb, 'Customer');
 
-    const invoice = await Invoice.findById(req.params.id);
+    const invoice = await Invoice.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found.' });
     if (invoice.status !== 'draft') {
       return res.status(400).json({ success: false, message: 'Only draft invoices can be sent.' });
@@ -168,7 +185,7 @@ const sendInvoice = async (req, res) => {
     // Maker-checker: accountant sends need approval when the tenant requires it.
     // Route to awaiting_approval WITHOUT creating the journal entry or moving
     // balances — the real posting happens on approval.
-    const needsApproval = req.tenant && req.tenant.settings && req.tenant.settings.requireApproval === true && req.user.role === 'accountant';
+    const needsApproval = req.tenant && req.tenant.settings && req.tenant.settings.requireApproval === true&& req.user.role === 'accountant';
     if (needsApproval) {
       invoice.status = 'awaiting_approval';
       await invoice.save();
@@ -216,6 +233,7 @@ const sendInvoice = async (req, res) => {
       reference: invoice.invoiceNumber, lines: journalLines,
       totalDebit: toBase(invoice.total), totalCredit: toBase(invoice.total),
       status: 'posted', postedBy: req.user._id, postedAt: new Date(), createdBy: req.user._id,
+      branch: invoice.branch || await headOfficeId(req),
     });
 
     for (const line of journalLines) {
@@ -229,7 +247,7 @@ const sendInvoice = async (req, res) => {
 
     const customer = await Customer.findById(invoice.customer);
     if (customer) {
-      customer.outstandingBalance = Math.round((customer.outstandingBalance + toBase(invoice.total)) * 100) / 100;
+      customer.outstandingBalance = Math.round((customer.outstandingBalance + toBase(invoice.total)) * 100)/ 100;
       await customer.save();
     }
 
@@ -260,12 +278,12 @@ const sendInvoice = async (req, res) => {
 const deleteInvoice = async (req, res) => {
   try {
     const Invoice = getModel(req.tenantDb, 'Invoice');
-    const invoice = await Invoice.findById(req.params.id);
+    const invoice = await Invoice.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found.' });
     if (invoice.status !== 'draft') {
       return res.status(400).json({ success: false, message: 'Only draft invoices can be deleted.' });
     }
-    await Invoice.findByIdAndDelete(req.params.id);
+    await Invoice.findByIdAndDelete(invoice._id);
     await logAudit(req.tenantDb, {
       userId: req.user._id, action: 'delete', module: 'invoices',
       entityId: invoice._id, entityType: 'Invoice',
@@ -283,7 +301,7 @@ const downloadInvoicePDF = async (req, res) => {
     const Invoice  = getModel(req.tenantDb, 'Invoice');
     const Customer = getModel(req.tenantDb, 'Customer');
 
-    const invoice = await Invoice.findById(req.params.id);
+    const invoice = await Invoice.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found.' });
 
     const customer = await Customer.findById(invoice.customer);
@@ -324,7 +342,7 @@ const markRecurring = async (req, res) => {
     if (!['weekly','monthly','quarterly','yearly'].includes(frequency)) {
       return res.status(400).json({ success: false, message: 'Valid frequency required.' });
     }
-    const invoice = await Invoice.findById(req.params.id);
+    const invoice = await Invoice.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found.' });
 
     invoice.isRecurringTemplate = true;
@@ -351,7 +369,7 @@ const markRecurring = async (req, res) => {
 const getRecurringTemplates = async (req, res) => {
   try {
     const Invoice = getModel(req.tenantDb, 'Invoice');
-    const templates = await Invoice.find({ isRecurringTemplate: true })
+    const templates = await Invoice.find(scopedFilter(req, { isRecurringTemplate: true }))
       .populate('customer', 'name').sort({ 'recurring.nextRun': 1 }).lean();
     res.json({ success: true, data: templates });
   } catch (error) {
@@ -363,7 +381,7 @@ const getRecurringTemplates = async (req, res) => {
 const stopRecurring = async (req, res) => {
   try {
     const Invoice = getModel(req.tenantDb, 'Invoice');
-    const invoice = await Invoice.findById(req.params.id);
+    const invoice = await Invoice.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found.' });
     invoice.recurring = invoice.recurring || {};
     invoice.recurring.active = false;
@@ -376,16 +394,17 @@ const stopRecurring = async (req, res) => {
 
 // The generator: find due templates and create a draft child from each. Called
 // on invoice-page load. Safe to call often — it only acts on templates whose
-// nextRun has passed, and advances nextRun so it won't double-generate.
+// nextRun has passed, and advances nextRun so it won't double-generate. A child
+// inherits its template's branch.
 const runDueRecurring = async (req, res) => {
   try {
     const Invoice = getModel(req.tenantDb, 'Invoice');
     const now = new Date();
-    const due = await Invoice.find({
+    const due = await Invoice.find(scopedFilter(req, {
       isRecurringTemplate: true,
       'recurring.active': true,
       'recurring.nextRun': { $lte: now },
-    });
+    }));
 
     const created = [];
     for (const tmpl of due) {
@@ -411,6 +430,7 @@ const runDueRecurring = async (req, res) => {
           total: tmpl.total, amountPaid: 0, balance: tmpl.total,
           status: 'draft', notes: tmpl.notes,
           generatedFrom: tmpl._id, createdBy: tmpl.createdBy,
+          branch: tmpl.branch,
         });
         created.push(child.invoiceNumber);
 
@@ -435,7 +455,7 @@ const runDueRecurring = async (req, res) => {
 const approveInvoice = async (req, res) => {
   try {
     const Invoice = getModel(req.tenantDb, 'Invoice');
-    const invoice = await Invoice.findById(req.params.id);
+    const invoice = await Invoice.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found.' });
     if (invoice.status !== 'awaiting_approval') {
       return res.status(400).json({ success: false, message: 'Only invoices awaiting approval can be approved.' });
@@ -457,7 +477,7 @@ const approveInvoice = async (req, res) => {
 const rejectInvoice = async (req, res) => {
   try {
     const Invoice = getModel(req.tenantDb, 'Invoice');
-    const invoice = await Invoice.findById(req.params.id);
+    const invoice = await Invoice.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found.' });
     if (invoice.status !== 'awaiting_approval') {
       return res.status(400).json({ success: false, message: 'Only invoices awaiting approval can be rejected.' });

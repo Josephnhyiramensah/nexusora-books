@@ -1,6 +1,7 @@
 const { getModel } = require('../utils/getModel');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
+const { scopedFilter, resolveBranchScope } = require('../utils/branchScope');
 
 // Ghana statutory payroll rates (PAYE bands + SSNIT) are resolved per-run from:
 //   tenant override (Tenant.settings.payrollRates) -> global default
@@ -10,6 +11,18 @@ const {
   calculatePAYE,
 } = require('../config/payrollRates');
 const PlatformSettings = require('../models/PlatformSettings');
+
+// Head Office fallback so a payroll run / journal is never left unbranched.
+async function headOfficeId(req) {
+  const Branch = getModel(req.tenantDb, 'Branch');
+  const ho = await Branch.findOne({ isHeadOffice: true }).select('_id').lean();
+  return ho ? ho._id : null;
+}
+async function resolvePayrollBranch(req) {
+  const scope = resolveBranchScope(req);
+  if (scope.activeBranch) return scope.activeBranch;
+  return headOfficeId(req);
+}
 
 // Load the effective rates for the tenant handling this request.
 async function loadEffectiveRates(req) {
@@ -22,7 +35,8 @@ async function loadEffectiveRates(req) {
   return resolvePayrollRates(tenantRates, globalRates);
 }
 
-// Employee CRUD
+// Employee CRUD — employees are company-wide (shared across branches), so they
+// are NOT branch-scoped here. (Per-branch staff assignment is a later feature.)
 const getEmployees = async (req, res) => {
   try {
     const Employee = getModel(req.tenantDb, 'Employee');
@@ -141,6 +155,7 @@ const runPayroll = async (req, res) => {
     const totalDeduction = r2(entries.reduce((s, e) => s + e.totalDeduction, 0));
 
     const payrollNumber = `PR-${year}-${String(month).padStart(2, '0')}`;
+    const branch = await resolvePayrollBranch(req);
 
     const payroll = await PayrollRun.create({
       payrollNumber, period: { month: Number(month), year: Number(year) },
@@ -150,6 +165,7 @@ const runPayroll = async (req, res) => {
       payeBands: rates.payeBands.map((b) => ({ upTo: Number.isFinite(b.upTo) ? b.upTo : null, rate: b.rate })),
       payeBandsLabel: rates.label,
       status: 'draft', createdBy: req.user._id,
+      branch,
     });
 
     res.status(201).json({ success: true, message: `Payroll ${payrollNumber} calculated.`, data: payroll });
@@ -162,7 +178,7 @@ const runPayroll = async (req, res) => {
 const getPayrollRuns = async (req, res) => {
   try {
     const PayrollRun = getModel(req.tenantDb, 'PayrollRun');
-    const runs = await PayrollRun.find({}).sort({ 'period.year': -1, 'period.month': -1 }).lean();
+    const runs = await PayrollRun.find(scopedFilter(req, {})).sort({ 'period.year': -1, 'period.month': -1 }).lean();
     res.json({ success: true, data: runs, count: runs.length });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch payroll runs.' });
@@ -172,7 +188,7 @@ const getPayrollRuns = async (req, res) => {
 const getPayrollRun = async (req, res) => {
   try {
     const PayrollRun = getModel(req.tenantDb, 'PayrollRun');
-    const run = await PayrollRun.findById(req.params.id).populate('entries.employee', 'employeeId firstName lastName position');
+    const run = await PayrollRun.findOne(scopedFilter(req, { _id: req.params.id })).populate('entries.employee', 'employeeId firstName lastName position');
     if (!run) return res.status(404).json({ success: false, message: 'Payroll run not found.' });
     res.json({ success: true, data: run });
   } catch (error) {
@@ -186,7 +202,7 @@ const approvePayroll = async (req, res) => {
     const Account = getModel(req.tenantDb, 'Account');
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
 
-    const payroll = await PayrollRun.findById(req.params.id);
+    const payroll = await PayrollRun.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!payroll) return res.status(404).json({ success: false, message: 'Payroll not found.' });
     if (payroll.status !== 'draft') return res.status(400).json({ success: false, message: 'Only draft payroll can be approved.' });
 
@@ -233,6 +249,7 @@ const approvePayroll = async (req, res) => {
       reference: payroll.payrollNumber, lines: journalLines,
       totalDebit, totalCredit: totalDebit,
       status: 'posted', postedBy: req.user._id, postedAt: new Date(), createdBy: req.user._id,
+      branch: payroll.branch || await headOfficeId(req),
     });
 
     for (const line of journalLines) {

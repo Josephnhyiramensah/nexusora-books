@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const fixedAssetSchema = new mongoose.Schema({
   assetCode: { type: String, required: true, unique: true },
+  branch: { type: mongoose.Schema.Types.ObjectId, ref: 'Branch' },
   description: { type: String, required: true },
   category: { type: String, enum: ['equipment', 'furniture', 'vehicle', 'property', 'other'], default: 'other' },
   location: String,

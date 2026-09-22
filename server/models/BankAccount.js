@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const bankAccountSchema = new mongoose.Schema({
   accountName: { type: String, required: true },
+  branch: { type: mongoose.Schema.Types.ObjectId, ref: 'Branch' },
   bankName: { type: String, required: true },
   accountNumber: String,
   accountType: { type: String, enum: ['checking', 'savings', 'mobile_money'], default: 'checking' },

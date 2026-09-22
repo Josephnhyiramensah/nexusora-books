@@ -23,6 +23,7 @@ const invoiceCustomFieldSchema = new mongoose.Schema({
 const invoiceSchema = new mongoose.Schema(
   {
     invoiceNumber: { type: String, required: true, unique: true },
+    branch: { type: mongoose.Schema.Types.ObjectId, ref: 'Branch' },
     customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: true },
     date: { type: Date, required: [true, 'Invoice date is required'] },
     dueDate: { type: Date, required: [true, 'Due date is required'] },

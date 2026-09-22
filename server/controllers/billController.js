@@ -2,6 +2,20 @@ const { getModel } = require('../utils/getModel');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
 const { generateBillPDF } = require('../utils/pdfGenerator');
+const { scopedFilter, resolveBranchScope } = require('../utils/branchScope');
+
+// Head Office branch id — safe default so nothing is left unbranched.
+async function headOfficeId(req) {
+  const Branch = getModel(req.tenantDb, 'Branch');
+  const ho = await Branch.findOne({ isHeadOffice: true }).select('_id').lean();
+  return ho ? ho._id : null;
+}
+// Branch to stamp a NEW bill with: request's active branch, else Head Office.
+async function resolveBillBranch(req) {
+  const scope = resolveBranchScope(req);
+  if (scope.activeBranch) return scope.activeBranch;
+  return headOfficeId(req);
+}
 
 // Generate the next bill number. A tenant can customise the series via
 // settings.documentNumbers.bill = { prefix, padding, startNumber }. With no
@@ -34,10 +48,10 @@ async function generateBillNumber(Bill, cfg = {}) {
 const getBills = async (req, res) => {
   try {
     const Bill = getModel(req.tenantDb, 'Bill');
-    const filter = {};
-    if (req.query.status) filter.status = req.query.status;
-    if (req.query.vendor) filter.vendor = req.query.vendor;
-    const bills = await Bill.find(filter).populate('vendor', 'name email phone').populate('createdBy', 'firstName lastName').sort({ date: -1 }).lean();
+    const base = {};
+    if (req.query.status) base.status = req.query.status;
+    if (req.query.vendor) base.vendor = req.query.vendor;
+    const bills = await Bill.find(scopedFilter(req, base)).populate('vendor', 'name email phone').populate('createdBy', 'firstName lastName').sort({ date: -1 }).lean();
     res.json({ success: true, data: bills, count: bills.length });
   } catch (error) {
     console.error('[Bills] getBills failed:', error.message);
@@ -48,7 +62,7 @@ const getBills = async (req, res) => {
 const getBill = async (req, res) => {
   try {
     const Bill = getModel(req.tenantDb, 'Bill');
-    const bill = await Bill.findById(req.params.id)
+    const bill = await Bill.findOne(scopedFilter(req, { _id: req.params.id }))
       .populate('vendor', 'name email phone address')
       .populate('journalEntry');
     if (!bill) return res.status(404).json({ success: false, message: 'Bill not found.' });
@@ -98,6 +112,7 @@ const createBill = async (req, res) => {
       }
     }
 
+    const branch = await resolveBillBranch(req);
     const bill = await Bill.create({
       billNumber, vendor, date, dueDate,
       lines: processedLines,
@@ -105,6 +120,7 @@ const createBill = async (req, res) => {
       total, amountPaid: 0, balance: total,
       customFields: cfSnapshot,
       status: 'draft', notes, createdBy: req.user._id,
+      branch,
     });
 
     await logAudit(req.tenantDb, {
@@ -127,7 +143,7 @@ const approveBill = async (req, res) => {
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
     const Vendor = getModel(req.tenantDb, 'Vendor');
 
-    const bill = await Bill.findById(req.params.id);
+    const bill = await Bill.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!bill) return res.status(404).json({ success: false, message: 'Bill not found.' });
     if (bill.status !== 'draft') {
       return res.status(400).json({ success: false, message: 'Only draft bills can be approved.' });
@@ -182,6 +198,7 @@ const approveBill = async (req, res) => {
       reference: bill.billNumber, lines: journalLines,
       totalDebit: bill.total, totalCredit: bill.total,
       status: 'posted', postedBy: req.user._id, postedAt: new Date(), createdBy: req.user._id,
+      branch: bill.branch || await headOfficeId(req),
     });
 
     for (const line of journalLines) {
@@ -225,12 +242,12 @@ const approveBill = async (req, res) => {
 const deleteBill = async (req, res) => {
   try {
     const Bill = getModel(req.tenantDb, 'Bill');
-    const bill = await Bill.findById(req.params.id);
+    const bill = await Bill.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!bill) return res.status(404).json({ success: false, message: 'Bill not found.' });
     if (bill.status !== 'draft') {
       return res.status(400).json({ success: false, message: 'Only draft bills can be deleted.' });
     }
-    await Bill.findByIdAndDelete(req.params.id);
+    await Bill.findByIdAndDelete(bill._id);
     await logAudit(req.tenantDb, {
       userId: req.user._id, action: 'delete', module: 'bills',
       entityId: bill._id, entityType: 'Bill',
@@ -246,7 +263,7 @@ const deleteBill = async (req, res) => {
 const confirmBill = async (req, res) => {
   try {
     const Bill = getModel(req.tenantDb, 'Bill');
-    const bill = await Bill.findById(req.params.id);
+    const bill = await Bill.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!bill) return res.status(404).json({ success: false, message: 'Bill not found.' });
     if (bill.status !== 'awaiting_approval') {
       return res.status(400).json({ success: false, message: 'Only bills awaiting approval can be confirmed.' });
@@ -268,7 +285,7 @@ const confirmBill = async (req, res) => {
 const rejectBill = async (req, res) => {
   try {
     const Bill = getModel(req.tenantDb, 'Bill');
-    const bill = await Bill.findById(req.params.id);
+    const bill = await Bill.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!bill) return res.status(404).json({ success: false, message: 'Bill not found.' });
     if (bill.status !== 'awaiting_approval') {
       return res.status(400).json({ success: false, message: 'Only bills awaiting approval can be rejected.' });
@@ -292,7 +309,7 @@ const rejectBill = async (req, res) => {
 const downloadBillPDF = async (req, res) => {
   try {
     const Bill = getModel(req.tenantDb, 'Bill');
-    const bill = await Bill.findById(req.params.id).populate('vendor', 'name email phone address taxId');
+    const bill = await Bill.findOne(scopedFilter(req, { _id: req.params.id })).populate('vendor', 'name email phone address taxId');
     if (!bill) return res.status(404).json({ success: false, message: 'Bill not found.' });
 
     const tenantSettings = req.tenant?.settings || {};

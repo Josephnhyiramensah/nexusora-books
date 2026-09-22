@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const casualPaymentSheetSchema = new mongoose.Schema({
   sheetNumber: { type: String, required: true, unique: true },
+  branch: { type: mongoose.Schema.Types.ObjectId, ref: 'Branch' },
   title: { type: String, trim: true },
   periodLabel: { type: String, trim: true },
   date: { type: Date, default: Date.now },

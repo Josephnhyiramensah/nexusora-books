@@ -3,6 +3,14 @@
 const { getModel } = require('../utils/getModel');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
+const { scopedFilter } = require('../utils/branchScope');
+
+// Head Office fallback so a payment/journal is never left unbranched.
+async function headOfficeId(req) {
+  const Branch = getModel(req.tenantDb, 'Branch');
+  const ho = await Branch.findOne({ isHeadOffice: true }).select('_id').lean();
+  return ho ? ho._id : null;
+}
 
 // Generate the next payment number. A tenant can customise the series via
 // settings.documentNumbers.payment = { prefix, padding, startNumber }. With no
@@ -35,9 +43,9 @@ async function generatePaymentNumber(Payment, cfg = {}) {
 const getPayments = async (req, res) => {
   try {
     const Payment = getModel(req.tenantDb, 'Payment');
-    const filter = {};
-    if (req.query.type) filter.type = req.query.type;
-    const payments = await Payment.find(filter).populate('createdBy', 'firstName lastName')
+    const base = {};
+    if (req.query.type) base.type = req.query.type;
+    const payments = await Payment.find(scopedFilter(req, base)).populate('createdBy', 'firstName lastName')
       .populate('customer', 'name')
       .populate('vendor', 'name')
       .populate('invoice', 'invoiceNumber')
@@ -52,7 +60,7 @@ const getPayments = async (req, res) => {
 const getPayment = async (req, res) => {
   try {
     const Payment = getModel(req.tenantDb, 'Payment');
-    const payment = await Payment.findById(req.params.id)
+    const payment = await Payment.findOne(scopedFilter(req, { _id: req.params.id }))
       .populate('customer').populate('vendor')
       .populate('invoice').populate('bill').populate('journalEntry');
     if (!payment) return res.status(404).json({ success: false, message: 'Payment not found.' });
@@ -64,7 +72,8 @@ const getPayment = async (req, res) => {
 
 /**
  * POST /api/payments/receive
- * Receive payment against invoice: DR Cash/Bank, CR Accounts Receivable
+ * Receive payment against invoice: DR Cash/Bank, CR Accounts Receivable.
+ * The payment and its journal inherit the INVOICE's branch.
  */
 const receivePayment = async (req, res) => {
   try {
@@ -80,7 +89,7 @@ const receivePayment = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Required: invoiceId, amount, date.' });
     }
 
-    const invoice = await Invoice.findById(invoiceId);
+    const invoice = await Invoice.findOne(scopedFilter(req, { _id: invoiceId }));
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found.' });
     if (['draft', 'paid', 'cancelled'].includes(invoice.status)) {
       return res.status(400).json({ success: false, message: `Cannot receive payment for a ${invoice.status} invoice.` });
@@ -100,6 +109,8 @@ const receivePayment = async (req, res) => {
     if (!cashAccount || !arAccount) {
       return res.status(500).json({ success: false, message: 'Cash or AR account not found.' });
     }
+
+    const branch = invoice.branch || await headOfficeId(req);
 
     // Create journal: DR Cash, CR AR
     const journalLines = [
@@ -125,6 +136,7 @@ const receivePayment = async (req, res) => {
       status: 'posted',
       postedBy: req.user._id, postedAt: new Date(),
       createdBy: req.user._id,
+      branch,
     });
 
     // Update account balances
@@ -159,6 +171,7 @@ const receivePayment = async (req, res) => {
       reference, notes,
       journalEntry: journalEntry._id,
       createdBy: req.user._id,
+      branch,
     });
 
     await logAudit(req.tenantDb, {
@@ -180,7 +193,8 @@ const receivePayment = async (req, res) => {
 
 /**
  * POST /api/payments/make
- * Make payment against bill: DR Accounts Payable, CR Cash/Bank
+ * Make payment against bill: DR Accounts Payable, CR Cash/Bank.
+ * The payment and its journal inherit the BILL's branch.
  */
 const makePayment = async (req, res) => {
   try {
@@ -196,7 +210,7 @@ const makePayment = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Required: billId, amount, date.' });
     }
 
-    const bill = await Bill.findById(billId);
+    const bill = await Bill.findOne(scopedFilter(req, { _id: billId }));
     if (!bill) return res.status(404).json({ success: false, message: 'Bill not found.' });
     if (['draft', 'paid', 'cancelled'].includes(bill.status)) {
       return res.status(400).json({ success: false, message: `Cannot pay a ${bill.status} bill.` });
@@ -215,6 +229,8 @@ const makePayment = async (req, res) => {
     if (!cashAccount || !apAccount) {
       return res.status(500).json({ success: false, message: 'Cash or AP account not found.' });
     }
+
+    const branch = bill.branch || await headOfficeId(req);
 
     // DR Accounts Payable, CR Cash
     const journalLines = [
@@ -240,6 +256,7 @@ const makePayment = async (req, res) => {
       status: 'posted',
       postedBy: req.user._id, postedAt: new Date(),
       createdBy: req.user._id,
+      branch,
     });
 
     for (const line of journalLines) {
@@ -270,6 +287,7 @@ const makePayment = async (req, res) => {
       reference, notes,
       journalEntry: journalEntry._id,
       createdBy: req.user._id,
+      branch,
     });
 
     await logAudit(req.tenantDb, {
