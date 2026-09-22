@@ -1,79 +1,22 @@
-const { getModel } = require('../utils/getModel');
-const { logAudit } = require('../middleware/auditMiddleware');
-const { scopedFilter, resolveBranchScope } = require('../utils/branchScope');
+const mongoose = require('mongoose');
 
-async function headOfficeId(req) {
-  const Branch = getModel(req.tenantDb, 'Branch');
-  const ho = await Branch.findOne({ isHeadOffice: true }).select('_id').lean();
-  return ho ? ho._id : null;
-}
-async function resolveBudgetBranch(req) {
-  const scope = resolveBranchScope(req);
-  if (scope.activeBranch) return scope.activeBranch;
-  return headOfficeId(req);
-}
+const budgetSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  fiscalYear: { type: Number, required: true },
+ branch: { type: mongoose.Schema.Types.ObjectId, ref: 'Branch' },
+  status: { type: String, enum: ['draft', 'approved', 'active', 'closed'], default: 'draft' },
+  lines: [{
+    account: { type: mongoose.Schema.Types.ObjectId, ref: 'Account' },
+    accountCode: String, accountName: String,
+    monthlyAmounts: {
+      jan: Number, feb: Number, mar: Number, apr: Number,
+      may: Number, jun: Number, jul: Number, aug: Number,
+      sep: Number, oct: Number, nov: Number, dec: Number,
+    },
+    annualTotal: Number,
+  }],
+  approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+}, { timestamps: true });
 
-const getBudgets = async (req, res) => {
-  try {
-    const Budget = getModel(req.tenantDb, 'Budget');
-    const budgets = await Budget.find(scopedFilter(req, {})).sort({ fiscalYear: -1 }).lean();
-    res.json({ success: true, data: budgets, count: budgets.length });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to fetch budgets.' });
-  }
-};
-
-const getBudget = async (req, res) => {
-  try {
-    const Budget = getModel(req.tenantDb, 'Budget');
-    const budget = await Budget.findOne(scopedFilter(req, { _id: req.params.id }));
-    if (!budget) return res.status(404).json({ success: false, message: 'Budget not found.' });
-    res.json({ success: true, data: budget });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to fetch budget.' });
-  }
-};
-
-const createBudget = async (req, res) => {
-  try {
-    const Budget = getModel(req.tenantDb, 'Budget');
-    const { name, fiscalYear, lines } = req.body;
-
-    if (!name || !fiscalYear) return res.status(400).json({ success: false, message: 'Name and fiscal year required.' });
-
-    const processedLines = (lines || []).map((l) => {
-      const months = l.monthlyAmounts || {};
-      const annualTotal = Object.values(months).reduce((s, v) => s + (Number(v) || 0), 0);
-      return { ...l, monthlyAmounts: months, annualTotal: Math.round(annualTotal * 100) / 100 };
-    });
-
-    const branch = await resolveBudgetBranch(req);
-    const budget = await Budget.create({
-      name, fiscalYear: Number(fiscalYear), lines: processedLines,
-      status: 'draft', createdBy: req.user._id,
-      branch,
-    });
-
-    res.status(201).json({ success: true, message: 'Budget created.', data: budget });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to create budget.' });
-  }
-};
-
-const approveBudget = async (req, res) => {
-  try {
-    const Budget = getModel(req.tenantDb, 'Budget');
-    const budget = await Budget.findOne(scopedFilter(req, { _id: req.params.id }));
-    if (!budget) return res.status(404).json({ success: false, message: 'Budget not found.' });
-
-    budget.status = 'approved';
-    budget.approvedBy = req.user._id;
-    await budget.save();
-
-    res.json({ success: true, message: 'Budget approved.', data: budget });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to approve budget.' });
-  }
-};
-
-module.exports = { getBudgets, getBudget, createBudget, approveBudget };
+module.exports = budgetSchema;
