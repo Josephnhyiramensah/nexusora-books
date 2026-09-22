@@ -47,6 +47,11 @@ if (decoded.tenantId && req.tenant && decoded.tenantId !== req.tenant.subdomain)
       // Grants layered on top of the role. Without this line allow() reads
       // undefined and every explicit permission fails closed.
       permissions: Array.isArray(user.permissions) ? user.permissions : [],
+      // Multi-branch access. Carried onto req.user so the branch-scoping layer
+      // can read it directly. Missing branchAccess defaults to 'all' (full
+      // visibility) — backward compatible with users/sessions predating branches.
+      branchAccess: user.branchAccess || 'all',
+      branches: Array.isArray(user.branches) ? user.branches : [],
       fullName: `${user.firstName} ${user.lastName}`,
     },
   };

@@ -41,6 +41,24 @@ const userSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+
+    // ─── Multi-branch access ──────────────────────────────────────────────────
+    // Which branches this user may see. 'all' = every branch (head-office view,
+    // can consolidate); 'specific' = only the branches listed in `branches`.
+    // Defaults to 'all' so existing users keep full visibility until an admin
+    // deliberately restricts them — turning on branches never silently removes
+    // anyone's access. The scoping layer treats a missing value as 'all' too.
+    branchAccess: {
+      type: String,
+      enum: ['all', 'specific'],
+      default: 'all',
+    },
+    // Only consulted when branchAccess === 'specific'.
+    branches: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Branch' }],
+      default: [],
+    },
+
     phone: { type: String, trim: true },
     isActive: { type: Boolean, default: true },
     lastLogin: Date,

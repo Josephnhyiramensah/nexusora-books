@@ -4,11 +4,37 @@
 // Creating a voucher stores a draft; POSTING it generates a balanced
 // JournalEntry (validated debits == credits) and links the two, so vouchers
 // flow into every report and the audit trail with one source of truth.
+//
+// MULTI-BRANCH: a voucher is stamped with a branch at CREATE time. When it is
+// later POSTED (possibly by a different user), the JournalEntry inherits the
+// VOUCHER's branch — never the poster's — so a branch's ledger always matches
+// its vouchers. Reads filter through scopedFilter so a branch-scoped user only
+// sees their branch; a full-access user (or any request without an X-Branch
+// header) sees everything, exactly as before. Branch is pure metadata — it does
+// not touch a single debit, credit, or how the entry posts.
 
 const { getModel } = require('../utils/getModel');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { validateDoubleEntry, generateEntryNumber } = require('../utils/accountingHelpers');
 const { generateVoucherNumber, journalTypeForVoucher } = require('../utils/voucherHelpers');
+const { scopedFilter, resolveBranchScope } = require('../utils/branchScope');
+
+// The tenant's Head Office branch id — the safe default so a voucher is never
+// left unbranched (single-branch companies always resolve to this).
+async function headOfficeId(req) {
+  const Branch = getModel(req.tenantDb, 'Branch');
+  const ho = await Branch.findOne({ isHeadOffice: true }).select('_id').lean();
+  return ho ? ho._id : null;
+}
+
+// The branch to stamp a NEW voucher with: the request's active branch (from the
+// user's scope / X-Branch header), else the Head Office. A full-access user who
+// doesn't narrow to a branch creates under Head Office.
+async function resolveVoucherBranch(req) {
+  const scope = resolveBranchScope(req);
+  if (scope.activeBranch) return scope.activeBranch;
+  return headOfficeId(req);
+}
 
 // Build the 2-line "simple" voucher lines from a single debit + credit account.
 function simpleLines({ debitAccount, creditAccount, amount, narration }) {
@@ -35,9 +61,12 @@ const getVouchers = async (req, res) => {
   try {
     const Voucher = getModel(req.tenantDb, 'Voucher');
     const { type, status, limit = 50, page = 1 } = req.query;
-    const filter = {};
-    if (type) filter.voucherType = type;
-    if (status) filter.status = status;
+    const base = {};
+    if (type) base.voucherType = type;
+    if (status) base.status = status;
+    // Branch scope: no-op for a full-access request (sees all); restricts to the
+    // caller's branch(es) when scoped.
+    const filter = scopedFilter(req, base);
     const vouchers = await Voucher.find(filter)
       .sort({ date: -1, createdAt: -1 })
       .skip((page - 1) * Number(limit))
@@ -54,7 +83,7 @@ const getVouchers = async (req, res) => {
 const getVoucher = async (req, res) => {
   try {
     const Voucher = getModel(req.tenantDb, 'Voucher');
-    const voucher = await Voucher.findById(req.params.id)
+    const voucher = await Voucher.findOne(scopedFilter(req, { _id: req.params.id }))
       .populate('customer', 'name email phone')
       .populate('vendor', 'name email phone')
       .populate('journalEntry')
@@ -109,7 +138,7 @@ const createVoucher = async (req, res) => {
     if (vatEnabled && Number(vatRate) > 0 && debitAccount && creditAccount) {
       const Account2 = getModel(req.tenantDb, 'Account');
       const vatAcct = await Account2.findOne({ code: '2410' });
-      const grand = Number(amount) || (validation && validation.totalDebit) || 0;
+      const grand = Number(amount) || 0;
       // grand = net + net*rate  => net = grand / (1 + rate/100)
       const rate = Number(vatRate) / 100;
       const net = Math.round((grand / (1 + rate)) * 100) / 100;
@@ -156,6 +185,7 @@ const createVoucher = async (req, res) => {
 
     const voucherNumber = await generateVoucherNumber(Voucher, voucherType);
     const computedAmount = amount != null ? Number(amount) : validation.totalDebit;
+    const branch = await resolveVoucherBranch(req);
 
     const voucher = await Voucher.create({
       voucherNumber, voucherType, date, narration, reference,
@@ -172,6 +202,7 @@ const createVoucher = async (req, res) => {
       lines: enriched,
       totalDebit: validation.totalDebit, totalCredit: validation.totalCredit,
       status: 'draft', createdBy: req.user._id,
+      branch,
     });
 
     await logAudit(req.tenantDb, {
@@ -197,7 +228,7 @@ const postVoucher = async (req, res) => {
     const Voucher = getModel(req.tenantDb, 'Voucher');
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
 
-    const voucher = await Voucher.findById(req.params.id);
+    const voucher = await Voucher.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!voucher) return res.status(404).json({ success: false, message: 'Voucher not found.' });
     if (voucher.status === 'posted') {
       return res.status(400).json({ success: false, message: 'Voucher is already posted.' });
@@ -212,6 +243,10 @@ const postVoucher = async (req, res) => {
       return res.status(400).json({ success: false, message: validation.error });
     }
 
+    // The journal inherits the VOUCHER's branch (not the poster's), falling back
+    // to Head Office only for a legacy draft created before branches existed.
+    const branch = voucher.branch || await headOfficeId(req);
+
     // Generate the balanced JournalEntry through the existing engine.
     const entryNumber = await generateEntryNumber(JournalEntry);
     const entry = await JournalEntry.create({
@@ -223,6 +258,7 @@ const postVoucher = async (req, res) => {
       lines: voucher.lines,
       totalDebit: validation.totalDebit, totalCredit: validation.totalCredit,
       status: 'posted', createdBy: req.user._id,
+      branch,
     });
 
     voucher.status = 'posted';
@@ -236,7 +272,7 @@ const postVoucher = async (req, res) => {
       newData: { voucherNumber: voucher.voucherNumber, entryNumber, amount: voucher.amount },
     }, req);
 
-    res.json({ success: true, message: `Voucher ${voucher.voucherNumber} posted. Journal ${entryNumber} created.`, data: voucher });
+    res.json({ success: true, message: `Voucher ${voucher.voucherNumber} posted. Journal ${entryNumber} created.`, data:voucher });
   } catch (error) {
     console.error('[Vouchers] Post error:', error.message);
     res.status(500).json({ success: false, message: 'Failed to post voucher.' });
@@ -246,13 +282,13 @@ const postVoucher = async (req, res) => {
 // ─── Reverse ─────────────────────────────────────────────────────────────────
 // Reverses the linked JournalEntry by creating an opposite entry, and marks the
 // voucher reversed. Mirrors the journal reversal pattern (never silent-edits a
-// posted entry).
+// posted entry). The reversing entry keeps the same branch as the original.
 const reverseVoucher = async (req, res) => {
   try {
     const Voucher = getModel(req.tenantDb, 'Voucher');
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
 
-    const voucher = await Voucher.findById(req.params.id);
+    const voucher = await Voucher.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!voucher) return res.status(404).json({ success: false, message: 'Voucher not found.' });
     if (voucher.status !== 'posted') {
       return res.status(400).json({ success: false, message: 'Only a posted voucher can be reversed.' });
@@ -272,6 +308,7 @@ const reverseVoucher = async (req, res) => {
       reference: voucher.voucherNumber, lines: reversedLines,
       totalDebit: original.totalCredit, totalCredit: original.totalDebit,
       status: 'posted', createdBy: req.user._id,
+      branch: voucher.branch || original.branch || await headOfficeId(req),
     });
 
     voucher.status = 'reversed';
@@ -294,7 +331,7 @@ const reverseVoucher = async (req, res) => {
 const deleteVoucher = async (req, res) => {
   try {
     const Voucher = getModel(req.tenantDb, 'Voucher');
-    const voucher = await Voucher.findById(req.params.id);
+    const voucher = await Voucher.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!voucher) return res.status(404).json({ success: false, message: 'Voucher not found.' });
     if (voucher.status !== 'draft') {
       return res.status(400).json({ success: false, message: 'Only draft vouchers can be deleted. Post-and-reverse to cancel a posted voucher.' });
@@ -315,7 +352,7 @@ const deleteVoucher = async (req, res) => {
 const addAttachment = async (req, res) => {
   try {
     const Voucher = getModel(req.tenantDb, 'Voucher');
-    const voucher = await Voucher.findById(req.params.id);
+    const voucher = await Voucher.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!voucher) return res.status(404).json({ success: false, message: 'Voucher not found.' });
     const { url, publicId, filename, resourceType } = req.body;
     if (!url) return res.status(400).json({ success: false, message: 'No document url provided.' });
@@ -337,7 +374,7 @@ const addAttachment = async (req, res) => {
 const removeAttachment = async (req, res) => {
   try {
     const Voucher = getModel(req.tenantDb, 'Voucher');
-    const voucher = await Voucher.findById(req.params.id);
+    const voucher = await Voucher.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!voucher) return res.status(404).json({ success: false, message: 'Voucher not found.' });
     const before = voucher.attachments.length;
     voucher.attachments = voucher.attachments.filter((a) => String(a._id) !== String(req.params.attachmentId));

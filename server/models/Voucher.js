@@ -26,6 +26,7 @@ const voucherLineSchema = new mongoose.Schema({
 const voucherSchema = new mongoose.Schema(
   {
     voucherNumber: { type: String, required: true, unique: true },
+    branch: { type: mongoose.Schema.Types.ObjectId, ref: 'Branch' },
 
     voucherType: {
       type: String,

@@ -33,6 +33,10 @@ const journalEntrySchema = new mongoose.Schema(
     },
     description: String,
     reference: String,
+        // Branch this entry belongs to — inherited from its source voucher. Used for
+    // per-branch balances and scoped reads. Back-filled to Head Office.
+    branch: { type: mongoose.Schema.Types.ObjectId, ref: 'Branch' },
+    
     lines: {
       type: [journalLineSchema],
       validate: {
