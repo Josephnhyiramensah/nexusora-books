@@ -2,6 +2,8 @@ const { getModel } = require('../utils/getModel');
 const Tenant = require('../models/Tenant');
 const { effectivePermissions, can } = require('../utils/aiAccess');
 const { buildAIContext } = require('../utils/aiContext');
+const { ledgerMovement, acctSignedBalance } = require('../utils/branchLedger');
+const { scopedFilter } = require('../utils/branchScope');
 
 // ─── Identity & System Prompt ────────────────────────────────────────────────
 const NEXUSORA_ASSISTANT_IDENTITY = `You are the **Nexusora Account Assistant** — an intelligent AI accounting assistant embedded exclusively in Nexusora Books, a professional multi-tenant SaaS accounting management system built for Ghanaian businesses.
@@ -101,9 +103,8 @@ const chat = async (req, res) => {
 
     // Load ONLY what this user may see. Anything else is never fetched, so it
     // never reaches the model -- no phrasing or injected instruction can extract
-    // it. Previously the assistant was merely TOLD to withhold data it could
-    // already read, and in fact received no company data at all.
-    const { context, withheld } = await buildAIContext(req.user, req.tenantDb, tenant);
+    // it. req is threaded through so the data is also branch-scoped.
+    const { context, withheld } = await buildAIContext(req.user, req.tenantDb, tenant, req);
 
     const securityContext = [
       '**CURRENT SESSION:**',
@@ -158,6 +159,10 @@ const generateReport = async (req, res) => {
 
     const { reportType } = req.body;
     const Account = getModel(req.tenantDb, 'Account');
+    const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
+    // Branch-aware balances: consolidated → stored; scoped → ledger tally.
+    const movement = await ledgerMovement(req, JournalEntry);
+    const bal = (a) => acctSignedBalance(a, movement);
 
     let reportData = {};
     let reportName = '';
@@ -166,11 +171,11 @@ const generateReport = async (req, res) => {
       reportName = 'Profit & Loss';
       const revenue = await Account.find({ type: 'revenue', isActive: true }).lean();
       const expenses = await Account.find({ type: { $in: ['expense', 'cogs'] }, isActive: true }).lean();
-      const totalRevenue = revenue.reduce((s, a) => s + Math.abs(a.balance || 0), 0);
-      const totalExpenses = expenses.reduce((s, a) => s + Math.abs(a.balance || 0), 0);
+      const totalRevenue = revenue.reduce((s, a) => s + Math.abs(bal(a)), 0);
+      const totalExpenses = expenses.reduce((s, a) => s + Math.abs(bal(a)), 0);
       reportData = {
-        revenue: revenue.map((a) => ({ code: a.code, name: a.name, balance: a.balance || 0 })),
-        expenses: expenses.map((a) => ({ code: a.code, name: a.name, balance: a.balance || 0 })),
+        revenue: revenue.map((a) => ({ code: a.code, name: a.name, balance: bal(a) })),
+        expenses: expenses.map((a) => ({ code: a.code, name: a.name, balance: bal(a) })),
         totalRevenue, totalExpenses, netIncome: totalRevenue - totalExpenses,
         currency: 'GHS',
       };
@@ -180,9 +185,9 @@ const generateReport = async (req, res) => {
       const liabilities = await Account.find({ type: 'liability', isActive: true }).lean();
       const equity = await Account.find({ type: 'equity', isActive: true }).lean();
       reportData = {
-        totalAssets: assets.reduce((s, a) => s + Math.abs(a.balance || 0), 0),
-        totalLiabilities: liabilities.reduce((s, a) => s + Math.abs(a.balance || 0), 0),
-        totalEquity: equity.reduce((s, a) => s + Math.abs(a.balance || 0), 0),
+        totalAssets: assets.reduce((s, a) => s + Math.abs(bal(a)), 0),
+        totalLiabilities: liabilities.reduce((s, a) => s + Math.abs(bal(a)), 0),
+        totalEquity: equity.reduce((s, a) => s + Math.abs(bal(a)), 0),
         currency: 'GHS',
       };
     } else if (reportType === 'cash_position') {
@@ -191,10 +196,10 @@ const generateReport = async (req, res) => {
       const arAccount = await Account.findOne({ code: '1100' }).lean();
       const apAccount = await Account.findOne({ code: '2000' }).lean();
       reportData = {
-        cashAccounts: cashAccounts.map((a) => ({ code: a.code, name: a.name, balance: a.balance || 0 })),
-        totalCash: cashAccounts.reduce((s, a) => s + (a.balance || 0), 0),
-        accountsReceivable: arAccount?.balance || 0,
-        accountsPayable: apAccount?.balance || 0,
+        cashAccounts: cashAccounts.map((a) => ({ code: a.code, name: a.name, balance: bal(a) })),
+        totalCash: cashAccounts.reduce((s, a) => s + bal(a), 0),
+        accountsReceivable: arAccount ? bal(arAccount) : 0,
+        accountsPayable: apAccount ? bal(apAccount) : 0,
         currency: 'GHS',
       };
     }
@@ -230,21 +235,26 @@ const detectAnomalies = async (req, res) => {
     const Account = getModel(req.tenantDb, 'Account');
     const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
-    const entries = await JournalEntry.find({ status: 'posted', date: { $gte: ninetyDaysAgo } })
+    const entries = await JournalEntry.find(scopedFilter(req, { status: 'posted', date: { $gte: ninetyDaysAgo } }))
       .sort({ date: -1 }).limit(100).lean();
 
     if (entries.length === 0) {
       return res.json({ success: true, data: { anomalies: [], summary: 'No transactions in the last 90 days to analyse.', transactionsAnalysed: 0 } });
     }
 
-    const accounts = await Account.find({ balance: { $ne: 0 } }).select('code name type balance').lean();
+    // Branch-aware balances for the account summary.
+    const movement = await ledgerMovement(req, JournalEntry);
+    const allAccounts = await Account.find({}).select('code name type normalBalance balance').lean();
+    const accounts = allAccounts
+      .map((a) => ({ ...a, _bal: acctSignedBalance(a, movement) }))
+      .filter((a) => Math.abs(a._bal) > 0.005);
     const summary = entries.map((e) => ({
       number: e.entryNumber, date: e.date?.toISOString().split('T')[0],
       type: e.journalType, description: e.description, amount: e.totalDebit,
       lines: e.lines?.map((l) => `${l.accountCode} DR:${l.debit} CR:${l.credit}`).join('; '),
     }));
 
-    const balanceSummary = accounts.map((a) => `${a.code} ${a.name} (${a.type}): GHS ${a.balance}`).join('\n');
+    const balanceSummary = accounts.map((a) => `${a.code} ${a.name} (${a.type}): GHS ${a._bal}`).join('\n');
 
     const systemPrompt = NEXUSORA_ASSISTANT_IDENTITY + '\n\nYou are performing forensic audit analysis for a Ghanaian business. Analyse these transactions for: unusual amounts, duplicates, vague descriptions, unusual account combinations, round-number patterns, bulk entries. Respond in JSON only (no backticks): {"anomalies": [{"severity": "high|medium|low", "type": "string", "entry": "string", "description": "string", "recommendation": "string"}], "summary": "string"}';
 
@@ -321,14 +331,15 @@ const forecastCashFlow = async (req, res) => {
     const Bill = getModel(req.tenantDb, 'Bill');
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
 
+    const movement = await ledgerMovement(req, JournalEntry);
     const cashAccounts = await Account.find({ code: { $in: ['1000', '1010', '1020'] } }).lean();
-    const currentCash = cashAccounts.reduce((s, a) => s + (a.balance || 0), 0);
+    const currentCash = cashAccounts.reduce((s, a) => s + acctSignedBalance(a, movement), 0);
 
-    const unpaidInvoices = await Invoice.find({ status: { $in: ['sent', 'partially_paid'] } }).select('balance dueDate').lean();
-    const unpaidBills = await Bill.find({ status: { $in: ['approved', 'partially_paid'] } }).select('balance dueDate').lean();
+    const unpaidInvoices = await Invoice.find(scopedFilter(req, { status: { $in: ['sent', 'partially_paid'] } })).select('balance dueDate').lean();
+    const unpaidBills = await Bill.find(scopedFilter(req, { status: { $in: ['approved', 'partially_paid'] } })).select('balance dueDate').lean();
 
     const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
-    const entries = await JournalEntry.find({ status: 'posted', date: { $gte: sixtyDaysAgo } }).lean();
+    const entries = await JournalEntry.find(scopedFilter(req, { status: 'posted', date: { $gte: sixtyDaysAgo } })).lean();
     const cashIds = cashAccounts.map((a) => a._id.toString());
     let inflows = 0, outflows = 0;
     for (const e of entries) {
