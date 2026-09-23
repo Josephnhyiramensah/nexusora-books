@@ -64,6 +64,17 @@ api.interceptors.request.use(
       config.headers['X-Tenant-ID'] = subdomain;
     }
 
+    // Multi-branch: attach the selected branch so the server scopes data to it.
+    // 'all' / absent → no header → consolidated view. The key must match
+    // BranchContext's BRANCH_STORAGE_KEY ('active_branch'). Read directly here to
+    // avoid an import cycle with the context (which imports this api instance).
+    try {
+      const activeBranch = localStorage.getItem('active_branch');
+      if (activeBranch && activeBranch !== 'all') {
+        config.headers['X-Branch'] = activeBranch;
+      }
+    } catch { /* localStorage unavailable — behave as consolidated */ }
+
     return config;
   },
   (error) => Promise.reject(error)

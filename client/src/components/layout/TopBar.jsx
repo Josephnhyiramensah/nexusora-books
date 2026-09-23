@@ -8,6 +8,7 @@ import { useBreakpoint } from '../../hooks/useBreakpoint';
 import GlobalSearch from './GlobalSearch';
 import NotificationBell from './NotificationBell';
 import nexusoraLogo from '../../assets/nexusora-logo.png';
+import BranchSwitcher from './BranchSwitcher';
 
 export default function TopBar({ onMenuToggle }) {
   const { user, logout } = useAuth();
@@ -91,7 +92,7 @@ export default function TopBar({ onMenuToggle }) {
           }
         </div>
 
-        {/* Company name — hidden on small mobile */}
+                {/* Company name — hidden on small mobile */}
         {!isMobile && (
           <div>
             <div style={{ fontFamily: 'var(--font-heading)', fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
@@ -100,8 +101,9 @@ export default function TopBar({ onMenuToggle }) {
             <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Nexusora Books</div>
           </div>
         )}
-      </div>
 
+        <BranchSwitcher compact={isMobile} />
+      </div>
       {/* Centre: Global Search — hidden on small mobile */}
       {!isMobile && <GlobalSearch />}
 

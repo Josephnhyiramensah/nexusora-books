@@ -10,7 +10,7 @@ import AuditLogPage from './modules/audit/AuditLogPage';
 import { FiRefreshCw, FiShield, FiGlobe, FiCode, FiLink, FiEdit3, FiGitBranch } from 'react-icons/fi';
 
 import FinancialAnalyticsPage from './modules/accounts/FinancialAnalyticsPage';
-
+import { BranchProvider } from './context/BranchContext';
 
 // Icons
 import {
@@ -171,6 +171,7 @@ export default function App() {
       <TenantProvider>
         <TenantTitle />
         <AuthProvider>
+          <BranchProvider>
           <Routes>
 
             {/* ── Public ── */}
@@ -342,6 +343,7 @@ export default function App() {
               <Route path="/settings/integrations" element={<SettingsPage />} />
               <Route path="/settings/whitelabel"   element={<SettingsPage />} />
               <Route path="/settings/branches"     element={<SettingsPage />} />
+            
             </Route>
             {/* Audit Log */}
 <Route element={<ProtectedRoute permission="audit.view" roles={['super_admin','admin']}><ModuleShell moduleTitle="Audit Log" sidebarItems={[{ path: '/audit', label: 'Audit Trail', icon: FiShield, exact: true }]} /></ProtectedRoute>}>
@@ -377,6 +379,7 @@ export default function App() {
             } />
 
           </Routes>
+          </BranchProvider>
         </AuthProvider>
       </TenantProvider>
     </BrowserRouter>
