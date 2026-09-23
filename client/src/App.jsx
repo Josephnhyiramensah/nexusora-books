@@ -7,8 +7,7 @@ import LoginPage from './pages/LoginPage';
 import HomeScreen from './pages/HomeScreen';
 import ModuleShell from './components/layout/ModuleShell';
 import AuditLogPage from './modules/audit/AuditLogPage';
-import { FiRefreshCw, FiShield , FiGlobe, FiCode, FiLink, FiEdit3, FiGitBranch
-} from 'react-icons/fi';
+import { FiRefreshCw, FiShield, FiGlobe, FiCode, FiLink, FiEdit3, FiGitBranch } from 'react-icons/fi';
 
 import FinancialAnalyticsPage from './modules/accounts/FinancialAnalyticsPage';
 
