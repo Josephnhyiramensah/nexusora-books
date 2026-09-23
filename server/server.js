@@ -203,7 +203,7 @@ app.use('/api/users',            tm, es,   userRoutes);
 app.use('/api/accounts',         tm, es,   accountRoutes);
 app.use('/api/journals',         tm, es,   journalRoutes);
 app.use('/api/vouchers',         tm, es,   voucherRoutes);
-app.use('/api/branches',        tm, es,   branchRoutes);
+app.use('/api/branches',         tm, es,   branchRoutes);
 app.use('/api/external-mappings', tm, es,   externalMappingRoutes);
 app.use('/api/customers',        tm, es,   customerRoutes);
 app.use('/api/vendors',          tm, es,   vendorRoutes);
