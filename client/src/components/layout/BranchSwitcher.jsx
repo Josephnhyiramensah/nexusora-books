@@ -1,17 +1,24 @@
 // client/src/components/layout/BranchSwitcher.jsx
 //
-// Compact top-bar dropdown to choose the active branch. Sits next to the company
-// name. Hidden when there's only the Head Office (nothing to switch) — so single-
-// branch companies never see it. Selecting a branch stores it (via BranchContext)
-// and reloads the current view's data through the X-Branch header.
+// Compact top-bar dropdown to choose the active branch. VISIBILITY FOLLOWS THE
+// USER'S OWN ACCESS, not the company's total branch count:
+//   • branchAccess 'all'                  → every active branch (head office).
+//   • branchAccess 'specific', 2+ branches → only those branches (regional view),
+//                                            plus a "My branches (combined)" roll-up.
+//   • branchAccess 'specific', 1 branch    → NOTHING renders — a branch staffer is
+//                                            silently locked to their branch.
+// The server is the real gate (a restricted user's requests are scoped/refused
+// regardless). This just stops showing a control they can't use.
 
 import { useState, useRef, useEffect } from 'react';
 import { FiChevronDown, FiCheck } from 'react-icons/fi';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useBranch } from '../../context/BranchContext';
+import { useAuth } from '../../context/AuthContext';
 
 export default function BranchSwitcher({ compact }) {
   const { branches, activeBranch, setActiveBranch } = useBranch();
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -21,22 +28,34 @@ export default function BranchSwitcher({ compact }) {
     return () => document.removeEventListener('mousedown', onDoc);
   }, []);
 
-  // Only offer branches that are active (plus keep whatever is currently selected
-  // visible even if it was just deactivated, so the label stays coherent).
-  const selectable = branches.filter((b) => b.isActive || String(b._id) === String(activeBranch));
+  // What this user is allowed to see. Missing field → treat as 'all' (legacy).
+  const access = user?.branchAccess || 'all';
+  const allowedIds = new Set((user?.branches || []).map(String));
 
-  // Nothing to switch between — a lone Head Office. Render nothing.
-  if (selectable.length <= 1) return null;
+  // The branches this user may actually view.
+  //   'all'      → every active branch
+  //   'specific' → only their allowed ones (kept even if just deactivated so the
+  //                current selection still resolves to a label)
+  const visible = access === 'specific'
+    ? branches.filter((b) => allowedIds.has(String(b._id)))
+    : branches.filter((b) => b.isActive || String(b._id) === String(activeBranch));
+
+  // A user who can see 0 or 1 branch has nothing to switch — render nothing.
+  if (visible.length <= 1) return null;
+
+  // 'all'-access users get a true "All branches" consolidated option. Restricted
+  // users get "My branches (combined)" — a roll-up of only the branches they hold.
+  const allLabel = access === 'specific'
+    ? { name: 'My branches', code: 'MINE' }
+    : { name: 'All branches', code: 'ALL' };
 
   const current = activeBranch === 'all'
-    ? { name: 'All branches', code: 'ALL' }
-    : (branches.find((b) => String(b._id) === String(activeBranch)) || { name: 'All branches', code: 'ALL' });
+    ? allLabel
+    : (visible.find((b) => String(b._id) === String(activeBranch)) || allLabel);
 
   const choose = (id) => {
     setActiveBranch(id);
     setOpen(false);
-    // Reload so every open page re-fetches with the new X-Branch header. Simpler
-    // and more reliable than threading a refetch through every screen.
     window.location.reload();
   };
 
@@ -83,27 +102,24 @@ export default function BranchSwitcher({ compact }) {
           >
             <p style={{ fontSize: 11, color: 'var(--text-muted)', padding: '6px 16px 4px', margin: 0 }}>View branch</p>
 
-            {/* All branches (consolidated) */}
-            <button onClick={() => choose('all')}
-              style={rowStyle(activeBranch === 'all')}>
+            {/* Combined view — all (head office) or "my branches" (regional). */}
+            <button onClick={() => choose('all')} style={rowStyle(activeBranch === 'all')}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={codeTag}>ALL</span>
-                <span style={{ fontSize: 14 }}>All branches</span>
+                <span style={codeTag}>{allLabel.code}</span>
+                <span style={{ fontSize: 14 }}>{allLabel.name}</span>
               </span>
               {activeBranch === 'all' && <FiCheck size={15} style={{ color: 'var(--success)' }} />}
             </button>
 
             <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
 
-            {selectable.map((b) => {
+            {visible.map((b) => {
               const isSel = String(b._id) === String(activeBranch);
               return (
                 <button key={b._id} onClick={() => choose(b._id)} style={rowStyle(isSel)}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                     <span style={codeTag}>{b.code}</span>
-                    <span style={{ fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {b.name}{b.isHeadOffice ? '' : ''}
-                    </span>
+                    <span style={{ fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
                   </span>
                   {isSel && <FiCheck size={15} style={{ color: 'var(--success)', flexShrink: 0 }} />}
                 </button>

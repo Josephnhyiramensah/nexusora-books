@@ -350,6 +350,8 @@ const getMe = async (req, res) => {
           lastLogin: user.lastLogin,
           twoFactorEnabled: user.twoFactorEnabled,
           permissions: user.permissions || [],
+           branchAccess: user.branchAccess || 'all',
+          branches: user.branches || [],
           createdAt: user.createdAt,
         },
         tenant: req.tenant,
