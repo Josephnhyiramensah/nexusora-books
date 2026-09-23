@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { protect, authorise } = require('../middleware/authMiddleware');
-const { getUsers, createUser, updateUser, deactivateUser, unlockUser, updatePermissions } = require('../controllers/userController');
+const { getUsers, createUser, updateUser, deactivateUser, unlockUser, updatePermissions, updateBranchAccess } = require('../controllers/userController');
 const { PERMISSIONS } = require('../config/permissions');
 
 router.use(protect);
@@ -19,5 +19,6 @@ router.put('/:id', updateUser);
 router.patch('/:id/toggle-active', deactivateUser);
 router.post('/:id/unlock', unlockUser);
 router.put('/:id/permissions', updatePermissions);
+router.put('/:id/branch-access', updateBranchAccess);
 
 module.exports = router;

@@ -240,4 +240,59 @@ const updatePermissions = async (req, res) => {
   }
 };
 
-module.exports = { getUsers, createUser, updateUser, deactivateUser, unlockUser, updatePermissions };
+/**
+ * PUT /api/users/:id/branch-access   body: { branchAccess: 'all'|'specific', branches: [branchId] }
+ *
+ * Sets which branches a user may see. 'all' = every branch (head-office view);
+ * 'specific' = only the branch ids listed (which are validated to exist). A
+ * 'specific' user with no branches would see nothing, so that is rejected.
+ * Admin-only (enforced on the route) and always audited — this is access control.
+ */
+const updateBranchAccess = async (req, res) => {
+  try {
+    const { branchAccess } = req.body;
+    let { branches } = req.body;
+
+    if (!['all', 'specific'].includes(branchAccess)) {
+      return res.status(400).json({ success: false, message: "branchAccess must be 'all' or 'specific'." });
+    }
+    if (!Array.isArray(branches)) branches = [];
+
+    const User = getModel(req.tenantDb, 'User');
+    const Branch = getModel(req.tenantDb, 'Branch');
+
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
+
+    let nextBranches = [];
+    if (branchAccess === 'specific') {
+      // Validate every id is a real branch in this tenant.
+      const found = await Branch.find({ _id: { $in: branches } }).select('_id').lean();
+      const validIds = found.map((b) => String(b._id));
+      nextBranches = branches.map(String).filter((id) => validIds.includes(id));
+      if (nextBranches.length === 0) {
+        return res.status(400).json({ success: false, message: 'Select at least one branch, or choose "All branches".' });
+      }
+    }
+
+    const prev = { branchAccess: user.branchAccess, branches: (user.branches || []).map(String) };
+    user.branchAccess = branchAccess;
+    user.branches = branchAccess === 'specific' ? nextBranches : [];
+    await user.save({ validateBeforeSave: false });
+
+    await logAudit(req.tenantDb, {
+      userId: req.user._id, action: 'update', module: 'settings',
+      entityId: user._id, entityType: 'User',
+      description: `Branch access for ${user.email}: ${branchAccess === 'all' ? 'all branches' : nextBranches.length + ' branch(es)'}`,
+      previousData: prev,
+      newData: { branchAccess: user.branchAccess, branches: user.branches.map(String) },
+    }, req);
+
+    res.json({ success: true, message: 'Branch access updated.', data: { _id: user._id, branchAccess: user.branchAccess, branches: user.branches } });
+  } catch (error) {
+    console.error('[Users] Branch access update error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to update branch access.' });
+  }
+};
+
+module.exports = { getUsers, createUser, updateUser, deactivateUser, unlockUser, updatePermissions, updateBranchAccess };

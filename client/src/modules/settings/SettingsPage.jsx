@@ -23,6 +23,7 @@ import { useNavigate } from 'react-router-dom';
 import { FiEdit3 } from 'react-icons/fi';   // if not already imported
 import { FiDollarSign } from 'react-icons/fi';
 import PermissionsPanel from './PermissionsPanel';
+import BranchAccessPanel from './BranchAccessPanel';
 import BranchesTab from './BranchesTab';
 // ---------- Styles ----------
 const styles = {
@@ -871,17 +872,24 @@ function UsersTab({
         </form>
 
         {editingUser && (
-          <PermissionsPanel
-            user={editingUser}
-            showToast={showToast}
-            onSaved={async () => {
-              // Refetch so the modal (and the table) reflect what the server now
-              // holds — without this the checkboxes reopen showing stale values.
-              if (fetchUsers) await fetchUsers();
-              setUserModalOpen(false);
-              setEditingUser(null);
-            }}
-          />
+          <>
+            <PermissionsPanel
+              user={editingUser}
+              showToast={showToast}
+              onSaved={async () => {
+                // Refetch so the modal (and the table) reflect what the server now
+                // holds — without this the checkboxes reopen showing stale values.
+                if (fetchUsers) await fetchUsers();
+                setUserModalOpen(false);
+                setEditingUser(null);
+              }}
+            />
+            <BranchAccessPanel
+              user={editingUser}
+              showToast={showToast}
+              onSaved={async () => { if (fetchUsers) await fetchUsers(); }}
+            />
+          </>
         )}
       </Modal>
     </div>
