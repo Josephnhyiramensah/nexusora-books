@@ -23,6 +23,7 @@ import { useNavigate } from 'react-router-dom';
 import { FiEdit3 } from 'react-icons/fi';   // if not already imported
 import { FiDollarSign } from 'react-icons/fi';
 import PermissionsPanel from './PermissionsPanel';
+import BranchesTab from './BranchesTab';
 // ---------- Styles ----------
 const styles = {
   heading: {
@@ -1379,6 +1380,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
     '/settings/users': 'users', '/settings/security': 'security',
     '/settings/payroll-rates': 'payrollRates', '/settings/api': 'api',
     '/settings/integrations': 'integrations', '/settings/whitelabel': 'whitelabel',
+    '/settings/branches': 'branches',
   };
   useEffect(() => {
     const t = PATH_TO_TAB[location.pathname];
@@ -1650,7 +1652,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
       </div>
 
       {activeTab === 'profile' && <ProfileTab user={user} plan={plan} />}
-
+      {activeTab === 'branches' && isAdmin && <BranchesTab />}
       {activeTab === 'company' && (
         <CompanyTab
           companyName={companyName}
