@@ -18,5 +18,5 @@ const { initializePaymentRules } = require('../validators/paymentValidators');
 router.get('/verify/:reference', verifyPayment);                          // no tm — post-redirect, no subdomain
 router.post('/initialize', tenantMiddleware, protect, initializePaymentRules, validate, initializePayment); // tm so protect can resolve the user; validated body
 router.get('/status/:subdomain', getSubscriptionStatus);                  // identifies tenant from param
-
+router.get('/pricing/:subdomain', getPricing);
 module.exports = router;

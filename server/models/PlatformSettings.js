@@ -23,11 +23,14 @@ const platformSettingsSchema = new mongoose.Schema({
     fromName: { type: String, default: 'Nexusora Books' },
   },
 
-  subscription: {
+   subscription: {
     trialDays:        { type: Number, default: 30 },
     starterPrice:     { type: Number, default: 300 },
     professionalPrice:{ type: Number, default: 990 },
     enterprisePrice:  { type: Number, default: 2400 },
+    starterBranchPrice:     { type: Number, default: 200 },
+    professionalBranchPrice:{ type: Number, default: 500 },
+    enterpriseBranchPrice:  { type: Number, default: 1000 },
     currency:         { type: String, default: 'GHS' },
     paystackEnabled:  { type: Boolean, default: true },
   },

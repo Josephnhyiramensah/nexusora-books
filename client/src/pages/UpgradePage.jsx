@@ -7,20 +7,20 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../hooks/useToast';
 import api from '../services/api';
 
+// Plan metadata only — PRICES come from the backend (/payment/pricing), which
+// reads the console values and folds in this company's branch fee. No prices are
+// hardcoded here anymore, so a console price change is reflected immediately.
 const PLANS = [
   {
     key: 'starter', name: 'Starter', color: '#2563EB',
-    prices: { monthly: 300, semi_annual: 1500, annual: 2700 },
     features: ['5 user accounts', '2 accountants', 'All core modules', 'Inventory & fixed assets', 'Payroll (PAYE + SSNIT)', 'Email support'],
   },
   {
     key: 'professional', name: 'Professional', color: '#C9A227', popular: true,
-    prices: { monthly: 990, semi_annual: 4950, annual: 8910 },
     features: ['20 user accounts', '5 accountants', 'Everything in Starter', 'AI Anomaly Detection', 'AI Cash Flow Forecast', 'Smart Categorisation', 'Priority support'],
   },
   {
     key: 'enterprise', name: 'Enterprise', color: '#1A3560',
-    prices: { monthly: 2400, semi_annual: 12000, annual: 21600 },
     features: ['Unlimited users', 'Unlimited accountants', 'Everything in Professional', 'API access', 'White-label option', 'Dedicated support'],
   },
 ];
@@ -32,7 +32,7 @@ const CYCLES = [
 ];
 
 export default function UpgradePage() {
-  const { companyName, subdomain, plan: currentPlan, settings } = useTenant();
+  const { companyName, subdomain, plan: currentPlan } = useTenant();
   const { user } = useAuth();
   const navigate = useNavigate();
   const { showToast, ToastComponent } = useToast();
@@ -40,50 +40,47 @@ export default function UpgradePage() {
   const [billingCycle, setBillingCycle] = useState('monthly');
   const [loading, setLoading] = useState('');
   const [subStatus, setSubStatus] = useState(null);
+  const [pricing, setPricing] = useState(null); // { plans:{starter:{monthly,...,perBranchMonthly}}, extraBranches, isFree }
 
   useEffect(() => {
-    const fetchStatus = async () => {
+    if (!subdomain) return;
+    (async () => {
       try {
-        const { data } = await api.get(`/payment/status/${subdomain}`);
-        if (data.success) setSubStatus(data.data);
+        const [status, price] = await Promise.all([
+          api.get(`/payment/status/${subdomain}`),
+          api.get(`/payment/pricing/${subdomain}`),
+        ]);
+        if (status.data.success) setSubStatus(status.data.data);
+        if (price.data.success) setPricing(price.data.data);
       } catch {}
-    };
-    if (subdomain) fetchStatus();
+    })();
   }, [subdomain]);
 
   const handleUpgrade = async (planKey) => {
     if (!user?.email) { showToast('Cannot find your email. Please log out and back in.', 'error'); return; }
-
     setLoading(planKey);
     try {
       const { data } = await api.post('/payment/initialize', {
-        plan: planKey,
-        billingCycle,
-        email: user.email,
-        subdomain,
+        plan: planKey, billingCycle, email: user.email, subdomain,
       });
-
-      if (data.success) {
-        // Redirect to Paystack payment page
-        window.location.href = data.data.authorization_url;
-      }
+      if (data.success) window.location.href = data.data.authorization_url;
     } catch (err) {
       showToast(err.response?.data?.message || 'Payment initialisation failed', 'error');
     } finally { setLoading(''); }
   };
+
+  const extraBranches = pricing?.extraBranches || 0;
 
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0f2240, #1A3560)', padding: '32px 24px' }}>
       {ToastComponent}
 
       <div style={{ maxWidth: 960, margin: '0 auto' }}>
-        {/* Back */}
         <motion.button onClick={() => navigate('/home')} whileHover={{ x: -4 }}
           style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'rgba(255,255,255,0.6)', fontSize: 14, background: 'none', border: 'none', cursor: 'pointer', marginBottom: 32 }}>
           <FiArrowLeft size={16} /> Back to Dashboard
         </motion.button>
 
-        {/* Current Status Banner */}
         {subStatus && (
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
             style={{
@@ -108,7 +105,6 @@ export default function UpgradePage() {
           </motion.div>
         )}
 
-        {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: 40 }}>
           <h1 style={{ fontFamily: 'Poppins, sans-serif', fontSize: 32, fontWeight: 800, color: '#fff', marginBottom: 12 }}>
             {currentPlan === 'trial' ? 'Upgrade Your Plan' : 'Manage Subscription'}
@@ -118,7 +114,15 @@ export default function UpgradePage() {
           </p>
         </div>
 
-        {/* Billing Cycle Toggle */}
+        {/* Branch note — only when this company runs extra branches */}
+        {extraBranches > 0 && !pricing?.isFree && (
+          <div style={{ textAlign: 'center', marginBottom: 20 }}>
+            <span style={{ display: 'inline-block', background: 'rgba(201,162,39,0.18)', border: '1px solid rgba(201,162,39,0.35)', color: '#F5D77A', fontSize: 13, fontWeight: 600, borderRadius: 20, padding: '6px 16px' }}>
+              Prices include your {extraBranches} extra branch{extraBranches !== 1 ? 'es' : ''} (head office is free)
+            </span>
+          </div>
+        )}
+
         <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 36 }}>
           {CYCLES.map((c) => (
             <motion.button key={c.key} onClick={() => setBillingCycle(c.key)}
@@ -127,8 +131,7 @@ export default function UpgradePage() {
                 padding: '10px 20px', borderRadius: 10,
                 background: billingCycle === c.key ? '#C9A227' : 'rgba(255,255,255,0.1)',
                 color: billingCycle === c.key ? '#1A3560' : '#fff',
-                border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                position: 'relative',
+                border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer', position: 'relative',
               }}>
               {c.label}
               {c.discount && billingCycle === c.key && (
@@ -140,11 +143,13 @@ export default function UpgradePage() {
           ))}
         </div>
 
-        {/* Plan Cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20, marginBottom: 40 }}>
           {PLANS.map((plan) => {
             const isCurrent = currentPlan === plan.key;
-            const price = plan.prices[billingCycle];
+            const planPricing = pricing?.plans?.[plan.key];
+            const price = planPricing ? planPricing[billingCycle] : null;
+            const perBranchMonthly = planPricing?.perBranchMonthly || 0;
+            const baseMonthly = planPricing?.baseMonthly || 0;
             return (
               <motion.div key={plan.key}
                 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
@@ -168,16 +173,24 @@ export default function UpgradePage() {
                 <div style={{ marginBottom: 20 }}>
                   <p style={{ fontSize: 11, fontWeight: 700, color: plan.color, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>{plan.name}</p>
                   <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, marginBottom: 4 }}>
-                    <span style={{ fontSize: 34, fontWeight: 800, color: '#1A3560' }}>GHS {price.toLocaleString()}</span>
+                    <span style={{ fontSize: 34, fontWeight: 800, color: '#1A3560' }}>
+                      {price != null ? `GHS ${price.toLocaleString()}` : '—'}
+                    </span>
                   </div>
                   <p style={{ fontSize: 13, color: '#9CA3AF' }}>
                     {billingCycle === 'monthly' ? 'per month' : billingCycle === 'semi_annual' ? 'every 6 months' : 'per year'}
-                    {billingCycle !== 'monthly' && (
+                    {price != null && billingCycle !== 'monthly' && (
                       <span style={{ color: '#16A34A', fontWeight: 600, marginLeft: 6 }}>
                         (GHS {Math.round(price / (billingCycle === 'semi_annual' ? 6 : 12)).toLocaleString()}/mo)
                       </span>
                     )}
                   </p>
+                  {/* Branch line — shows the split when this company has extra branches */}
+                  {extraBranches > 0 && !pricing?.isFree && perBranchMonthly > 0 && (
+                    <p style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>
+                      GHS {baseMonthly.toLocaleString()}/mo base + {extraBranches} × GHS {perBranchMonthly.toLocaleString()} branch
+                    </p>
+                  )}
                 </div>
 
                 <div style={{ marginBottom: 24 }}>
@@ -214,7 +227,6 @@ export default function UpgradePage() {
           })}
         </div>
 
-        {/* Trust signals */}
         <div style={{ display: 'flex', justifyContent: 'center', gap: 32, flexWrap: 'wrap' }}>
           {['🔒 Secured by Paystack', '🇬🇭 Ghana Cedis (GHS)', '📧 24/7 Email Support', '🔄 Cancel anytime'].map((item, i) => (
             <span key={i} style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>{item}</span>
