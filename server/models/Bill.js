@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 
 const billLineSchema = new mongoose.Schema({
   description: { type: String, required: true },
+  item: { type: mongoose.Schema.Types.ObjectId, ref: 'InventoryItem', default: null },
   quantity: { type: Number, required: true, min: 0 },
   unitPrice: { type: Number, required: true, min: 0 },
   amount: { type: Number },

@@ -26,7 +26,7 @@ const exchangeRateSchema = require('../models/ExchangeRate');
 const bankContraRuleSchema = require('../models/BankContraRule');
 const bankColumnMappingSchema = require('../models/BankColumnMapping');
 const branchSchema = require('../models/Branch');
-
+const stockMovementSchema = require('../models/StockMovement');
 
 const schemas = {
   User: userSchema, Account: accountSchema, AuditLog: auditLogSchema,
@@ -47,6 +47,7 @@ const schemas = {
   BankContraRule: bankContraRuleSchema,
   BankColumnMapping: bankColumnMappingSchema,
   Branch: branchSchema,
+  StockMovement: stockMovementSchema
 };
 
 function getModel(tenantDb, modelName, schema) {
