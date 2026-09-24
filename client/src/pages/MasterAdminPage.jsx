@@ -8,6 +8,7 @@ import nexusoraLogo from '../assets/nexusora-logo.png';
 import axios from 'axios';
 import api from '../services/api';
 import { clearSettingsCache } from '../services/platformService';
+import ChartSyncPanel from './ChartSyncPanel';
 
 const PLATFORM_TOKEN_KEY = 'platformToken';
 
@@ -78,7 +79,7 @@ function CompanyInfoSettings() {
       {saved && <div style={{ padding: '12px 18px', background: '#D1FAE5', borderRadius: 10, color: '#065F46', fontSize: 14, fontWeight: 600, marginBottom: 20 }}>✅ Saved. Changes are now live.</div>}
 
       <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid #E2E8F0', flexWrap: 'wrap' }}>
-        {[{ key: 'company', label: '🏢 Contact Info' }, { key: 'subscription', label: '💰 Pricing' }, { key: 'branding', label: '🎨 Branding' }, { key: 'smtp', label: '📧 SMTP' }, { key: 'payroll', label: '🧮 Payroll Rates' }].map((t) => (
+      {[{ key: 'company', label: '🏢 Contact Info' }, { key: 'subscription', label: '💰 Pricing' }, { key: 'branding', label: '🎨 Branding' }, { key: 'smtp', label: '📧 SMTP' }, { key: 'payroll', label: '🧮 Payroll Rates' }, { key: 'chartsync', label: '🧮 Chart Sync' }].map((t) => (
           <button key={t.key} onClick={() => setSettingsTab(t.key)} style={{ padding: '8px 16px', fontSize: 13, fontWeight: settingsTab === t.key ? 600 : 400, color: settingsTab === t.key ? '#1A3560' : '#9CA3AF', borderBottom: settingsTab === t.key ? '2px solid #C9A227' : '2px solid transparent', background: 'transparent', border: 'none', cursor: 'pointer', marginBottom: -1 }}>{t.label}</button>
         ))}
       </div>
@@ -171,6 +172,7 @@ function CompanyInfoSettings() {
             </div>
       )}
 
+      {settingsTab === 'chartsync' && <ChartSyncPanel platformApi={platformApi} />}
       <div style={{ marginTop: 24 }}>
         <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} onClick={handleSave} disabled={saving}
           style={{ padding: '12px 32px', borderRadius: 10, background: saving ? '#9CA3AF' : 'linear-gradient(135deg, #C9A227, #e0b930)', color: '#1A3560', fontSize: 14, fontWeight: 700, border: 'none', cursor: saving ? 'not-allowed' : 'pointer' }}>
