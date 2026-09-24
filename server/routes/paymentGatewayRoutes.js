@@ -8,6 +8,7 @@ const {
   initializePayment,
   verifyPayment,
   getSubscriptionStatus,
+  getPricing,
 } = require('../controllers/paymentGatewayController');
 const tenantMiddleware = require('../middleware/tenantMiddleware');
 const validate = require('../middleware/validate');
