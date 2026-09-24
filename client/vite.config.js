@@ -49,6 +49,27 @@ export default defineConfig({
       devOptions: { enabled: false },
     }),
   ],
+  build: {
+    // Code-splitting: break the big vendor libraries into their own chunks so the
+    // browser loads them in parallel and caches them across deploys (they change
+    // far less often than app code). This shrinks the main bundle and speeds up
+    // first load — especially on slower mobile connections.
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // React core — rarely changes, cached long-term.
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          // Animation library — sizeable, used widely but changes rarely.
+          'motion-vendor': ['framer-motion'],
+          // Icons — large set, pulled in across many pages.
+          'icons-vendor': ['react-icons'],
+        },
+      },
+    },
+    // The largest chunk (a vendor bundle) is legitimately over 500 kB; lift the
+    // warning ceiling so a green build isn't cluttered by an expected notice.
+    chunkSizeWarningLimit: 900,
+  },
   server: {
     port: 5173,
     host: true,

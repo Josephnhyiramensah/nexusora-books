@@ -27,8 +27,8 @@ const getHealth = () => {
   // that dropped, so we count only the truly-connected ones.
   let liveTenants = 0;
   try {
-    for (const conn of tenantConnections.values()) {
-      if (conn.readyState === 1) liveTenants += 1;
+    for (const { conn } of tenantConnections.values()) {
+      if (conn && conn.readyState === 1) liveTenants += 1;
     }
   } catch { /* map unavailable — leave at 0 */ }
 
