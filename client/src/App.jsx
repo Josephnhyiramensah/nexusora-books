@@ -136,6 +136,7 @@ const settingsSidebar = [
   { path: '/settings/integrations', label: 'Integrations',         icon: FiLink,        adminOnly: true },
   { path: '/settings/whitelabel',   label: 'White-label',          icon: FiEdit3,       adminOnly: true },
   { path: '/settings/branches',     label: 'Branches',             icon: FiGitBranch,   adminOnly: true },
+  { path: '/settings/chart-maintenance', label: 'Chart Maintenance', icon: FiRefreshCw, adminOnly: true },
 ];
 
 const g = (path, label) => [{ path, label: `All ${label}`, icon: FiList, exact: true }];
@@ -343,7 +344,7 @@ export default function App() {
               <Route path="/settings/integrations" element={<SettingsPage />} />
               <Route path="/settings/whitelabel"   element={<SettingsPage />} />
               <Route path="/settings/branches"     element={<SettingsPage />} />
-            
+              <Route path="/settings/chart-maintenance" element={<SettingsPage />} />
             </Route>
             {/* Audit Log */}
 <Route element={<ProtectedRoute permission="audit.view" roles={['super_admin','admin']}><ModuleShell moduleTitle="Audit Log" sidebarItems={[{ path: '/audit', label: 'Audit Trail', icon: FiShield, exact: true }]} /></ProtectedRoute>}>

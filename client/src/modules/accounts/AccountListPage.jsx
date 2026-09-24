@@ -10,17 +10,6 @@ import Modal from '../../components/common/Modal';
 import AccountForm from './AccountForm';
 
 export default function AccountListPage() {
-  const [syncing, setSyncing] = useState(false);
-  const handleSyncChart = async () => {
-    if (!window.confirm('Add any missing standard accounts to this company\'s chart? Existing accounts and balances are not changed.')) return;
-    setSyncing(true);
-    try {
-      const { data } = await api.post('/accounts/sync-chart');
-      if (data.success) { alert(data.message); window.location.reload(); }
-      else alert(data.message || 'Sync failed');
-    } catch (err) { alert(err.response?.data?.message || 'Sync failed'); }
-    finally { setSyncing(false); }
-  };
   const [accounts, setAccounts] = useState([]);
   const [treeData, setTreeData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -107,13 +96,6 @@ export default function AccountListPage() {
             {accounts.length} accounts
           </p>
         </div>
-        <button onClick={handleSyncChart} disabled={syncing} title="Add any missing standard accounts" style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', marginRight: 10,
-          borderRadius: 8, border: '1px solid var(--border, #D1D5DB)', background: 'transparent',
-          fontSize: 14, fontWeight: 600, cursor: 'pointer', color: 'var(--text-secondary, #374151)',
-        }}>
-          {syncing ? 'Updating…' : 'Update Chart'}
-        </button>
         <button onClick={openCreate} style={{
           display: 'flex', alignItems: 'center', gap: 8,
           padding: '10px 20px', background: 'var(--nexusora-gold)',

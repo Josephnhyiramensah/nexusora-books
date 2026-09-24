@@ -26,6 +26,7 @@ import { FiDollarSign } from 'react-icons/fi';
 import PermissionsPanel from './PermissionsPanel';
 import BranchAccessPanel from './BranchAccessPanel';
 import BranchesTab from './BranchesTab';
+import ChartMaintenanceTab from './ChartMaintenanceTab';
 // ---------- Styles ----------
 const styles = {
   heading: {
@@ -1390,6 +1391,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
     '/settings/payroll-rates': 'payrollRates', '/settings/api': 'api',
     '/settings/integrations': 'integrations', '/settings/whitelabel': 'whitelabel',
     '/settings/branches': 'branches',
+    '/settings/chart-maintenance': 'chartMaintenance',
   };
   useEffect(() => {
     const t = PATH_TO_TAB[location.pathname];
@@ -1662,13 +1664,14 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
 
       {activeTab === 'profile' && <ProfileTab user={user} plan={plan} />}
 
-        {['company','api','whitelabel','users','payrollRates','integrations','branches'].includes(activeTab) && !isAdmin && (
+        {['company','api','whitelabel','users','payrollRates','integrations','branches','chartMaintenance'].includes(activeTab) && !isAdmin && (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
           You don't have access to this section. Contact your administrator.
         </div>
       )}
       
       {activeTab === 'branches' && isAdmin && <BranchesTab />}
+      {activeTab === 'chartMaintenance' && isAdmin && <ChartMaintenanceTab />}
       {activeTab === 'company' && isAdmin && (
         <CompanyTab
           companyName={companyName}
