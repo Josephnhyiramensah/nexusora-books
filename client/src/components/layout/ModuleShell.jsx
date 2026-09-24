@@ -6,11 +6,13 @@ import TopBar from './TopBar';
 import ModuleSidebar from './ModuleSidebar';
 import MobileDrawer from './MobileDrawer';
 import { useTenant } from '../../context/TenantContext';
+import { useAuth } from '../../context/AuthContext';
 import { useBreakpoint } from '../../hooks/useBreakpoint';
 import api from '../../services/api';
 
 export default function ModuleShell({ moduleTitle, sidebarItems }) {
   const { subdomain } = useTenant();
+  const { user } = useAuth();
   const { isMobile, isTablet } = useBreakpoint();
   const navigate = useNavigate();
 
@@ -25,6 +27,14 @@ export default function ModuleShell({ moduleTitle, sidebarItems }) {
   const [paywallDismissed, setPaywallDismissed] = useState(false);
 
   const showMobileNav = isMobile || isTablet;
+
+  // Role-gate sidebar items. An item marked { adminOnly: true } is hidden from
+  // anyone who isn't an admin/super_admin — so a branch staffer never sees links
+  // to company-level settings (Company, API Keys, White-label, Users, etc.).
+  // This is defence-in-depth alongside the page-level guards; the server is the
+  // real authority on writes.
+  const isAdmin = ['super_admin', 'admin'].includes(user?.role);
+  const visibleItems = (sidebarItems || []).filter((i) => !i.adminOnly || isAdmin);
 
   useEffect(() => {
     if (!subdomain) return;
@@ -68,7 +78,7 @@ export default function ModuleShell({ moduleTitle, sidebarItems }) {
           animate={{ x: 0, opacity: 1 }}
           transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
         >
-          <ModuleSidebar moduleTitle={moduleTitle} items={sidebarItems} />
+          <ModuleSidebar moduleTitle={moduleTitle} items={visibleItems} />
         </motion.div>
       )}
 
@@ -78,7 +88,7 @@ export default function ModuleShell({ moduleTitle, sidebarItems }) {
           isOpen={drawerOpen}
           onClose={() => setDrawerOpen(false)}
           moduleTitle={moduleTitle}
-          items={sidebarItems}
+          items={visibleItems}
         />
       )}
 
@@ -159,7 +169,7 @@ export default function ModuleShell({ moduleTitle, sidebarItems }) {
             }}
           >
             <span style={{ fontSize: isMobile ? 12 : 13 }}>
-              ⏰ {daysLeft === 0 ? 'Trial expired.' : `Trial expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}.`}
+              ⏰ {daysLeft === 0 ? 'Trial expired.' : `Trial expires in ${daysLeft} day${daysLeft !== 1 ? 's' :''}.`}
               {!isMobile && ' Upgrade now to keep access.'}
             </span>
             <motion.button

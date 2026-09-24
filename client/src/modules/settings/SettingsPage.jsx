@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import {
-  FiUser,
+import { FiUser, 
   FiShield,
-  FiGlobe,
-  FiUsers,
-  FiPlus,
+   FiGlobe,
+   FiUsers, 
+  FiPlus, 
   FiEdit2,
-  FiToggleLeft,
+   FiToggleLeft, 
   FiToggleRight,
-} from 'react-icons/fi';
+   FiUnlock
+
+ } from 'react-icons/fi';
 import { useAuth } from '../../context/AuthContext';
 import PayrollRatesEditor from './PayrollRatesEditor';
 import ExternalMappingPage from '../integrations/ExternalMappingPage';
@@ -1660,8 +1661,15 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
       </div>
 
       {activeTab === 'profile' && <ProfileTab user={user} plan={plan} />}
+
+        {['company','api','whitelabel','users','payrollRates','integrations','branches'].includes(activeTab) && !isAdmin && (
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+          You don't have access to this section. Contact your administrator.
+        </div>
+      )}
+      
       {activeTab === 'branches' && isAdmin && <BranchesTab />}
-      {activeTab === 'company' && (
+      {activeTab === 'company' && isAdmin && (
         <CompanyTab
           companyName={companyName}
           subdomain={subdomain}
@@ -1708,8 +1716,8 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
         <ExternalMappingPage />
       )}
 
-      {activeTab === 'api' && (
-        <div>
+     {activeTab === 'api' && isAdmin && (
+          <div>
           {/* Plan gate */}
           {!['enterprise', 'founding'].includes(plan) && (
             <div style={{ padding: '20px 24px', background: 'linear-gradient(135deg, #1A3560, #2E75B6)', borderRadius: 'var(--radius-md)', marginBottom: 24, color: '#fff' }}>
@@ -1731,8 +1739,8 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
       )}
 
       {/* White-label Tab */}
-      {activeTab === 'whitelabel' && (
-        <div>
+      {activeTab === 'whitelabel' && isAdmin && (
+          <div>
           {!['enterprise', 'founding'].includes(plan) && (
             <div style={{ padding: '20px 24px', background: 'linear-gradient(135deg, #1A3560, #2E75B6)', borderRadius: 'var(--radius-md)', color: '#fff' }}>
               <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>🎨 White-label — Enterprise Feature</h3>

@@ -128,14 +128,14 @@ const reportsSidebar = [
 
 const settingsSidebar = [
   { path: '/settings/profile',      label: 'My Profile',           icon: FiList,        exact: true },
-  { path: '/settings/company',      label: 'Company & Letterhead', icon: FiGlobe },
-  { path: '/settings/users',        label: 'Users & Roles',        icon: FiUsers },
+  { path: '/settings/company',      label: 'Company & Letterhead', icon: FiGlobe,       adminOnly: true },
+  { path: '/settings/users',        label: 'Users & Roles',        icon: FiUsers,       adminOnly: true },
   { path: '/settings/security',     label: 'Security',             icon: FiShield },
-  { path: '/settings/payroll-rates',label: 'Payroll Rates',        icon: FiDollarSign },
-  { path: '/settings/api',          label: 'API Keys',             icon: FiCode },
-  { path: '/settings/integrations', label: 'Integrations',         icon: FiLink },
-  { path: '/settings/whitelabel',   label: 'White-label',          icon: FiEdit3 },
-  { path: '/settings/branches',     label: 'Branches',             icon: FiGitBranch },
+  { path: '/settings/payroll-rates',label: 'Payroll Rates',        icon: FiDollarSign,  adminOnly: true },
+  { path: '/settings/api',          label: 'API Keys',             icon: FiCode,        adminOnly: true },
+  { path: '/settings/integrations', label: 'Integrations',         icon: FiLink,        adminOnly: true },
+  { path: '/settings/whitelabel',   label: 'White-label',          icon: FiEdit3,       adminOnly: true },
+  { path: '/settings/branches',     label: 'Branches',             icon: FiGitBranch,   adminOnly: true },
 ];
 
 const g = (path, label) => [{ path, label: `All ${label}`, icon: FiList, exact: true }];
