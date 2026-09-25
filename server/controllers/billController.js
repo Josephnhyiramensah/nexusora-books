@@ -3,6 +3,7 @@ const { logAudit } = require('../middleware/auditMiddleware');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
 const { generateBillPDF } = require('../utils/pdfGenerator');
 const { scopedFilter, resolveBranchScope } = require('../utils/branchScope');
+const { postStockForBill } = require('../utils/inventoryService');
 
 // Head Office branch id — safe default so nothing is left unbranched.
 async function headOfficeId(req) {
@@ -155,6 +156,13 @@ const approveBill = async (req, res) => {
     if (needsApproval) {
       bill.status = 'awaiting_approval';
       await bill.save();
+
+          try {
+      await postStockForBill(req.tenantDb, bill, req.user._id);
+    } catch (e) {
+      console.error('[Inventory] Bill stock posting failed:', e.message);
+    }
+    
       await logAudit(req.tenantDb, {
         userId: req.user._id, action: 'submit_for_approval', module: 'bills',
         entityId: bill._id, entityType: 'Bill',

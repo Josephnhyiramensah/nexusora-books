@@ -27,9 +27,9 @@ export default function JournalFormPage() {
     journalType: 'general',
     description: '',
     reference: '',
-    lines: [emptyLine()],
+    lines: [emptyLine(), emptyLine()],
   });
-// , emptyLine()
+
   useEffect(() => {
     accountService.getAll({ isActive: 'true' }).then((res) => {
       if (res.success) setAccounts(res.data);
@@ -92,13 +92,8 @@ export default function JournalFormPage() {
     }, 50);
   };
 
-  // const removeLine = (index) => {
-  //   if (form.lines.length <= 2) return;
-
-    const removeLine = (index) => {
-    if (form.lines.length <= 1) return;
-
-    
+  const removeLine = (index) => {
+    if (form.lines.length <= 2) return;
     const updated = form.lines.filter((_, i) => i !== index);
     setForm({ ...form, lines: updated });
   };

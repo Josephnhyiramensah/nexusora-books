@@ -2,7 +2,7 @@ const { getModel } = require('../utils/getModel');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
 const { scopedFilter, resolveBranchScope } = require('../utils/branchScope');
-
+const { postStockForInvoice } = require('../utils/inventoryService');
 // The tenant's Head Office branch id — safe default so nothing is left unbranched.
 async function headOfficeId(req) {
   const Branch = getModel(req.tenantDb, 'Branch');
@@ -257,6 +257,17 @@ const sendInvoice = async (req, res) => {
     invoice.status = 'sent';
     invoice.journalEntry = journalEntry._id;
     await invoice.save();
+
+    // Inventory: issue stock for any line naming an item. Idempotent — safe if
+    // this path is reached again (approve → sendInvoice). Never blocks the sale.
+    try {
+      const stock = await postStockForInvoice(req.tenantDb, invoice, req.user._id);
+      if (stock.negative && stock.negative.length) {
+        console.warn(`[Inventory] Invoice ${invoice.invoiceNumber} drove ${stock.negative.length} item(s) negative at branch ${invoice.branch}`);
+      }
+    } catch (e) {
+      console.error('[Inventory] Invoice stock posting failed:', e.message);
+    }
 
     await logAudit(req.tenantDb, {
       userId: req.user._id, action: 'create', module: 'invoices',
