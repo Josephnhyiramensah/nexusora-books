@@ -44,10 +44,19 @@ const tenantSchema = new mongoose.Schema(
       // Maker-checker: when true, entries created by accountants need admin
       // approval before they post. Default off — tenants opt in.
       requireApproval: { type: Boolean, default: false },
+
+
+            // Inventory accounting basis. 'periodic' (default) = buying stock is an
+      // expense immediately and stock value is reported from the movement ledger
+      // but never posted — books behave as they always have. 'perpetual' = stock
+      // purchases are an asset (Inventory 1200) and the cost becomes an expense
+      // (COGS 5010) only when sold. Tenants opt in; default matches QuickBooks.
+      inventoryMethod: { type: String, enum: ['periodic', 'perpetual'], default: 'periodic' },
+
       // Per-tenant document number formats for invoices, bills and payments.
       // When a tenant leaves these unset the system falls back to the historical
       // default (INV-000001 / BILL-000001 / PAY-000001), so nothing changes for
-      // anyone who doesn't customise. Journals are NOT included — they always use
+     
       // the system entry numbering. The running number is derived from existing
       // documents that share the prefix, so there is no counter to seed or drift.
       documentNumbers: {

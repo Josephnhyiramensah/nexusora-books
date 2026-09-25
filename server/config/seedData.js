@@ -81,6 +81,7 @@ const defaultChartOfAccounts = [
 
   // ── COST OF SALES (5000–5999) ──────────────────────────────────────────────
   { code: '5000', name: 'Purchases', type: 'cogs', category: 'Cost of Goods Sold', normalBalance: 'debit', isSystemAccount: true, description: 'Purchases of goods for resale' },
+  { code: '5010', name: 'Cost of Goods Sold', type: 'cogs', category: 'Cost of Goods Sold', normalBalance: 'debit', parentCode: '5000', isSystemAccount: true, description: 'Cost of stock sold (perpetual inventory)' },
   { code: '5020', name: 'Purchase Returns', type: 'cogs', category: 'Cost of Goods Sold', normalBalance: 'credit', isSystemAccount: true, description: 'Returns to suppliers (contra)' },
   { code: '5030', name: 'Freight & Carriage Inwards', type: 'cogs', category: 'Cost of Goods Sold', normalBalance: 'debit', isSystemAccount: true, description: 'Delivery costs on purchases' },
   { code: '5100', name: 'Direct Labour', type: 'cogs', category: 'Cost of Goods Sold', normalBalance: 'debit', isSystemAccount: true, description: 'Direct labour costs' },

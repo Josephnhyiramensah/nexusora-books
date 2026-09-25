@@ -4,7 +4,7 @@ const { generateEntryNumber, calculateBalanceChange } = require('../utils/accoun
 const { generateBillPDF } = require('../utils/pdfGenerator');
 const { scopedFilter, resolveBranchScope } = require('../utils/branchScope');
 const { postStockForBill } = require('../utils/inventoryService');
-
+const { inventoryAccountForBillLine } = require('../utils/inventoryPosting');
 // Head Office branch id — safe default so nothing is left unbranched.
 async function headOfficeId(req) {
   const Branch = getModel(req.tenantDb, 'Branch');
@@ -162,7 +162,7 @@ const approveBill = async (req, res) => {
     } catch (e) {
       console.error('[Inventory] Bill stock posting failed:', e.message);
     }
-    
+
       await logAudit(req.tenantDb, {
         userId: req.user._id, action: 'submit_for_approval', module: 'bills',
         entityId: bill._id, entityType: 'Bill',
@@ -177,7 +177,13 @@ const approveBill = async (req, res) => {
     const journalLines = [];
 
     for (const line of bill.lines) {
-      const expenseAcct = line.account ? await Account.findById(line.account) : await Account.findOne({ code: '6900' });
+      
+      // Perpetual: an item-bearing line debits Inventory (the purchase is an asset),
+// not an expense — the expense arrives later when the stock is sold. Periodic
+// returns null and the original behaviour is unchanged.
+const invAcct = await inventoryAccountForBillLine(req, line);
+const expenseAcct = invAcct || (line.account ? await Account.findById(line.account) : await Account.findOne({ code: '6900'}));
+
       journalLines.push({
         account: expenseAcct._id, accountCode: expenseAcct.code, accountName: expenseAcct.name,
         debit: line.amount, credit: 0, description: line.description,
