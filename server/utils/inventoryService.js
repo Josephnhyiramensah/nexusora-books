@@ -15,6 +15,7 @@
 // Issues are valued at the running average at the time of issue. This is correct
 // for most goods and the sensible basis for gold by weight.
 
+const mongoose = require('mongoose');
 const { getModel } = require('./getModel');
 
 // Which movement types add vs remove. adjustment is caller-signed.
@@ -167,10 +168,20 @@ async function branchValuation(db, branch) {
   return { total: round2(total), items: out };
 }
 
-// Accept an id or a doc/string; return a Mongoose ObjectId-compatible value.
+// Accept an id, a doc, or a STRING id; return a real ObjectId.
+//
+// This must cast: aggregation $match does NOT auto-cast strings to ObjectIds the
+// way find() does, so passing a string id (which is what arrives from route params
+// and the X-Branch header) silently matches nothing and on-hand comes back 0 even
+// when movements exist. Casting here is what makes every aggregate lookup correct.
 function toId(v) {
-  if (v && v._id) return v._id;
-  return v;
+  if (!v) return v;
+  if (v._id) v = v._id;                       // a doc → its id
+  if (v instanceof mongoose.Types.ObjectId) return v;
+  if (typeof v === 'string' && mongoose.Types.ObjectId.isValid(v)) {
+    return new mongoose.Types.ObjectId(v);
+  }
+  return v;                                    // leave anything else untouched
 }
 
 

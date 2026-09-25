@@ -1,12 +1,7 @@
 import { useState, useEffect } from 'react';
+import api from '../../services/api';
 
-// Optional inventory-item picker for an invoice or bill line.
-//
-// Why optional: most lines are services, fees or free text and have no stock.
-// Leaving this as "— none —" keeps the line exactly as it always was. Choosing an
-// item links the line to inventory, so POSTING the document automatically moves
-// stock (an invoice issues it, a bill receives it) — see utils/inventoryService.js
-// postStockForInvoice / postStockForBill.
+
 //
 // Picking an item also fills the line's description and price if they're empty,
 // which is what the accountant expects and saves retyping.
@@ -18,7 +13,7 @@ export default function ItemSelect({ value, onChange, style }) {
     (async () => {
       try {
         // Lazy import so this component has no hard dependency at module load.
-        const api = (await import('../../services/api')).default;
+       
         const { data } = await api.get('/inventory');
         if (!cancelled && data.success) setItems((data.data || []).filter((i) => i.isActive !== false));
       } catch { /* inventory unavailable — the picker just stays empty */ }
