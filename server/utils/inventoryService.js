@@ -173,8 +173,107 @@ function toId(v) {
   return v;
 }
 
+
+/**
+ * Post stock movements for a SENT/POSTED invoice — one 'sale' movement per line
+ * that names an inventory item. Lines without an item (services, fees, free-text)
+ * are skipped, so existing invoices are unaffected.
+ *
+ * IDEMPOTENT: if this invoice already has movements, it does nothing. The invoice
+ * post path can be reached more than once (send, and approve→send), so this guard
+ * is what guarantees stock moves exactly once per invoice.
+ *
+ * Stock is allowed to go NEGATIVE: a sale is real even if stock wasn't keyed in
+ * yet. Negative on-hand surfaces a counting gap to fix rather than blocking a sale.
+ * Returns { created, skipped, negative: [...] } for reporting/logging.
+ */
+async function postStockForInvoice(db, invoice, userId) {
+  const StockMovement = getModel(db, 'StockMovement');
+
+  // Guard: already posted for this invoice → do nothing.
+  const already = await StockMovement.countDocuments({ sourceInvoice: invoice._id });
+  if (already > 0) return { created: 0, skipped: 0, alreadyPosted: true, negative: [] };
+
+  const branch = invoice.branch;
+  if (!branch) return { created: 0, skipped: 0, noBranch: true, negative: [] };
+
+  let created = 0;
+  let skipped = 0;
+  const negative = [];
+
+  for (const line of (invoice.lines || [])) {
+    if (!line.item) { skipped += 1; continue; }          // not an inventory line
+    const qty = Math.abs(Number(line.quantity) || 0);
+    if (qty === 0) { skipped += 1; continue; }
+
+    // Cost the issue at the branch's weighted average at this moment.
+    // eslint-disable-next-line no-await-in-loop
+    const cost = await weightedAvgCost(db, line.item, branch);
+
+    // eslint-disable-next-line no-await-in-loop
+    await recordMovement(db, {
+      item: line.item, branch, type: 'sale', quantity: qty, unitCost: cost,
+      date: invoice.date || new Date(),
+      reference: invoice.invoiceNumber,
+      sourceType: 'invoice', sourceInvoice: invoice._id,
+      notes: `Auto: sold on invoice ${invoice.invoiceNumber}`,
+      createdBy: userId,
+    });
+    created += 1;
+
+    // Flag (don't block) if this drove on-hand below zero.
+    // eslint-disable-next-line no-await-in-loop
+    const onHand = await getOnHand(db, line.item, branch);
+    if (onHand < 0) negative.push({ item: line.item, onHand });
+  }
+
+  return { created, skipped, negative };
+}
+
+/**
+ * Post stock movements for an APPROVED/POSTED bill — one 'receipt' movement per
+ * line naming an inventory item, at the line's unit price as the incoming cost
+ * (which feeds the weighted average). Same idempotency guard as invoices.
+ */
+async function postStockForBill(db, bill, userId) {
+  const StockMovement = getModel(db, 'StockMovement');
+
+  const already = await StockMovement.countDocuments({ sourceBill: bill._id });
+  if (already > 0) return { created: 0, skipped: 0, alreadyPosted: true };
+
+  const branch = bill.branch;
+  if (!branch) return { created: 0, skipped: 0, noBranch: true };
+
+  let created = 0;
+  let skipped = 0;
+
+  for (const line of (bill.lines || [])) {
+    if (!line.item) { skipped += 1; continue; }
+    const qty = Math.abs(Number(line.quantity) || 0);
+    if (qty === 0) { skipped += 1; continue; }
+
+    // Purchase price per unit is the cost this stock comes in at.
+    const unitCost = Number(line.unitPrice) || 0;
+
+    // eslint-disable-next-line no-await-in-loop
+    await recordMovement(db, {
+      item: line.item, branch, type: 'receipt', quantity: qty, unitCost,
+      date: bill.date || new Date(),
+      reference: bill.billNumber,
+      sourceType: 'bill', sourceBill: bill._id,
+      notes: `Auto: received on bill ${bill.billNumber}`,
+      createdBy: userId,
+    });
+    created += 1;
+  }
+
+  return { created, skipped };
+}
+
 module.exports = {
   recordMovement,
+  postStockForInvoice,
+  postStockForBill,
   getOnHand,
   getOnHandAllBranches,
   weightedAvgCost,
