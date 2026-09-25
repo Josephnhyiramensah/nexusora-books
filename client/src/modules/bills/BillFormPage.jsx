@@ -7,8 +7,9 @@ import accountService from '../../services/accountService';
 import SmartAccountSelect from '../../components/common/SmartAccountSelect';
 import { useTenant } from '../../context/TenantContext';
 import { useToast } from '../../hooks/useToast';
+import ItemSelect from '../../components/common/ItemSelect';
 
-const emptyLine = () => ({ description: '', quantity: 1, unitPrice: '', account: '' });
+const emptyLine = () => ({ item: null, description: '', quantity: 1, unitPrice: '', account: '' });
 
 export default function BillFormPage() {
   const navigate = useNavigate();
@@ -71,7 +72,7 @@ export default function BillFormPage() {
         vendor: form.vendor, date: form.date, dueDate: form.dueDate,
         taxRate: parseFloat(form.taxRate) || 0, notes: form.notes,
         customFields: form.customFields,
-        lines: validLines.map((l) => ({ description: l.description, quantity: parseFloat(l.quantity) || 1, unitPrice: parseFloat(l.unitPrice), account: l.account || undefined })),
+        lines: validLines.map((l) => ({ item: l.item || undefined, description: l.description, quantity: parseFloat(l.quantity) || 1, unitPrice: parseFloat(l.unitPrice), account: l.account || undefined })),
       });
       if (res.success) {
         if (approveAfter) {
@@ -161,8 +162,9 @@ export default function BillFormPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr style={{ background: 'var(--deep-navy)' }}>
               <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#fff', width: '5%' }}>#</th>
-              <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#fff', width: '30%' }}>Description</th>
-              <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#fff', width: '25%' }}>Expense Account</th>
+              <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#fff', width: '20%' }}>Item</th>
+              <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#fff', width: '20%' }}>Description</th>
+              <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#fff', width: '20%' }}>Expense Account</th>
               <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: '#fff', width: '12%' }}>Qty</th>
               <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: '#fff', width: '15%' }}>Unit Price</th>
               <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: '#fff', width: '13%' }}>Amount</th>
@@ -173,6 +175,21 @@ export default function BillFormPage() {
                 return (
                   <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ padding: '6px 12px', fontSize: 12, color: 'var(--text-muted)' }}>{i + 1}</td>
+                    <td style={{ padding: '6px 8px' }}>
+                      <ItemSelect
+                        value={line.item}
+                        onChange={(id, item) => {
+                          const updated = [...form.lines];
+                          updated[i] = {
+                            ...updated[i],
+                            item: id,
+                            description: updated[i].description || (item ? item.name : ''),
+                            unitPrice: updated[i].unitPrice || (item ? item.unitCost : ''),
+                          };
+                          setForm({ ...form, lines: updated });
+                        }}
+                      />
+                    </td>
                     <td style={{ padding: '6px 8px' }}><input value={line.description} onChange={(e) => updateLine(i, 'description', e.target.value)} placeholder="Item or service..." style={{ ...inputStyle, fontSize: 12, padding: '8px 12px' }} /></td>
                     <td style={{ padding: '6px 8px' }}><SmartAccountSelect accounts={accounts} value={line.account} onChange={(id) => updateLine(i, 'account', id)} placeholder="Expense account..." /></td>
                     <td style={{ padding: '6px 8px' }}><input type="number" min="1" value={line.quantity} onChange={(e) => updateLine(i, 'quantity', e.target.value)} style={{ ...inputStyle, fontSize: 12, padding: '8px 12px', textAlign: 'right' }} /></td>

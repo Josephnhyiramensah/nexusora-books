@@ -9,9 +9,9 @@ import accountService from '../../services/accountService';
 import SmartAccountSelect from '../../components/common/SmartAccountSelect';
 import { useToast } from '../../hooks/useToast';
 import ResponsiveTable from '../../components/common/ResponsiveTable';
+import ItemSelect from '../../components/common/ItemSelect';
 
-const emptyLine = () => ({ description: '', quantity: 1, unitPrice: '', account: '' });
-
+const emptyLine = () => ({ item: null, description: '', quantity: 1, unitPrice: '', account: '' });
 export default function InvoiceFormPage() {
   const navigate = useNavigate();
   const { showToast, ToastComponent } = useToast();
@@ -111,7 +111,8 @@ export default function InvoiceFormPage() {
         currency: isForeign ? invCurrency : '',
         exchangeRate: rate,
         customFields: form.customFields,
-        lines: validLines.map((l) => ({
+               lines: validLines.map((l) => ({
+          item: l.item || undefined,
           description: l.description, quantity: parseFloat(l.quantity) || 1,
           unitPrice: parseFloat(l.unitPrice), account: l.account || undefined,
         })),
@@ -214,8 +215,9 @@ export default function InvoiceFormPage() {
               <thead>
                 <tr style={{ background: 'var(--deep-navy)' }}>
                   <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#fff', width: '5%' }}>#</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#fff', width: '30%' }}>Description</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#fff', width: '25%' }}>Revenue Account</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#fff', width: '20%' }}>Item</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#fff', width: '20%' }}>Description</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#fff', width: '20%' }}>Revenue Account</th>
                   <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: '#fff', width: '12%' }}>Qty</th>
                   <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: '#fff', width: '15%' }}>Unit Price</th>
                   <th style={{ padding: '10px 12px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: '#fff', width: '13%' }}>Amount</th>
@@ -227,6 +229,21 @@ export default function InvoiceFormPage() {
                   return (
                     <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
                       <td style={{ padding: '6px 12px', fontSize: 12, color: 'var(--text-muted)' }}>{i + 1}</td>
+                      <td style={{ padding: '6px 8px' }}>
+                        <ItemSelect
+                          value={line.item}
+                          onChange={(id, item) => {
+                            const updated = [...form.lines];
+                            updated[i] = {
+                              ...updated[i],
+                              item: id,
+                              description: updated[i].description || (item ? item.name : ''),
+                              unitPrice: updated[i].unitPrice || (item ? item.sellingPrice : ''),
+                            };
+                            setForm({ ...form, lines: updated });
+                          }}
+                        />
+                      </td>
                       <td style={{ padding: '6px 8px' }}>
                         <input value={line.description} onChange={(e) => updateLine(i, 'description', e.target.value)}
                           placeholder="Product or service..." style={{ ...inputStyle, fontSize: 12, padding: '8px 12px' }} />

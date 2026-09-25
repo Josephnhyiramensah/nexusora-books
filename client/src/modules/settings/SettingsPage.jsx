@@ -314,6 +314,9 @@ function CompanyTab({
           <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer' }}>
             <input type="checkbox" style={{ marginTop: 3, width: 18, height: 18, cursor: 'pointer' }}
               checked={!!companyForm.requireApproval}
+
+
+              
               onChange={(e) => setCompanyForm({ ...companyForm, requireApproval: e.target.checked })} />
             <span>
               <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Require approval before entries post</span>
@@ -324,7 +327,22 @@ function CompanyTab({
           </label>
         </div>
 
-        <button onClick={() => saveSlice({ logo: companyForm.logo, address: companyForm.address, city: companyForm.city, region: companyForm.region, taxId: companyForm.taxId, requireApproval: companyForm.requireApproval }, 'Company information saved')} style={styles.buttonPrimary}>
+        <div style={{ marginBottom: 20, padding: 16, background: 'var(--bg-app)', borderRadius: 8, border: '1px solid var(--border)' }}>
+          <label style={{ ...styles.labelStyle, marginBottom: 8 }}>Inventory accounting method</label>
+          <select style={styles.inputStyle}
+            value={companyForm.inventoryMethod || 'periodic'}
+            onChange={(e) => setCompanyForm({ ...companyForm, inventoryMethod: e.target.value })}>
+            <option value="periodic">Periodic (default)</option>
+            <option value="perpetual">Perpetual</option>
+          </select>
+          <p style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.55 }}>
+            <strong>Periodic</strong> — buying stock is an expense straight away, and stock value is reported separately. This is the standard setup and how your books work today.
+            <br />
+            <strong>Perpetual</strong> — buying stock is an asset, and the cost becomes an expense only when the stock is sold. More precise, but only switch after agreeing it with your accountant.
+          </p>
+        </div>
+
+        <button onClick={() => saveSlice({ logo: companyForm.logo, address: companyForm.address, city: companyForm.city, region: companyForm.region, taxId: companyForm.taxId, requireApproval: companyForm.requireApproval, inventoryMethod: companyForm.inventoryMethod }, 'Company information saved')} style={styles.buttonPrimary}>
           Save Company Information
         </button>
       </div>
@@ -1437,6 +1455,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
     region: settings?.region || '',
     taxId: settings?.taxId || '',
     requireApproval: settings?.requireApproval || false,
+    inventoryMethod: settings?.inventoryMethod || 'periodic',
     documentNumbers: settings?.documentNumbers || { invoice: { prefix: 'INV-', padding: 6, startNumber: 1 } },
     customFields: settings?.customFields || [],
     // Carry whiteLabel in the form state — WhiteLabelSettings reads its initial
@@ -1463,6 +1482,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
       ...prev,
       logo: settings.logo ?? prev.logo,
       requireApproval: settings.requireApproval ?? prev.requireApproval,
+      inventoryMethod: settings.inventoryMethod ?? prev.inventoryMethod,
       letterheadImage: settings.letterheadImage ?? prev.letterheadImage,
       address: settings.address ?? prev.address,
       city: settings.city ?? prev.city,
