@@ -11,6 +11,9 @@ import { FiRefreshCw, FiShield, FiGlobe, FiCode, FiLink, FiEdit3, FiGitBranch } 
 
 import FinancialAnalyticsPage from './modules/accounts/FinancialAnalyticsPage';
 import { BranchProvider } from './context/BranchContext';
+import StockMovementsPage from './modules/inventory/StockMovementsPage';
+import StockTransferPage from './modules/inventory/StockTransferPage';
+import StockValuationPage from './modules/inventory/StockValuationPage';
 
 // Icons
 import {
@@ -267,9 +270,16 @@ export default function App() {
               <Route path="/bills/make-payment"  element={<MakePaymentPage />} />
             </Route>
 
-            {/* ── Inventory ── */}
-            <Route element={<ProtectedRoute><ModuleShell moduleTitle="Inventory" sidebarItems={g('/inventory','Items')} /></ProtectedRoute>}>
+              <Route element={<ProtectedRoute><ModuleShell moduleTitle="Inventory" sidebarItems={[
+              { path: '/inventory', label: 'All Items', icon: FiList, exact: true },
+              { path: '/inventory/movements', label: 'Stock Movements', icon: FiFileText },
+              { path: '/inventory/transfer', label: 'Transfer Stock', icon: FiCornerDownLeft },
+              { path: '/inventory/valuation', label: 'Valuation', icon: FiDollarSign },
+            ]} /></ProtectedRoute>}>
               <Route path="/inventory" element={<InventoryPage />} />
+              <Route path="/inventory/movements" element={<StockMovementsPage />} />
+              <Route path="/inventory/transfer" element={<StockTransferPage />} />
+              <Route path="/inventory/valuation" element={<StockValuationPage />} />
             </Route>
 
             {/* ── Fixed Assets ── */}
