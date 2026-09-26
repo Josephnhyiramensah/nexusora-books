@@ -1,4 +1,5 @@
 const { getModel } = require('../utils/getModel');
+const { getSpecialAccount, getSpecialAccountSet } = require('../utils/specialAccounts');
 const Tenant = require('../models/Tenant');
 const { effectivePermissions, can } = require('../utils/aiAccess');
 const { buildAIContext } = require('../utils/aiContext');
@@ -192,9 +193,11 @@ const generateReport = async (req, res) => {
       };
     } else if (reportType === 'cash_position') {
       reportName = 'Cash Position';
-      const cashAccounts = await Account.find({ code: { $in: ['1000', '1010', '1020'] } }).lean();
-      const arAccount = await Account.findOne({ code: '1100' }).lean();
-      const apAccount = await Account.findOne({ code: '2000' }).lean();
+      // Cash set + AR/AP by ROLE. Read-only; a missing account is simply absent,
+      // matching the previous $in / findOne behaviour.
+      const cashAccounts = await getSpecialAccountSet(req, 'cashAccounts');
+      const arAccount = await getSpecialAccount(req, 'accountsReceivable', { required: false, lean: true });
+      const apAccount = await getSpecialAccount(req, 'accountsPayable', { required: false, lean: true });
       reportData = {
         cashAccounts: cashAccounts.map((a) => ({ code: a.code, name: a.name, balance: bal(a) })),
         totalCash: cashAccounts.reduce((s, a) => s + bal(a), 0),
@@ -332,7 +335,7 @@ const forecastCashFlow = async (req, res) => {
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
 
     const movement = await ledgerMovement(req, JournalEntry);
-    const cashAccounts = await Account.find({ code: { $in: ['1000', '1010', '1020'] } }).lean();
+    const cashAccounts = await getSpecialAccountSet(req, 'cashAccounts');
     const currentCash = cashAccounts.reduce((s, a) => s + acctSignedBalance(a, movement), 0);
 
     const unpaidInvoices = await Invoice.find(scopedFilter(req, { status: { $in: ['sent', 'partially_paid'] } })).select('balance dueDate').lean();

@@ -5,7 +5,8 @@ const { logAudit } = require('../middleware/auditMiddleware');
 const {
   validateDoubleEntry, generateEntryNumber, calculateBalanceChange,
 } = require('../utils/accountingHelpers');
-const { scopedFilter, resolveBranchScope } = require('../utils/branchScope');
+const { scopedFilter } = require('../utils/branchScope');
+const { resolveWriteBranch } = require('../utils/branchWrite');
 
 // Head Office fallback so a manual entry / reversal is never left unbranched.
 async function headOfficeId(req) {
@@ -13,11 +14,7 @@ async function headOfficeId(req) {
   const ho = await Branch.findOne({ isHeadOffice: true }).select('_id').lean();
   return ho ? ho._id : null;
 }
-async function resolveJournalBranch(req) {
-  const scope = resolveBranchScope(req);
-  if (scope.activeBranch) return scope.activeBranch;
-  return headOfficeId(req);
-}
+
 
 const getJournals = async (req, res) => {
   try {
@@ -79,6 +76,18 @@ const createJournal = async (req, res) => {
       });
     }
 
+
+    
+    // Option B — branch is an explicit field on the entry, server-enforced.
+    // A manual journal posts straight to the ledger, so an ambiguous branch is
+    // exactly the leak to stop: reject a create when 2+ branches are active and
+    // none was chosen, rather than silently filing under Head Office.
+    const branchChoice = await resolveWriteBranch(req, req.body.branch);
+    if (branchChoice.error) {
+      return res.status(branchChoice.status).json({ success: false, message: branchChoice.error });
+    }
+
+
     const validation = validateDoubleEntry(lines);
     if (!validation.valid) {
       return res.status(400).json({
@@ -102,7 +111,7 @@ const createJournal = async (req, res) => {
     }
 
     const entryNumber = await generateEntryNumber(JournalEntry);
-    const branch = await resolveJournalBranch(req);
+    const branch = branchChoice.branch;
 
     const entry = await JournalEntry.create({
       entryNumber, date, journalType, description, reference,

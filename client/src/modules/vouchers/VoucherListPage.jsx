@@ -1,5 +1,5 @@
 // client/src/modules/vouchers/VoucherListPage.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import VoucherActionsMenu from './VoucherActionsMenu';
 import useIsMobile from '../../hooks/useIsMobile';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -8,6 +8,7 @@ import voucherService from '../../services/voucherService';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { useToast } from '../../hooks/useToast';
 import { useAuth } from '../../context/AuthContext';
+import { useBranch } from '../../context/BranchContext';
 
 const TYPE_LABELS = {
   payment: 'Payment', receipt: 'Receipt', contra: 'Contra', transfer: 'Transfer',
@@ -43,6 +44,19 @@ export default function VoucherListPage() {
   const { showToast, ToastComponent } = useToast();
   const { user } = useAuth();
   const canReverse = ['super_admin', 'admin'].includes(user?.role);
+
+    const { branches } = useBranch();
+  const multiBranch = (branches || []).filter((b) => b.isActive).length > 1;
+  const branchById = useMemo(() => {
+    const m = {};
+    (branches || []).forEach((b) => { m[String(b._id)] = b; });
+    return m;
+  }, [branches]);
+  const branchCodeOf = (v) => {
+    if (!v.branch) return '—';
+    const b = branchById[String(v.branch?._id || v.branch)];
+    return b ? (b.code || b.name) : '—';
+  };
 
   // Derive type filter from the current sidebar path.
   useEffect(() => {
@@ -136,7 +150,7 @@ export default function VoucherListPage() {
                   <span style={{ background: s2.bg, color: s2.color, padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600 }}>{s2.label}</span>
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--text-secondary, #6B7280)', marginBottom: 6 }}>
-                  {TYPE_LABELS[v.voucherType] || v.voucherType} · {formatDate(v.date)}
+                  {TYPE_LABELS[v.voucherType] || v.voucherType} · {formatDate(v.date)}{multiBranch ? ` · ${branchCodeOf(v)}` : ''}
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, marginBottom: 10 }}>
                   <span>{v.partyName || '—'}</span>
@@ -167,6 +181,7 @@ export default function VoucherListPage() {
                 <th style={th}>Voucher #</th>
                 <th style={th}>Type</th>
                 <th style={th}>Date</th>
+                {multiBranch && <th style={th}>Branch</th>}
                 <th style={th}>Party</th>
                 <th style={th}>Amount</th>
                 <th style={th}>Status</th>
@@ -175,9 +190,9 @@ export default function VoucherListPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td style={{ ...td, textAlign: 'center', color: '#9CA3AF' }} colSpan={7}>Loading…</td></tr>
+                <tr><td style={{ ...td, textAlign: 'center', color: '#9CA3AF' }} colSpan={multiBranch ? 8 : 7}>Loading…</td></tr>
               ) : vouchers.length === 0 ? (
-                <tr><td style={{ ...td, textAlign: 'center', color: '#9CA3AF' }} colSpan={7}>No vouchers yet. Click “New Voucher” to create one.</td></tr>
+                <tr><td style={{ ...td, textAlign: 'center', color: '#9CA3AF' }} colSpan={multiBranch ? 8 : 7}>No vouchers yet. Click “New Voucher” to create one.</td></tr>
               ) : vouchers.map((v) => {
                 const s = statusStyle(v.status);
                 return (
@@ -185,6 +200,7 @@ export default function VoucherListPage() {
                     <td style={{ ...td, fontWeight: 600 }}>{v.voucherNumber}</td>
                     <td style={td}>{TYPE_LABELS[v.voucherType] || v.voucherType}</td>
                     <td style={td}>{formatDate(v.date)}</td>
+                    {multiBranch && <td style={td}>{branchCodeOf(v)}</td>}
                     <td style={td}>{v.partyName || '—'}</td>
                     <td style={{ ...td, fontWeight: 600 }}>{formatCurrency(v.amount)}</td>
                     <td style={td}><span style={{ background: s.bg, color: s.color, padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600 }}>{s.label}</span></td>

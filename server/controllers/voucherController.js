@@ -14,10 +14,12 @@
 // not touch a single debit, credit, or how the entry posts.
 
 const { getModel } = require('../utils/getModel');
+const { getSpecialAccount } = require('../utils/specialAccounts');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { validateDoubleEntry, generateEntryNumber } = require('../utils/accountingHelpers');
 const { generateVoucherNumber, journalTypeForVoucher } = require('../utils/voucherHelpers');
-const { scopedFilter, resolveBranchScope } = require('../utils/branchScope');
+const { scopedFilter } = require('../utils/branchScope');
+const { resolveWriteBranch } = require('../utils/branchWrite');
 
 // The tenant's Head Office branch id — the safe default so a voucher is never
 // left unbranched (single-branch companies always resolve to this).
@@ -27,14 +29,7 @@ async function headOfficeId(req) {
   return ho ? ho._id : null;
 }
 
-// The branch to stamp a NEW voucher with: the request's active branch (from the
-// user's scope / X-Branch header), else the Head Office. A full-access user who
-// doesn't narrow to a branch creates under Head Office.
-async function resolveVoucherBranch(req) {
-  const scope = resolveBranchScope(req);
-  if (scope.activeBranch) return scope.activeBranch;
-  return headOfficeId(req);
-}
+
 
 // Build the 2-line "simple" voucher lines from a single debit + credit account.
 function simpleLines({ debitAccount, creditAccount, amount, narration }) {
@@ -115,6 +110,19 @@ const createVoucher = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Required: voucherType and date.' });
     }
 
+    
+    // Option B — the branch is an explicit field on the transaction, and the
+    // server is its authority. resolveWriteBranch validates the chosen branch
+    // against this user's access and REJECTS an ambiguous create (2+ active
+    // branches, none chosen) instead of silently filing under Head Office. One
+    // call closes the form, the REST API and the PHP integration together.
+    const branchChoice = await resolveWriteBranch(req, req.body.branch);
+    if (branchChoice.error) {
+      return res.status(branchChoice.status).json({ success: false, message: branchChoice.error });
+    }
+    const branch = branchChoice.branch;
+
+
     // Resolve lines: either provided multi-line, or built from simple fields.
     let lines;
     if (Array.isArray(rawLines) && rawLines.length >= 2) {
@@ -136,14 +144,27 @@ const createVoucher = async (req, res) => {
     // amount as the grand total and derive the net + vat from vatRate.
     let vatAmountComputed = 0;
     if (vatEnabled && Number(vatRate) > 0 && debitAccount && creditAccount) {
-      const Account2 = getModel(req.tenantDb, 'Account');
-      const vatAcct = await Account2.findOne({ code: '2410' });
+      // VAT Payable is resolved by ROLE now, not the literal '2410', so a tenant
+      // may renumber their chart and remap it in settings. required:true is the
+      // deliberate fix to the old silent failure below: a chart with no VAT
+      // account must FAIL the post, never save a voucher whose VAT quietly
+      // vanished from the entry. The error is turned into a clear 400 so the
+      // admin is told exactly which account to map.
+      let vatAcct;
+      try {
+        vatAcct = await getSpecialAccount(req, 'vatPayable');
+      } catch (e) {
+        if (e.code === 'SPECIAL_ACCOUNT_NOT_FOUND') {
+          return res.status(400).json({ success: false, message: e.message });
+        }
+        throw e;
+      }
       const grand = Number(amount) || 0;
       // grand = net + net*rate  => net = grand / (1 + rate/100)
       const rate = Number(vatRate) / 100;
       const net = Math.round((grand / (1 + rate)) * 100) / 100;
       vatAmountComputed = Math.round((grand - net) * 100) / 100;
-      if (vatAcct && vatAmountComputed > 0) {
+        if (vatAmountComputed > 0) {
         // Dr debitAccount grand ; Cr creditAccount net ; Cr VAT Payable vat
         lines = [
           { account: debitAccount, debit: grand, credit: 0, description: narration || '' },
@@ -151,7 +172,8 @@ const createVoucher = async (req, res) => {
           { account: vatAcct._id, debit: 0, credit: vatAmountComputed, description: 'VAT @ ' + vatRate + '%' },
         ];
       }
-      // If 2410 is missing, we leave the 2-line entry as-is (no split) — safe fallback.
+      // vatAcct is guaranteed here — a missing VAT account already returned 400
+      // above rather than silently posting a 2-line entry with the tax dropped.
     }
 
     // Validate balance (debits == credits) up front.
@@ -185,7 +207,6 @@ const createVoucher = async (req, res) => {
 
     const voucherNumber = await generateVoucherNumber(Voucher, voucherType);
     const computedAmount = amount != null ? Number(amount) : validation.totalDebit;
-    const branch = await resolveVoucherBranch(req);
 
     const voucher = await Voucher.create({
       voucherNumber, voucherType, date, narration, reference,

@@ -1,8 +1,10 @@
 const { getModel } = require('../utils/getModel');
+const { getSpecialAccount, specialAccountCode } = require('../utils/specialAccounts');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
 const { generateBillPDF } = require('../utils/pdfGenerator');
-const { scopedFilter, resolveBranchScope } = require('../utils/branchScope');
+const { scopedFilter } = require('../utils/branchScope');
+const { resolveWriteBranch, getActiveBranches } = require('../utils/branchWrite');
 const { postStockForBill } = require('../utils/inventoryService');
 const { inventoryAccountForBillLine } = require('../utils/inventoryPosting');
 // Head Office branch id — safe default so nothing is left unbranched.
@@ -11,11 +13,15 @@ async function headOfficeId(req) {
   const ho = await Branch.findOne({ isHeadOffice: true }).select('_id').lean();
   return ho ? ho._id : null;
 }
-// Branch to stamp a NEW bill with: request's active branch, else Head Office.
-async function resolveBillBranch(req) {
-  const scope = resolveBranchScope(req);
-  if (scope.activeBranch) return scope.activeBranch;
-  return headOfficeId(req);
+// Resolve a stamped branch id to a "CODE — Name" label for a document, but only
+// when the tenant runs 2+ active branches. Returns null when it shouldn't show.
+async function resolveBranchLabel(req, branchId) {
+  if (!branchId) return null;
+  const active = await getActiveBranches(req);
+  if (active.length <= 1) return null;
+  const b = active.find((x) => String(x._id) === String(branchId));
+  if (!b) return null;
+  return b.code ? `${b.code} — ${b.name}` : b.name;
 }
 
 // Generate the next bill number. A tenant can customise the series via
@@ -83,7 +89,18 @@ const createBill = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Required: vendor, date, dueDate, and at least 1 line.' });
     }
 
-    const defaultExpenseAcct = await Account.findOne({ code: '6900' });
+    // Option B — branch is an explicit field on the bill, server-enforced.
+    // Rejects an ambiguous create (2+ active branches, none chosen) rather than
+    // silently filing under Head Office. Closes the form and the REST API alike.
+    const branchChoice = await resolveWriteBranch(req, req.body.branch);
+    if (branchChoice.error) {
+      return res.status(branchChoice.status).json({ success: false, message: branchChoice.error });
+    }
+
+    // Default expense for a line with no account chosen — resolved by ROLE.
+    // required:false keeps today's behaviour: with no default in the chart,
+    // line.account is left undefined rather than failing the create.
+    const defaultExpenseAcct = await getSpecialAccount(req, 'defaultExpense', { required: false });
 
     const processedLines = lines.map((l) => ({
       description: l.description,
@@ -113,7 +130,7 @@ const createBill = async (req, res) => {
       }
     }
 
-    const branch = await resolveBillBranch(req);
+    const branch = branchChoice.branch;
     const bill = await Bill.create({
       billNumber, vendor, date, dueDate,
       lines: processedLines,
@@ -171,8 +188,16 @@ const approveBill = async (req, res) => {
       return res.json({ success: true, message: 'Bill ' + bill.billNumber + ' submitted for approval.', data: bill });
     }
 
-    const apAccount = await Account.findOne({ code: '2000' });
-    if (!apAccount) return res.status(500).json({ success: false, message: 'Accounts Payable (2000) not found.' });
+    // AP resolved by ROLE, not the literal '2000'. Fetched with required:false so
+    // the clearer 500 below remains the single failure path for a chart that has
+    // no payables account mapped.
+    const apAccount = await getSpecialAccount(req, 'accountsPayable', { required: false });
+    if (!apAccount) {
+      return res.status(500).json({
+        success: false,
+        message: `Accounts Payable (code ${specialAccountCode(req, 'accountsPayable')}) not found. Map it under Settings → Special Accounts.`,
+      });
+    }
 
     const journalLines = [];
 
@@ -182,7 +207,7 @@ const approveBill = async (req, res) => {
 // not an expense — the expense arrives later when the stock is sold. Periodic
 // returns null and the original behaviour is unchanged.
 const invAcct = await inventoryAccountForBillLine(req, line);
-const expenseAcct = invAcct || (line.account ? await Account.findById(line.account) : await Account.findOne({ code: '6900'}));
+const expenseAcct = invAcct || (line.account ? await Account.findById(line.account) : await getSpecialAccount(req, 'defaultExpense', { required: false }));
 
       journalLines.push({
         account: expenseAcct._id, accountCode: expenseAcct.code, accountName: expenseAcct.name,
@@ -191,17 +216,19 @@ const expenseAcct = invAcct || (line.account ? await Account.findById(line.accou
     }
 
     if (bill.taxAmount > 0) {
-      const taxAccount = await Account.findOne({ code: '2400' });
+      // Purchase tax stays OPTIONAL exactly as before — no tax account in the
+      // chart means the bill still posts and the tax line is simply omitted.
+      const taxAccount = await getSpecialAccount(req, 'taxPayable', { required: false });
       if (taxAccount) {
         journalLines.push({
-          account: taxAccount._id, accountCode: '2400', accountName: taxAccount.name,
+          account: taxAccount._id, accountCode: taxAccount.code, accountName: taxAccount.name,
           debit: bill.taxAmount, credit: 0, description: `Tax on Bill ${bill.billNumber}`,
         });
       }
     }
 
     journalLines.push({
-      account: apAccount._id, accountCode: '2000', accountName: apAccount.name,
+      account: apAccount._id, accountCode: apAccount.code, accountName: apAccount.name,
       debit: 0, credit: bill.total, description: `Bill ${bill.billNumber}`,
     });
 
@@ -330,12 +357,17 @@ const downloadBillPDF = async (req, res) => {
     const companyName = req.tenant?.companyName || '';
     const plan = req.tenant?.plan || 'trial';
 
+    // Branch on the document — only when the tenant runs more than one active
+    // branch. Resolved server-side because the PDF has no client branch context.
+    const branchLabel = await resolveBranchLabel(req, bill.branch);
+
     const pdfBuffer = await generateBillPDF({
       bill,
       vendor: bill.vendor,
       tenantSettings,
       companyName,
       plan,
+      branchLabel,
     });
 
     res.setHeader('Content-Type', 'application/pdf');

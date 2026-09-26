@@ -12,6 +12,7 @@ import { formatCurrency, formatDate, getStatusColor } from '../../utils/formatte
 import { useToast } from '../../hooks/useToast';
 import { useAuth } from '../../context/AuthContext';
 import { useTenant } from '../../context/TenantContext';
+import { useBranch } from '../../context/BranchContext';
 
 // Sidebar path -> journalType filter, so clicking a sidebar item filters the list.
 const PATH_JOURNAL_TYPE = {
@@ -35,6 +36,14 @@ export default function JournalListPage() {
   const { user } = useAuth();
   const canApprove = ['super_admin', 'admin'].includes(user?.role);
   const { companyName } = useTenant();
+
+    const { branches } = useBranch();
+  const multiBranch = (branches || []).filter((b) => b.isActive).length > 1;
+  const branchCodeOf = (row) => {
+    if (!row.branch) return '—';
+    const b = (branches || []).find((x) => String(x._id) === String(row.branch?._id || row.branch));
+    return b ? (b.code || b.name) : '—';
+  };
 
   const fetchEntries = async () => {
     try {
@@ -199,7 +208,7 @@ export default function JournalListPage() {
                   <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{formatDate(entry.date)}</span>
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8, textTransform: 'capitalize' }}>
-                  {entry.journalType?.replace('_', ' ')} · {entry.description || '—'}
+                  {entry.journalType?.replace('_', ' ')} · {entry.description || '—'}{multiBranch ? ` · ${branchCodeOf(entry)}` : ''}
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontFamily: 'monospace', marginBottom: 10 }}>
                   <span>Dr {formatCurrency(entry.totalDebit)}</span>
@@ -233,6 +242,7 @@ export default function JournalListPage() {
               <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Entry #</th>
               <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Date</th>
               <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Type</th>
+              {multiBranch && <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Branch</th>}
               <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Description</th>
               <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--text-secondary)' }}>Debit</th>
               <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--text-secondary)' }}>Credit</th>
@@ -241,9 +251,9 @@ export default function JournalListPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</td></tr>
+              <tr><td colSpan={multiBranch ? 8 : 7} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</td></tr>
             ) : entries.length === 0 ? (
-              <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>No journal entries yet.</td></tr>
+              <tr><td colSpan={multiBranch ? 8 : 7} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>No journal entries yet.</td></tr>
             ) : entries.map((entry, i) => {
               const sc = getStatusColor(entry.status);
               return (
@@ -260,6 +270,7 @@ export default function JournalListPage() {
                   </td>
                   <td style={{ padding: '11px 16px' }}>{formatDate(entry.date)}</td>
                   <td style={{ padding: '11px 16px', textTransform: 'capitalize' }}>{entry.journalType?.replace('_', ' ')}</td>
+                  {multiBranch && <td style={{ padding: '11px 16px' }}>{branchCodeOf(entry)}</td>}
                   <td style={{ padding: '11px 16px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.description || '—'}</td>
                   <td style={{ padding: '11px 16px', textAlign: 'right', fontFamily: 'monospace' }}>{formatCurrency(entry.totalDebit)}</td>
                   <td style={{ padding: '11px 16px', textAlign: 'right', fontFamily: 'monospace' }}>{formatCurrency(entry.totalCredit)}</td>

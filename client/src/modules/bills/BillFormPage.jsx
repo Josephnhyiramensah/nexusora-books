@@ -8,6 +8,7 @@ import SmartAccountSelect from '../../components/common/SmartAccountSelect';
 import { useTenant } from '../../context/TenantContext';
 import { useToast } from '../../hooks/useToast';
 import ItemSelect from '../../components/common/ItemSelect';
+import BranchSelect, { useBranchField } from '../../components/branches/BranchSelect';
 
 const emptyLine = () => ({ item: null, description: '', quantity: 1, unitPrice: '', account: '' });
 
@@ -20,10 +21,11 @@ export default function BillFormPage() {
   const [saving, setSaving] = useState(false);
 
   const [form, setForm] = useState({
-    vendor: '', date: new Date().toISOString().split('T')[0],
+    vendor: '', branch: '', date: new Date().toISOString().split('T')[0],
     dueDate: '', taxRate: 0, notes: '', lines: [emptyLine()],
     customFields: {},
   });
+  const branchField = useBranchField();
 
   // Tenant-defined header-level custom fields that target bills.
   const billCustomFields = (tenantSettings?.customFields || []).filter((f) => f.target === 'bill');
@@ -53,6 +55,7 @@ export default function BillFormPage() {
   const removeLine = (i) => { if (form.lines.length <= 1) return; setForm({ ...form, lines: form.lines.filter((_, idx) => idx !== i) }); };
 
   const handleSave = async (approveAfter = false) => {
+    if (branchField.required && !form.branch) { showToast('Choose the branch this bill belongs to', 'error'); return; }
     if (!form.vendor) { showToast('Select a vendor', 'error'); return; }
     if (!form.date || !form.dueDate) { showToast('Date and due date required', 'error'); return; }
     const validLines = form.lines.filter((l) => l.description && parseFloat(l.unitPrice) > 0);
@@ -69,7 +72,7 @@ export default function BillFormPage() {
     try {
       setSaving(true);
       const res = await billService.create({
-        vendor: form.vendor, date: form.date, dueDate: form.dueDate,
+        vendor: form.vendor, branch: form.branch || undefined, date: form.date, dueDate: form.dueDate,
         taxRate: parseFloat(form.taxRate) || 0, notes: form.notes,
         customFields: form.customFields,
         lines: validLines.map((l) => ({ item: l.item || undefined, description: l.description, quantity: parseFloat(l.quantity) || 1, unitPrice: parseFloat(l.unitPrice), account: l.account || undefined })),
@@ -132,6 +135,7 @@ export default function BillFormPage() {
               {vendors.map((v) => <option key={v._id} value={v._id}>{v.name}</option>)}
             </select>
           </div>
+          <BranchSelect value={form.branch} onChange={(v) => setForm({ ...form, branch: v })} />
           <div>
             <label style={labelStyle}>Bill Date *</label>
             <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={inputStyle} />

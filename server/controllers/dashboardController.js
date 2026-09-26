@@ -1,6 +1,7 @@
 // server/controllers/dashboardController.js
 
 const { getModel } = require('../utils/getModel');
+const { getSpecialAccount, getSpecialAccountSet } = require('../utils/specialAccounts');
 const { scopedFilter } = require('../utils/branchScope');
 const { ledgerMovement, acctSignedBalance } = require('../utils/branchLedger');
 
@@ -18,7 +19,8 @@ const getDashboardSummary = async (req, res) => {
     // computes from that branch's posted journal lines.
     const movement = await ledgerMovement(req, JournalEntry);
 
-    const cashAccounts = await Account.find({ code: { $in: ['1000', '1010', '1020'] } }).lean();
+    // Cash tiles: the cash SET by role (cash on hand + petty cash + bank).
+    const cashAccounts = await getSpecialAccountSet(req, 'cashAccounts');
     const cashBalance = cashAccounts.reduce((s, a) => s + acctSignedBalance(a, movement), 0);
 
     const revenueAccounts = await Account.find({ type: 'revenue' }).lean();
@@ -29,8 +31,10 @@ const getDashboardSummary = async (req, res) => {
     const totalExpenses = expenseAccounts.reduce((s, a) => s + Math.abs(acctSignedBalance(a, movement)), 0);
     const netIncome = Math.round((totalRevenue - totalExpenses) * 100) / 100;
 
-    const arAccount = await Account.findOne({ code: '1100' }).lean();
-    const apAccount = await Account.findOne({ code: '2000' }).lean();
+    // AR/AP resolved by ROLE for the dashboard tiles. Read-only and optional:
+    // a chart missing either simply reports 0, exactly as before.
+    const arAccount = await getSpecialAccount(req, 'accountsReceivable', { required: false, lean: true });
+    const apAccount = await getSpecialAccount(req, 'accountsPayable', { required: false, lean: true });
     const outstandingAR = arAccount ? Math.abs(acctSignedBalance(arAccount, movement)) : 0;
     const outstandingAP = apAccount ? Math.abs(acctSignedBalance(apAccount, movement)) : 0;
 

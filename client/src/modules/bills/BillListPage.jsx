@@ -7,6 +7,7 @@ import { formatCurrency, formatDate, getStatusColor } from '../../utils/formatte
 import { useToast } from '../../hooks/useToast';
 import { useAuth } from '../../context/AuthContext';
 import { useTenant } from '../../context/TenantContext';
+import { useBranch } from '../../context/BranchContext';
 import ActionMenu from '../../components/common/ActionMenu';
 import { openAuthedPdf } from '../../utils/openAuthedPdf';
 import EntryDetailsModal from '../../components/common/EntryDetailsModal';
@@ -24,6 +25,14 @@ export default function BillListPage() {
   const canApprove = ['super_admin', 'admin'].includes(user?.role);
   const { companyName } = useTenant();
 
+
+    const { branches } = useBranch();
+  const multiBranch = (branches || []).filter((b) => b.isActive).length > 1;
+  const branchCodeOf = (row) => {
+    if (!row.branch) return '—';
+    const b = (branches || []).find((x) => String(x._id) === String(row.branch?._id || row.branch));
+    return b ? (b.code || b.name) : '—';
+  };
   const fetchBills = async () => {
     try {
       setLoading(true);
@@ -159,6 +168,7 @@ export default function BillListPage() {
               <tr style={{ background: 'var(--bg-app)', borderBottom: '1px solid var(--border)' }}>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Bill #</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Vendor</th>
+                {multiBranch && <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Branch</th>}
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Date</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Due</th>
                 <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--text-secondary)' }}>Total</th>
@@ -169,15 +179,16 @@ export default function BillListPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</td></tr>
+                <tr><td colSpan={multiBranch ? 9 : 8} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</td></tr>
               ) : bills.length === 0 ? (
-                <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>No bills yet.</td></tr>
+                <tr><td colSpan={multiBranch ? 9 : 8} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>No bills yet.</td></tr>
               ) : bills.map((b, i) => {
                 const sc = getStatusColor(b.status);
                 return (
                   <tr key={b._id} style={{ borderBottom: '1px solid var(--border)', background: i % 2 === 0 ? '#fff' : '#FAFBFC' }}>
                     <td style={{ padding: '11px 16px', fontWeight: 600, fontFamily: 'monospace' }}>{b.billNumber}</td>
                     <td style={{ padding: '11px 16px' }}>{b.vendor?.name || '—'}</td>
+                    {multiBranch && <td style={{ padding: '11px 16px' }}>{branchCodeOf(b)}</td>}
                     <td style={{ padding: '11px 16px' }}>{formatDate(b.date)}</td>
                     <td style={{ padding: '11px 16px', color: new Date(b.dueDate) < new Date() && b.status !== 'paid' ? 'var(--danger)' : 'inherit' }}>
                       {formatDate(b.dueDate)}

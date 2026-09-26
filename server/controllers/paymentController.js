@@ -1,6 +1,7 @@
 // server/controllers/paymentController.js
 
 const { getModel } = require('../utils/getModel');
+const { getSpecialAccount } = require('../utils/specialAccounts');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
 const { scopedFilter } = require('../utils/branchScope');
@@ -101,10 +102,12 @@ const receivePayment = async (req, res) => {
       return res.status(400).json({ success: false, message: `Amount (${payAmount}) exceeds invoice balance (${invoice.balance}).` });
     }
 
-    // Determine cash account based on method
-    const cashCode = method === 'bank_transfer' || method === 'cheque' ? '1020' : '1000';
-    const cashAccount = await Account.findOne({ code: cashCode });
-    const arAccount = await Account.findOne({ code: '1100' });
+    // Cash side depends on the method: bank/cheque settle through the bank
+    // account, everything else through cash on hand. Both resolved by ROLE now,
+    // so a tenant may remap either without touching this controller.
+    const cashRole = (method === 'bank_transfer' || method === 'cheque') ? 'cashAtBank' : 'cashOnHand';
+    const cashAccount = await getSpecialAccount(req, cashRole, { required: false });
+    const arAccount = await getSpecialAccount(req, 'accountsReceivable', { required: false });
 
     if (!cashAccount || !arAccount) {
       return res.status(500).json({ success: false, message: 'Cash or AR account not found.' });
@@ -222,9 +225,10 @@ const makePayment = async (req, res) => {
       return res.status(400).json({ success: false, message: `Amount (${payAmount}) exceeds bill balance (${bill.balance}).` });
     }
 
-    const cashCode = method === 'bank_transfer' || method === 'cheque' ? '1020' : '1000';
-    const cashAccount = await Account.findOne({ code: cashCode });
-    const apAccount = await Account.findOne({ code: '2000' });
+    // Same role-based cash selection as on the receipt side.
+    const cashRole = (method === 'bank_transfer' || method === 'cheque') ? 'cashAtBank' : 'cashOnHand';
+    const cashAccount = await getSpecialAccount(req, cashRole, { required: false });
+    const apAccount = await getSpecialAccount(req, 'accountsPayable', { required: false });
 
     if (!cashAccount || !apAccount) {
       return res.status(500).json({ success: false, message: 'Cash or AP account not found.' });

@@ -201,7 +201,7 @@ async function generateCustomerStatement({ customer, invoices, tenantSettings, c
 }
 
 // ─── Invoice PDF ──────────────────────────────────────────────────────────────
-async function generateInvoicePDF({ invoice, customer, tenantSettings, companyName, plan }) {
+async function generateInvoicePDF({ invoice, customer, tenantSettings, companyName, plan, branchLabel }) {
   const invCur = (invoice.currency || 'GHS');
   const isForeign = invCur !== 'GHS';
   const fxRate = invoice.exchangeRate || 1;
@@ -280,6 +280,7 @@ async function generateInvoicePDF({ invoice, customer, tenantSettings, companyNa
         ['Due Date:',     new Date(invoice.dueDate).toLocaleDateString('en-GB')],
         ['Currency:',     isForeign ? (invCur + ' (rate: 1 ' + invCur + ' = ' + fxRate + ' GHS)') : 'GHS (Ghana Cedis)'],
       ];
+      if (branchLabel) details.push(['Branch:', branchLabel]);
       (invoice.customFields || []).forEach((cf) => {
         let val = cf.value;
         if (cf.type === 'checkbox') val = val ? 'Yes' : 'No';
@@ -364,7 +365,7 @@ async function generateInvoicePDF({ invoice, customer, tenantSettings, companyNa
 // Mirrors generateInvoicePDF (same letterhead, table and totals layout) but for a
 // purchase bill: shows the VENDOR instead of a customer, and "BILL" in place of
 // "INVOICE". Kept as its own function so the two documents can diverge later.
-async function generateBillPDF({ bill, vendor, tenantSettings, companyName, plan }) {
+async function generateBillPDF({ bill, vendor, tenantSettings, companyName, plan, branchLabel }) {
   const cur = 'GHS';
   const M = (v) => cur + ' ' + (Number(v) || 0).toFixed(2);
   const lhBuffer = await loadLetterheadBuffer(tenantSettings?.letterheadImage);
@@ -432,6 +433,7 @@ async function generateBillPDF({ bill, vendor, tenantSettings, companyName, plan
         ['Due Date:',  new Date(bill.dueDate).toLocaleDateString('en-GB')],
         ['Currency:',  'GHS (Ghana Cedis)'],
       ];
+      if (branchLabel) details.push(['Branch:', branchLabel]);
       (bill.customFields || []).forEach((cf) => {
         let val = cf.value;
         if (cf.type === 'checkbox') val = val ? 'Yes' : 'No';

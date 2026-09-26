@@ -1,6 +1,7 @@
 // server/controllers/customerController.js
 
 const { getModel } = require('../utils/getModel');
+const { getSpecialAccount } = require('../utils/specialAccounts');
 const { logAudit } = require('../middleware/auditMiddleware');
 
 const getCustomers = async (req, res) => {
@@ -34,8 +35,10 @@ const createCustomer = async (req, res) => {
     const { name, email, phone, address, taxId, creditLimit, currency } = req.body;
     if (!name) return res.status(400).json({ success: false, message: 'Customer name is required.' });
 
-    // Default receivable account = 1100
-    const arAccount = await Account.findOne({ code: '1100' });
+    // Receivables control account resolved by ROLE, not the literal '1100'.
+    // required:false preserves today's behaviour — the customer is still created
+    // when the chart has no receivables account (receivableAccount left unset).
+    const arAccount = await getSpecialAccount(req, 'accountsReceivable', { required: false });
 
     const customer = await Customer.create({
       name, email, phone, address, taxId,

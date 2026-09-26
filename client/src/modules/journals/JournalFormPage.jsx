@@ -8,6 +8,7 @@ import accountService from '../../services/accountService';
 import journalService from '../../services/journalService';
 import { useToast } from '../../hooks/useToast';
 import SmartAccountSelect from '../../components/common/SmartAccountSelect';
+import BranchSelect, { useBranchField } from '../../components/branches/BranchSelect';
 
 const emptyLine = () => ({ account: '', accountData: null, debit: '', credit: '', description: '' });
 
@@ -25,10 +26,12 @@ export default function JournalFormPage() {
   const [form, setForm] = useState({
     date: new Date().toISOString().split('T')[0],
     journalType: 'general',
+    branch: '',
     description: '',
     reference: '',
     lines: [emptyLine(), emptyLine()],
   });
+  const branchField = useBranchField();
 
   useEffect(() => {
     accountService.getAll({ isActive: 'true' }).then((res) => {
@@ -141,9 +144,15 @@ export default function JournalFormPage() {
       return;
     }
 
+        if (branchField.required && !form.branch) {
+      showToast('Choose the branch this entry belongs to.', 'error');
+      return;
+    }
+
     const entryData = {
       date: form.date,
       journalType: form.journalType,
+      branch: form.branch || undefined,
       description: form.description,
       reference: form.reference,
       lines: validLines.map((l) => ({
@@ -213,6 +222,12 @@ export default function JournalFormPage() {
       </div>
 
       <div style={{ background: '#fff', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: 28 }}>
+
+        {branchField.visible && (
+          <div style={{ maxWidth: isMobile ? '100%' : 260, marginBottom: 20 }}>
+            <BranchSelect value={form.branch} onChange={(v) => setForm({ ...form, branch: v })} />
+          </div>
+        )}
 
         {/* Header Fields */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr 1fr', gap: 16, marginBottom: 24 }}>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { FiArrowRight } from 'react-icons/fi';
 import { useToast } from '../../hooks/useToast';
+import { useBranchField } from '../../components/branches/BranchSelect';
 import api from '../../services/api';
 
 // Move stock from one branch to another. Recorded as a linked pair of movements
@@ -11,16 +12,17 @@ const labelStyle = { display: 'block', fontSize: 13, fontWeight: 500, color: 'va
 
 export default function StockTransferPage() {
   const [items, setItems] = useState([]);
-  const [branches, setBranches] = useState([]);
+  // Branches this user may WRITE to (mirrors the server rule). A branch-restricted
+  // user only sees — and can only transfer between — branches they actually hold.
+  const { options: branches } = useBranchField();
   const [form, setForm] = useState({ item: '', fromBranch: '', toBranch: '', quantity: '', reference: '', notes: '' });
   const [available, setAvailable] = useState(null);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState(null);
   const { showToast, ToastComponent } = useToast();
 
-  useEffect(() => {
+    useEffect(() => {
     api.get('/inventory').then(({ data }) => { if (data.success) setItems(data.data); }).catch(() => {});
-    api.get('/branches').then(({ data }) => { if (data.success) setBranches((data.data || []).filter((b) => b.isActive)); }).catch(() => {});
   }, []);
 
   // Show what the source branch actually holds, so the user isn't guessing.

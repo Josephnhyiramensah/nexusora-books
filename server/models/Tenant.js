@@ -78,6 +78,15 @@ const tenantSchema = new mongoose.Schema(
       },
       // Tenant-defined header-level custom fields for invoices/bills.
       customFields: { type: [customFieldSchema], default: [] },
+      // Per-tenant "special accounts" — a posting ROLE → chart CODE override
+      // (role names live in server/utils/specialAccounts.js). Left unset, every
+      // role resolves to its historical default code, so this changes nothing
+      // until a tenant remaps one — same unset-⇒-default contract as
+      // documentNumbers above. Stored as role→code strings, resolved to an
+      // Account at post time by getSpecialAccount(). This is what lets a tenant
+      // rename or renumber their chart without a hard-coded literal silently
+      // mis-posting.
+      specialAccounts: { type: Map, of: String, default: undefined },
       // Per-tenant override of Ghana statutory payroll rates (PAYE + SSNIT).
       // When unset, the tenant inherits the global default (PlatformSettings)
       // or the hardcoded fallback. Editable only by this tenant's super_admin

@@ -9,6 +9,8 @@ import { useToast } from '../../hooks/useToast';
 import useIsMobile from '../../hooks/useIsMobile';
 import VoucherLineItems from './VoucherLineItems';
 import JournalVoucherLines from './JournalVoucherLines';
+import BranchSelect, { useBranchField } from '../../components/branches/BranchSelect';
+
 
 const VOUCHER_TYPES = [
   { value: 'payment',     label: 'Payment Voucher',  hint: 'Pay money out (e.g. expenses, suppliers)' },
@@ -108,10 +110,12 @@ export default function VoucherFormPage() {
   const navigate = useNavigate();
   const { showToast, ToastComponent } = useToast();
   const isMobile = useIsMobile();
+  const branchField = useBranchField();
   const [accounts, setAccounts] = useState([]);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     voucherType: 'payment',
+    branch: '',
     date: new Date().toISOString().slice(0, 10),
     dueDate: '',
     narration: '', reference: '', partyName: '', terms: '',
@@ -192,8 +196,9 @@ export default function VoucherFormPage() {
 
     setSaving(true);
     try {
-      const result = await voucherService.create({
+        const result = await voucherService.create({
         voucherType: 'journal',
+        branch: form.branch || undefined,
         date: form.date,
         dueDate: form.dueDate || undefined,
         narration: form.narration.trim(),
@@ -218,7 +223,11 @@ export default function VoucherFormPage() {
   };
 
   // ── Save: single-entry vouchers (payment/receipt/…, itemized, VAT) ─────────
-  const handleSave = async (thenPost) => {
+    const handleSave = async (thenPost) => {
+    if (branchField.required && !form.branch) {
+      showToast('Please choose the branch this voucher belongs to.', 'error');
+      return;
+    }
     if (isJournal) return handleSaveJournal(thenPost);
 
     if (!form.date || !form.debitAccount || !form.creditAccount || !(grandTotal > 0)) {
@@ -228,7 +237,7 @@ export default function VoucherFormPage() {
     setSaving(true);
     try {
       const result = await voucherService.create({
-        voucherType: form.voucherType, date: form.date, dueDate: form.dueDate || undefined,
+        voucherType: form.voucherType, branch: form.branch || undefined, date: form.date, dueDate: form.dueDate || undefined,
         narration: form.narration, reference: form.reference, partyName: form.partyName, terms: form.terms,
         mode: form.mode, paymentDetails: form.paymentDetails,
         debitAccount: form.debitAccount, creditAccount: form.creditAccount,
@@ -336,6 +345,12 @@ export default function VoucherFormPage() {
         </select>
         {currentType && <p style={{ fontSize: 12, color: 'var(--text-secondary, #6B7280)', marginTop: 8, marginBottom: 0 }}>{currentType.hint}</p>}
       </div>
+
+      {branchField.visible && (
+        <div style={card}>
+          <BranchSelect value={form.branch} onChange={(v) => set('branch', v)} />
+        </div>
+      )}
 
       {isJournal ? (
         <>

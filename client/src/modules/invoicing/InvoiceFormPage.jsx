@@ -10,6 +10,8 @@ import SmartAccountSelect from '../../components/common/SmartAccountSelect';
 import { useToast } from '../../hooks/useToast';
 import ResponsiveTable from '../../components/common/ResponsiveTable';
 import ItemSelect from '../../components/common/ItemSelect';
+import BranchSelect, { useBranchField } from '../../components/branches/BranchSelect';
+
 
 const emptyLine = () => ({ item: null, description: '', quantity: 1, unitPrice: '', account: '' });
 export default function InvoiceFormPage() {
@@ -26,12 +28,13 @@ export default function InvoiceFormPage() {
   const [invRate, setInvRate] = useState(1);
   const [rateInfo, setRateInfo] = useState(null);
 
-  const [form, setForm] = useState({
-    customer: '', date: new Date().toISOString().split('T')[0],
+   const [form, setForm] = useState({
+    customer: '', branch: '', date: new Date().toISOString().split('T')[0],
     dueDate: '', taxRate: 0, notes: '',
     lines: [emptyLine()],
     customFields: {},
   });
+  const branchField = useBranchField();
 
   // Tenant-defined header-level custom fields that target invoices.
   const invoiceCustomFields = (tenantSettings?.customFields || []).filter((f) => f.target === 'invoice');
@@ -90,6 +93,7 @@ export default function InvoiceFormPage() {
   };
 
   const handleSave = async (sendAfter = false) => {
+    if (branchField.required && !form.branch) { showToast('Choose the branch this invoice belongs to', 'error'); return; }
     if (!form.customer) { showToast('Select a customer', 'error'); return; }
     if (!form.date || !form.dueDate) { showToast('Date and due date are required', 'error'); return; }
     const validLines = form.lines.filter((l) => l.description && parseFloat(l.unitPrice) > 0);
@@ -106,7 +110,7 @@ export default function InvoiceFormPage() {
     try {
       setSaving(true);
       const res = await invoiceService.create({
-        customer: form.customer, date: form.date, dueDate: form.dueDate,
+        customer: form.customer, branch: form.branch || undefined, date: form.date, dueDate: form.dueDate,
         taxRate: parseFloat(form.taxRate) || 0, notes: form.notes,
         currency: isForeign ? invCurrency : '',
         exchangeRate: rate,
@@ -175,13 +179,15 @@ export default function InvoiceFormPage() {
 
       <div style={{ background: '#fff', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', padding: 28 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))', gap: 16, marginBottom: 24 }}>
-          <div>
+                    <div>
             <label style={labelStyle}>Customer *</label>
             <select value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} style={inputStyle}>
               <option value="">Select customer...</option>
               {customers.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
             </select>
           </div>
+          <BranchSelect value={form.branch} onChange={(v) => setForm({ ...form, branch: v })} />
+          
           <div>
             <label style={labelStyle}>Invoice Date *</label>
             <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} style={inputStyle} />

@@ -1,6 +1,7 @@
 const { getModel } = require('../utils/getModel');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { scopedFilter, resolveBranchScope } = require('../utils/branchScope');
+const { resolveWriteBranch, writableIds, getActiveBranches } = require('../utils/branchWrite');
 const {
   recordMovement, getOnHand, getOnHandAllBranches, weightedAvgCost, branchValuation,
 } = require('../utils/inventoryService');
@@ -11,11 +12,13 @@ async function headOfficeId(req) {
   const ho = await Branch.findOne({ isHeadOffice: true }).select('_id').lean();
   return ho ? ho._id : null;
 }
+// Movement branch under Option B: an explicit choice is validated against the
+// caller's access; a single-branch tenant (or a narrowed request) resolves
+// automatically; a full-access user on "All branches" who names none is
+// REJECTED rather than silently filed under Head Office. Returns { branch } or
+// { error, status } — the caller turns the error into an HTTP response.
 async function resolveMovementBranch(req, bodyBranch) {
-  if (bodyBranch) return bodyBranch;                 // explicit wins
-  const scope = resolveBranchScope(req);
-  if (scope.activeBranch) return scope.activeBranch; // the selected branch
-  return headOfficeId(req);                          // default
+  return resolveWriteBranch(req, bodyBranch);
 }
 
 // ─── Item CRUD (kept; getItems now returns DERIVED per-branch on-hand) ────────
@@ -59,7 +62,18 @@ const createItem = async (req, res) => {
     const item = await Item.create({ ...itemData, createdBy: req.user._id });
 
     if (openingQuantity && Number(openingQuantity) > 0) {
-      const branch = await resolveMovementBranch(req, openingBranch);
+      const branchChoice = await resolveMovementBranch(req, openingBranch);
+      if (branchChoice.error) {
+        // The item is already created; a bad/absent branch shouldn't 500. Tell the
+        // caller the item exists but opening stock needs a branch, so they can add
+        // it via a stock movement instead of silently landing it in Head Office.
+        return res.status(branchChoice.status).json({
+          success: false,
+          message: `Item created, but opening stock needs a branch: ${branchChoice.error}`,
+          data: item,
+        });
+      }
+      const branch = branchChoice.branch;
       if (branch) {
         await recordMovement(req.tenantDb, {
           item: item._id, branch, type: 'opening_balance',
@@ -129,7 +143,11 @@ const makeMovement = (type) => async (req, res) => {
     const exists = await Item.findById(item).select('_id name').lean();
     if (!exists) return res.status(404).json({ success: false, message: 'Item not found.' });
 
-    const branch = await resolveMovementBranch(req, bodyBranch);
+    const branchChoice = await resolveMovementBranch(req, bodyBranch);
+    if (branchChoice.error) {
+      return res.status(branchChoice.status).json({ success: false, message: branchChoice.error });
+    }
+    const branch = branchChoice.branch;
     if (!branch) return res.status(400).json({ success: false, message: 'No branch resolved for this movement.' });
 
     // For an issue, prevent driving on-hand negative (a business safety net).
@@ -170,6 +188,17 @@ const transferStock = async (req, res) => {
     if (String(fromBranch) === String(toBranch)) {
       return res.status(400).json({ success: false, message: 'Source and destination branches must differ.' });
     }
+
+    // Server-side access guard: a restricted user may only transfer between
+    // branches they actually hold. Mirrors the UI dropdown, and closes the raw
+    // API — a crafted request can't move stock out of a branch the caller has no
+    // rights to. A full-access user's writable set is every active branch, so
+    // Head Office admins are unaffected.
+    const writable = writableIds(req, await getActiveBranches(req));
+    if (!writable.has(String(fromBranch)) || !writable.has(String(toBranch))) {
+      return res.status(403).json({ success: false, message: 'You do not have access to one of the selected branches.' });
+    }
+
     const mag = Math.abs(Number(quantity) || 0);
     if (mag === 0) return res.status(400).json({ success: false, message: 'quantity must be non-zero.' });
 

@@ -5,6 +5,7 @@ import { useToast } from '../../hooks/useToast';
 import Modal from '../../components/common/Modal';
 import api from '../../services/api';
 import ResponsiveTable from '../../components/common/ResponsiveTable';
+import BranchSelect, { useBranchField } from '../../components/branches/BranchSelect';
 
 const inputStyle = { width: '100%', padding: '10px 14px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 14, outline: 'none' };
 const labelStyle = { display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6 };
@@ -17,13 +18,21 @@ const thC = { ...th, textAlign: 'center' };
 // opening quantity, which is recorded as an opening_balance movement.
 function ItemForm({ item, onSave, onCancel }) {
   const isNew = !item;
+  const branchField = useBranchField();
   const [form, setForm] = useState({
     code: item?.code || '', name: item?.name || '', description: item?.description || '',
     category: item?.category || '', unitCost: item?.unitCost || 0,
     sellingPrice: item?.sellingPrice || 0, reorderLevel: item?.reorderLevel || 0,
-    openingQuantity: 0,
+    openingQuantity: 0, openingBranch: '',
   });
-  const handleSubmit = (e) => { e.preventDefault(); onSave(form); };
+  // Opening stock lands as a movement at one branch, so on a multi-branch tenant
+  // an opening quantity must name its branch — same rule the server enforces.
+  const needsOpeningBranch = isNew && branchField.visible && Number(form.openingQuantity) > 0;
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (needsOpeningBranch && !form.openingBranch) return; // the field below shows the prompt
+    onSave(form);
+  };
 
   return (
     <form onSubmit={handleSubmit}>
@@ -47,6 +56,15 @@ function ItemForm({ item, onSave, onCancel }) {
         )}
       </div>
 
+      {needsOpeningBranch && (
+        <div style={{ marginBottom: 20 }}>
+          <BranchSelect value={form.openingBranch} onChange={(v) => setForm({ ...form, openingBranch: v })} labelText="Opening stock branch" />
+          {!form.openingBranch && (
+            <p style={{ fontSize: 12, color: 'var(--danger)', margin: '6px 0 0' }}>Choose which branch this opening stock belongs to.</p>
+          )}
+        </div>
+      )}
+
       <div style={{ padding: '10px 14px', background: 'var(--bg-app)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 20, lineHeight: 1.55 }}>
         {isNew
           ? 'Opening quantity is recorded as an opening-balance movement at your current branch. After this, stock changes only through Receive, Issue, Adjust or Transfer — so every change keeps an audit trail.'
@@ -63,8 +81,9 @@ function ItemForm({ item, onSave, onCancel }) {
 
 // Receive / Issue / Adjust in one small form — the action decides the endpoint.
 function MovementForm({ item, action, onDone, onCancel, showToast }) {
-  const [form, setForm] = useState({ quantity: '', unitCost: item?.unitCost || 0, reference: '', notes: '' });
+  const [form, setForm] = useState({ quantity: '', unitCost: item?.unitCost || 0, reference: '', notes: '', branch: '' });
   const [saving, setSaving] = useState(false);
+  const branchField = useBranchField();
 
   const titles = {
     receive: { verb: 'Receive', help: 'Stock coming in — increases this branch\u2019s quantity. The unit cost feeds the weighted average.' },
@@ -77,9 +96,11 @@ function MovementForm({ item, action, onDone, onCancel, showToast }) {
     e.preventDefault();
     const qty = Number(form.quantity);
     if (!qty) { showToast('Enter a quantity.', 'error'); return; }
+    if (branchField.required && !form.branch) { showToast('Choose the branch for this movement.', 'error'); return; }
     setSaving(true);
     try {
       const body = { item: item._id, quantity: qty, reference: form.reference, notes: form.notes };
+      if (branchField.visible) body.branch = form.branch;
       if (action === 'receive') body.unitCost = Number(form.unitCost) || 0;
       const { data } = await api.post(`/inventory/${action}`, body);
       if (data.success) { showToast(data.message || 'Recorded.'); onDone(); }
@@ -96,6 +117,11 @@ function MovementForm({ item, action, onDone, onCancel, showToast }) {
         <label style={labelStyle}>Item</label>
         <input style={{ ...inputStyle, background: 'var(--bg-app)' }} value={`${item.code} — ${item.name}`} disabled />
       </div>
+      {branchField.visible && (
+        <div style={{ marginBottom: 16 }}>
+          <BranchSelect value={form.branch} onChange={(v) => setForm({ ...form, branch: v })} />
+        </div>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: action === 'receive' ? '1fr 1fr' : '1fr', gap: 16, marginBottom: 16 }}>
         <div>
           <label style={labelStyle}>Quantity *</label>

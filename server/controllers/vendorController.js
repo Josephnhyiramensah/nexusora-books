@@ -1,6 +1,7 @@
 // server/controllers/vendorController.js
 
 const { getModel } = require('../utils/getModel');
+const { getSpecialAccount } = require('../utils/specialAccounts');
 const { logAudit } = require('../middleware/auditMiddleware');
 
 const getVendors = async (req, res) => {
@@ -34,7 +35,10 @@ const createVendor = async (req, res) => {
     const { name, email, phone, address, taxId } = req.body;
     if (!name) return res.status(400).json({ success: false, message: 'Vendor name is required.' });
 
-    const apAccount = await Account.findOne({ code: '2000' });
+    // Payables control account resolved by ROLE, not the literal '2000'.
+    // required:false preserves today's behaviour — the vendor is still created
+    // when the chart has no payables account (payableAccount is left unset).
+    const apAccount = await getSpecialAccount(req, 'accountsPayable', { required: false });
 
     const vendor = await Vendor.create({
       name, email, phone, address, taxId,

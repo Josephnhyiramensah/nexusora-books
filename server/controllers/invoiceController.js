@@ -1,7 +1,9 @@
 const { getModel } = require('../utils/getModel');
+const { getSpecialAccount, specialAccountCode } = require('../utils/specialAccounts');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
-const { scopedFilter, resolveBranchScope } = require('../utils/branchScope');
+const { scopedFilter } = require('../utils/branchScope');
+const { resolveWriteBranch, getActiveBranches } = require('../utils/branchWrite');
 const { postStockForInvoice } = require('../utils/inventoryService');
 const { postSaleCost } = require('../utils/inventoryPosting');
 
@@ -11,11 +13,16 @@ async function headOfficeId(req) {
   const ho = await Branch.findOne({ isHeadOffice: true }).select('_id').lean();
   return ho ? ho._id : null;
 }
-// Branch to stamp a NEW invoice with: the request's active branch, else Head Office.
-async function resolveInvoiceBranch(req) {
-  const scope = resolveBranchScope(req);
-  if (scope.activeBranch) return scope.activeBranch;
-  return headOfficeId(req);
+
+// Resolve a stamped branch id to a "CODE — Name" label for a document, but only
+// when the tenant runs 2+ active branches. Returns null when it shouldn't show.
+async function resolveBranchLabel(req, branchId) {
+  if (!branchId) return null;
+  const active = await getActiveBranches(req);
+  if (active.length <= 1) return null;
+  const b = active.find((x) => String(x._id) === String(branchId));
+  if (!b) return null;
+  return b.code ? `${b.code} — ${b.name}` : b.name;
 }
 
 // Generate the next invoice number. A tenant can customise the series via
@@ -88,7 +95,18 @@ const createInvoice = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Required: customer, date, dueDate, and at least 1 line.' });
     }
 
-    const defaultRevenueAcct = await Account.findOne({ code: '4000' });
+    // Option B — branch is an explicit field on the invoice, server-enforced.
+    // Rejects an ambiguous create (2+ active branches, none chosen) instead of
+    // silently filing under Head Office. Closes the form and the REST API alike.
+    const branchChoice = await resolveWriteBranch(req, req.body.branch);
+    if (branchChoice.error) {
+      return res.status(branchChoice.status).json({ success: false, message: branchChoice.error });
+    }
+    const branch = branchChoice.branch;
+    // Default revenue for a line with no account chosen — resolved by ROLE.
+    // required:false keeps today's behaviour exactly: with no default in the
+    // chart, line.account is simply left undefined rather than failing create.
+    const defaultRevenueAcct = await getSpecialAccount(req, 'defaultRevenue', { required: false });
 
     const processedLines = lines.map((l) => ({
       description: l.description,
@@ -106,7 +124,7 @@ const createInvoice = async (req, res) => {
     const baseTaxAmount = Math.round(tax * fxRate * 100) / 100;
     const baseTotal = Math.round(total * fxRate * 100) / 100;
     const invoiceNumber = await generateInvoiceNumber(Invoice, req.tenant?.settings?.documentNumbers?.invoice);
-    const branch = await resolveInvoiceBranch(req);
+ 
 
     const invoice = await Invoice.create({
       invoiceNumber, customer, date, dueDate,
@@ -202,18 +220,28 @@ const sendInvoice = async (req, res) => {
     // Multi-currency: post the ledger in base (GHS). For GHS invoices rate=1.
     const fxRate = (invoice.exchangeRate && invoice.exchangeRate > 0) ? invoice.exchangeRate : 1;
     const toBase = (amt) => Math.round((Number(amt) || 0) * fxRate * 100) / 100;
-    const arAccount = await Account.findOne({ code: '1100' });
-    const taxAccount = await Account.findOne({ code: '2400' });
-    if (!arAccount) return res.status(500).json({ success: false, message: 'Accounts Receivable (1100) not found.' });
+    // AR and sales tax resolved by ROLE, not literals. AR is genuinely required
+    // (an invoice cannot post without it) but is fetched with required:false so
+    // the existing, clearer 500 below stays the single failure path. Tax remains
+    // OPTIONAL exactly as before: a chart with no tax account still posts the
+    // invoice and simply omits the tax line.
+    const arAccount = await getSpecialAccount(req, 'accountsReceivable', { required: false });
+    const taxAccount = await getSpecialAccount(req, 'taxPayable', { required: false });
+    if (!arAccount) {
+      return res.status(500).json({
+        success: false,
+        message: `Accounts Receivable (code ${specialAccountCode(req, 'accountsReceivable')}) not found. Map it under Settings → Special Accounts.`,
+      });
+    }
 
-    const journalLines = [];
+       const journalLines = [];
     journalLines.push({
-      account: arAccount._id, accountCode: '1100', accountName: arAccount.name,
+      account: arAccount._id, accountCode: arAccount.code, accountName: arAccount.name,
       debit: toBase(invoice.total), credit: 0, description: `Invoice ${invoice.invoiceNumber}`,
     });
 
     for (const line of invoice.lines) {
-      const revenueAcct = line.account ? await Account.findById(line.account) : await Account.findOne({ code: '4000' });
+      const revenueAcct = line.account ? await Account.findById(line.account) : await getSpecialAccount(req, 'defaultRevenue', { required: false });
       journalLines.push({
         account: revenueAcct._id, accountCode: revenueAcct.code, accountName: revenueAcct.name,
         debit: 0, credit: toBase(line.amount), description: line.description,
@@ -222,12 +250,12 @@ const sendInvoice = async (req, res) => {
 
     if (invoice.taxAmount > 0 && taxAccount) {
       journalLines.push({
-        account: taxAccount._id, accountCode: '2400', accountName: taxAccount.name,
+        account: taxAccount._id, accountCode: taxAccount.code, accountName: taxAccount.name,
         debit: 0, credit: invoice.taxAmount,
         description: `Tax on Invoice ${invoice.invoiceNumber}`,
       });
     }
-
+   
     const entryNumber = await generateEntryNumber(JournalEntry);
     const journalEntry = await JournalEntry.create({
       entryNumber, date: invoice.date, journalType: 'sales',
@@ -319,12 +347,14 @@ const downloadInvoicePDF = async (req, res) => {
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found.' });
 
     const customer = await Customer.findById(invoice.customer);
+    const branchLabel = await resolveBranchLabel(req, invoice.branch);
 
     const pdfBuffer = await generateInvoicePDF({
       invoice,
       customer,
       tenantSettings: req.tenant?.settings || {},
       companyName: req.tenant?.companyName || '',
+      branchLabel,
     });
 
     res.setHeader('Content-Type', 'application/pdf');

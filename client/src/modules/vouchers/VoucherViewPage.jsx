@@ -15,6 +15,7 @@ import { formatCurrency, formatDate } from '../../utils/formatters';
 import { useTenant } from '../../context/TenantContext';
 import { useToast } from '../../hooks/useToast';
 import { useAuth } from '../../context/AuthContext';
+import { useBranch } from '../../context/BranchContext';
 
 const NAVY = '#012158', GOLD = '#FD9C09', BLUE = '#3485E9';
 const TYPE_LABELS = {
@@ -38,6 +39,7 @@ export default function VoucherViewPage() {
   const { companyName, settings } = useTenant();
   const { showToast, ToastComponent } = useToast();
   const { user } = useAuth();
+  const { branches } = useBranch();
   const canReverse = ['super_admin', 'admin'].includes(user?.role);
   const printRef = useRef(null);
 
@@ -80,7 +82,23 @@ export default function VoucherViewPage() {
   if (loading) return <p style={{ padding: 40, color: 'var(--text-muted, #9CA3AF)' }}>Loading voucher…</p>;
   if (!voucher) return <p style={{ padding: 40, color: 'var(--text-muted, #9CA3AF)' }}>Voucher not found.</p>;
 
+
   const s = statusStyle(voucher.status);
+
+
+    // Branch on the document — shown only when the company runs more than one, so a
+  // single-branch tenant sees no redundant row. Resolve the stamped id (or a
+  // populated object, if that ever changes) to a label from the branch list.
+  const multiBranch = (branches || []).filter((b) => b.isActive).length > 1;
+  const branchLabel = (() => {
+    if (!voucher.branch) return null;
+    const id = String(voucher.branch?._id || voucher.branch);
+    const b = (branches || []).find((x) => String(x._id) === id);
+    return b ? (b.code ? `${b.code} — ${b.name}` : b.name) : null;
+  })();
+
+
+
   const logo = settings?.logo;
   const lh = settings?.letterhead || {};
   const addr = [settings?.address, settings?.city, settings?.region].filter(Boolean).join(', ');
@@ -139,6 +157,7 @@ export default function VoucherViewPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#9CA3AF' }}>Voucher No.</span><strong>{voucher.voucherNumber}</strong></div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#9CA3AF' }}>Date</span><span>{formatDate(voucher.date)}</span></div>
               {voucher.dueDate && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#9CA3AF' }}>Due Date</span><span>{formatDate(voucher.dueDate)}</span></div>}
+              {multiBranch && branchLabel && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#9CA3AF' }}>Branch</span><span style={{ fontWeight: 600 }}>{branchLabel}</span></div>}
             </div>
           </div>
         </div>

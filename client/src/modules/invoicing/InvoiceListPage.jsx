@@ -9,6 +9,7 @@ import { formatCurrency, formatDate, getStatusColor } from '../../utils/formatte
 import { useToast } from '../../hooks/useToast';
 import { useAuth } from '../../context/AuthContext';
 import { useTenant } from '../../context/TenantContext';
+import { useBranch } from '../../context/BranchContext';
 import ActionMenu from '../../components/common/ActionMenu';
 import EntryDetailsModal from '../../components/common/EntryDetailsModal';
 import api from '../../services/api';
@@ -29,6 +30,14 @@ export default function InvoiceListPage() {
   const { user } = useAuth();
   const canApprove = ['super_admin', 'admin'].includes(user?.role);
   const { companyName } = useTenant();
+
+    const { branches } = useBranch();
+  const multiBranch = (branches || []).filter((b) => b.isActive).length > 1;
+  const branchCodeOf = (row) => {
+    if (!row.branch) return '—';
+    const b = (branches || []).find((x) => String(x._id) === String(row.branch?._id || row.branch));
+    return b ? (b.code || b.name) : '—';
+  };
 
   const fetchInvoices = async () => {
     try {
@@ -255,6 +264,7 @@ export default function InvoiceListPage() {
               <tr style={{ background: 'var(--bg-app)', borderBottom: '1px solid var(--border)' }}>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Invoice #</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Customer</th>
+                {multiBranch && <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Branch</th>}
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Date</th>
                 <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)' }}>Due Date</th>
                 <th style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600, color: 'var(--text-secondary)' }}>Total</th>
@@ -265,13 +275,13 @@ export default function InvoiceListPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={multiBranch ? 8 : 7} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
                     Loading invoices...
                   </td>
                 </tr>
               ) : invoices.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={multiBranch ? 8 : 7} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
                     No invoices yet. Click "New Invoice" to create one.
                   </td>
                 </tr>
@@ -290,6 +300,7 @@ export default function InvoiceListPage() {
                       {inv.invoiceNumber}
                     </td>
                     <td style={{ padding: '11px 16px' }}>{inv.customer?.name || '—'}</td>
+                    {multiBranch && <td style={{ padding: '11px 16px' }}>{branchCodeOf(inv)}</td>}
                     <td style={{ padding: '11px 16px' }}>{formatDate(inv.date)}</td>
                     <td style={{ padding: '11px 16px', color: isOverdue ? 'var(--danger)' : 'inherit' }}>
                       {formatDate(inv.dueDate)}
