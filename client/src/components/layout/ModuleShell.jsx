@@ -102,11 +102,17 @@ export default function ModuleShell({ moduleTitle, sidebarItems }) {
         minHeight: '100vh',
         minWidth: 0, // prevent overflow
       }}>
-        {/* Header */}
+        {/* Header — stays put while the page scrolls.
+            The sticky MUST live on this wrapper, not on TopBar itself: a sticky
+            element can only travel inside its parent's box, and this wrapper is
+            exactly TopBar's height, so TopBar's own position:sticky had nowhere
+            to stick and scrolled away with it. zIndex sits above page content and
+            below the sidebar toggle (200) and mobile drawer (1000). */}
         <motion.div
           initial={{ y: -60, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.35, delay: 0.1 }}
+          style={{ position: 'sticky', top: 0, zIndex: 150 }}
         >
           <TopBar onMenuToggle={showMobileNav ? () => setDrawerOpen(true) : undefined} />
         </motion.div>
