@@ -7,7 +7,7 @@ import LoginPage from './pages/LoginPage';
 import HomeScreen from './pages/HomeScreen';
 import ModuleShell from './components/layout/ModuleShell';
 import AuditLogPage from './modules/audit/AuditLogPage';
-import { FiRefreshCw, FiShield, FiGlobe, FiCode, FiLink, FiEdit3, FiGitBranch } from 'react-icons/fi';
+import { FiRefreshCw, FiShield, FiGlobe, FiCode, FiLink, FiEdit3, FiGitBranch, FiSliders } from 'react-icons/fi';
 
 import FinancialAnalyticsPage from './modules/accounts/FinancialAnalyticsPage';
 import { BranchProvider } from './context/BranchContext';
@@ -140,6 +140,7 @@ const settingsSidebar = [
   { path: '/settings/whitelabel',   label: 'White-label',          icon: FiEdit3,       adminOnly: true },
   { path: '/settings/branches',     label: 'Branches',             icon: FiGitBranch,   adminOnly: true },
   { path: '/settings/chart-maintenance', label: 'Chart Maintenance', icon: FiRefreshCw, adminOnly: true },
+  { path: '/settings/special-accounts',  label: 'Special Accounts',   icon: FiSliders,   adminOnly: true },
 ];
 
 const g = (path, label) => [{ path, label: `All ${label}`, icon: FiList, exact: true }];
@@ -355,6 +356,7 @@ export default function App() {
               <Route path="/settings/whitelabel"   element={<SettingsPage />} />
               <Route path="/settings/branches"     element={<SettingsPage />} />
               <Route path="/settings/chart-maintenance" element={<SettingsPage />} />
+              <Route path="/settings/special-accounts"  element={<SettingsPage />} />
             </Route>
             {/* Audit Log */}
 <Route element={<ProtectedRoute permission="audit.view" roles={['super_admin','admin']}><ModuleShell moduleTitle="Audit Log" sidebarItems={[{ path: '/audit', label: 'Audit Trail', icon: FiShield, exact: true }]} /></ProtectedRoute>}>

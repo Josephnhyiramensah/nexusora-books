@@ -124,7 +124,10 @@ export default function HomeScreen() {
         />
       )}
 
-      <DropDown>
+      {/* Sticky on the WRAPPER, not on TopBar: a sticky element can only travel
+          inside its parent's box, and this wrapper is exactly TopBar's height.
+          Same fix as ModuleShell — /home renders its own TopBar, so it needs it too. */}
+      <DropDown style={{ position: 'sticky', top: 0, zIndex: 150 }}>
         <TopBar onMenuToggle={showMobileNav ? () => setDrawerOpen(true) : undefined} />
       </DropDown>
 

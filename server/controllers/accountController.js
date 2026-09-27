@@ -2,6 +2,8 @@
 
 const { getModel } = require('../utils/getModel');
 const { logAudit } = require('../middleware/auditMiddleware');
+const Tenant = require('../models/Tenant');
+const { describeSpecialAccounts, sanitiseOverrides } = require('../utils/specialAccounts');
 
 const getAccounts = async (req, res) => {
   try {
@@ -160,7 +162,66 @@ const deactivateAccount = async (req, res) => {
   }
 };
 
+// GET /api/accounts/special-accounts
+// Every posting ROLE for this tenant: its default code, any override, what it
+// currently resolves to, and whether that account exists. A row with ok:false is
+// a posting that would fail or mis-post today, so this doubles as a health check
+// on the chart — which is the point of showing it to an admin at all.
+const getSpecialAccounts = async (req, res) => {
+  try {
+    const data = await describeSpecialAccounts(req);
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('[Accounts] getSpecialAccounts error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to load special accounts.' });
+  }
+};
+
+// PUT /api/accounts/special-accounts   { specialAccounts: { role: code, ... } }
+// Saves the tenant's role -> code overrides. Unknown keys are dropped and values
+// are trimmed (see sanitiseOverrides), so the stored map can only ever contain
+// roles this build knows about. Sending a role with an empty value CLEARS its
+// override, falling the role back to its historical default.
+const setSpecialAccounts = async (req, res) => {
+  try {
+    const subdomain = req.tenant && req.tenant.subdomain;
+    if (!subdomain) return res.status(400).json({ success: false, message: 'No tenant context.' });
+
+    const clean = sanitiseOverrides(req.body && req.body.specialAccounts);
+
+    const tenant = await Tenant.findOne({ subdomain });
+    if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found.' });
+
+    // Replace the map wholesale with the sanitised set: a role the client omits
+    // (or sends blank) is intentionally back on its default.
+    tenant.settings.specialAccounts = clean;
+    tenant.markModified('settings');
+    await tenant.save();
+
+    await logAudit(req.tenantDb, {
+      userId: req.user._id, action: 'update', module: 'settings',
+      entityId: tenant._id, entityType: 'Tenant',
+      description: 'Updated special-account mappings (' + Object.keys(clean).length + ' set)',
+      newData: clean,
+    }, req);
+
+    // Hand back the freshly resolved picture so the UI can re-render without a refetch.
+    // Re-describe against the JUST-SAVED map. Built as a minimal explicit object
+    // rather than spreading the Express request (which would copy a large object
+    // and lose its prototype); describeSpecialAccounts only needs these two.
+    const data = await describeSpecialAccounts({
+      tenantDb: req.tenantDb,
+      tenant: { settings: { specialAccounts: clean } },
+    });
+    res.json({ success: true, message: 'Special accounts updated.', data, specialAccounts: clean });
+  } catch (error) {
+    console.error('[Accounts] setSpecialAccounts error:', error.message);
+    res.status(500).json({ success: false, message: error.message || 'Failed to save special accounts.' });
+  }
+};
+
 module.exports = {
   getAccounts, getAccountTree, getAccount,
   createAccount, updateAccount, deactivateAccount,
+  getSpecialAccounts, setSpecialAccounts,
 };

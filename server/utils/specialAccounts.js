@@ -192,11 +192,138 @@ function specialAccountSetCodes(req, setName) {
   return codesForSet(req, setName);
 }
 
+// Human-facing metadata for the Settings screen: a label and a grouping for each
+// role, so an admin sees "Accounts Receivable — used by invoices, payments,
+// statements" rather than a bare key. Order here is the order they render in.
+const ROLE_META = Object.freeze({
+  accountsReceivable:      { group: 'Receivables & Payables', label: 'Accounts Receivable',      used: 'Invoices, receipts, customers, dashboard' },
+  accountsPayable:         { group: 'Receivables & Payables', label: 'Accounts Payable',         used: 'Bills, payments, vendors, dashboard' },
+  cashOnHand:              { group: 'Cash & Bank',            label: 'Cash on Hand',             used: 'Cash receipts and cash payments' },
+  pettyCash:               { group: 'Cash & Bank',            label: 'Petty Cash',               used: 'Cash-position reporting' },
+  cashAtBank:              { group: 'Cash & Bank',            label: 'Bank Account',             used: 'Bank/cheque settlement, payroll, casual wages' },
+  mobileMoneyWallet:       { group: 'Cash & Bank',            label: 'Mobile Money Wallet',      used: 'MoMo reconciliation (created on first use)' },
+  inventory:               { group: 'Inventory',              label: 'Inventory',                used: 'Perpetual stock asset' },
+  cogs:                    { group: 'Inventory',              label: 'Cost of Goods Sold',       used: 'Perpetual sale cost posting' },
+  cogsFallback:            { group: 'Inventory',              label: 'COGS Fallback (Purchases)',used: 'Used when the COGS account is absent' },
+  taxPayable:              { group: 'Tax',                    label: 'Taxes Payable',            used: 'Sales/purchase tax on invoices and bills' },
+  vatPayable:              { group: 'Tax',                    label: 'VAT Payable (Output)',     used: 'Voucher VAT split' },
+  inputVatRecoverable:     { group: 'Tax',                    label: 'Input VAT Recoverable',    used: 'Tax report' },
+  payePayable:             { group: 'Tax',                    label: 'PAYE — where payroll posts', used: 'Payroll posting (see warning)' },
+  payePayableActual:       { group: 'Tax',                    label: 'PAYE — where the report reads', used: 'Tax report (see warning)' },
+  whtPayable:              { group: 'Tax',                    label: 'Withholding Tax Payable',  used: 'Tax report' },
+  whtReceivable:           { group: 'Tax',                    label: 'Withholding Tax Receivable', used: 'Tax report' },
+  corporateTaxPayable:     { group: 'Tax',                    label: 'Corporate Tax Payable',    used: 'Tax report' },
+  corporateTaxExpense:     { group: 'Tax',                    label: 'Corporate Tax Expense',    used: 'Tax report' },
+  salaryExpense:           { group: 'Payroll',                label: 'Salaries & Wages',         used: 'Payroll posting' },
+  ssnitPayable:            { group: 'Payroll',                label: 'SSNIT — where payroll posts', used: 'Payroll posting' },
+  ssnitTier1:              { group: 'Payroll',                label: 'SSNIT Tier 1',             used: 'Tax report; provident fund (see warning)' },
+  ssnitTier2:              { group: 'Payroll',                label: 'SSNIT Tier 2',             used: 'Tax report' },
+  ssnitTier3:              { group: 'Payroll',                label: 'SSNIT Tier 3 / Provident', used: 'Tax report' },
+  casualWages:             { group: 'Payroll',                label: 'Casual Wages',             used: 'Casual worker sheets (see warning)' },
+  staffLoanReceivable:     { group: 'Payroll',                label: 'Staff Loan Receivable',    used: 'Payroll loan recovery' },
+  defaultRevenue:          { group: 'Defaults',               label: 'Default Revenue',          used: 'Invoice line with no account chosen' },
+  defaultExpense:          { group: 'Defaults',               label: 'Default Expense',          used: 'Bill line with no account chosen' },
+  depreciationExpense:     { group: 'Fixed Assets',           label: 'Depreciation Expense',     used: 'Monthly depreciation' },
+  accumulatedDepreciation: { group: 'Fixed Assets',           label: 'Accumulated Depreciation', used: 'Monthly depreciation' },
+  bankFees:                { group: 'Other',                  label: 'Bank & MoMo Charges',      used: 'Reconciliation fees' },
+});
+
+const SET_META = Object.freeze({
+  cashAccounts: { group: 'Cash & Bank', label: 'Cash Accounts (set)', used: 'Cash position: reports, dashboard, AI' },
+});
+
+// Known cross-module mismatches, surfaced in the UI so an admin can see WHY a
+// figure looks wrong instead of discovering it in a reconciliation. Each names
+// the two roles that disagree and what the visible symptom is.
+const KNOWN_WARNINGS = Object.freeze([
+  {
+    roles: ['payePayable', 'payePayableActual'],
+    message: 'Payroll credits PAYE to one account while the Tax report reads another. '
+      + 'If these two differ, the Tax page PAYE line can read zero even though payroll posted. '
+      + 'Point them at the same account to reconcile.',
+  },
+  {
+    roles: ['casualWages'],
+    message: 'The default code for Casual Wages is the account the standard chart names '
+      + '"Employer SSNIT Contribution". On a standard chart, casual wages post there. '
+      + 'Map this to a dedicated wages account to separate them.',
+  },
+  {
+    roles: ['ssnitTier1', 'ssnitTier3'],
+    message: 'Provident fund (Tier 3) is created against the Tier 1 account by payroll, '
+      + 'while the Tax report reads Tier 3. If these differ, the Tier 3 figure can read zero.',
+  },
+]);
+
+/**
+ * Describe every role and set for this tenant: its default code, any override,
+ * what it currently resolves to, and whether that account actually exists.
+ * This is what the Settings screen renders — and the `ok:false` rows are exactly
+ * the postings that would fail or mis-post today.
+ */
+async function describeSpecialAccounts(req) {
+  const Account = getModel(req.tenantDb, 'Account');
+  const all = await Account.find({}).select('_id code name type isActive').lean();
+  const byCode = {};
+  all.forEach((a) => { byCode[String(a.code)] = a; });
+
+  const roles = Object.keys(DEFAULT_CODES).map((role) => {
+    const meta = ROLE_META[role] || { group: 'Other', label: role, used: '' };
+    const defaultCode = DEFAULT_CODES[role];
+    const overrideCode = rawOverride(req, role);
+    const resolvedCode = overrideCode || defaultCode;
+    const account = byCode[resolvedCode] || null;
+    return {
+      role, ...meta, defaultCode, overrideCode, resolvedCode,
+      account: account ? { _id: account._id, code: account.code, name: account.name, type: account.type, isActive: account.isActive } : null,
+      ok: !!account,
+    };
+  });
+
+  const sets = Object.keys(DEFAULT_SETS).map((set) => {
+    const meta = SET_META[set] || { group: 'Other', label: set, used: '' };
+    const defaultCodes = DEFAULT_SETS[set];
+    const overrideCodes = rawOverride(req, set);
+    const resolvedCodes = codesForSet(req, set);
+    const accounts = resolvedCodes.map((c) => byCode[c]).filter(Boolean)
+      .map((a) => ({ _id: a._id, code: a.code, name: a.name }));
+    return {
+      set, ...meta, defaultCodes, overrideCodes, resolvedCodes, accounts,
+      ok: accounts.length > 0,
+    };
+  });
+
+  return { roles, sets, warnings: KNOWN_WARNINGS, accounts: all };
+}
+
+// Keep only keys this module actually knows about, with trimmed string values.
+// Anything unknown is dropped rather than accumulating junk in the tenant doc.
+function sanitiseOverrides(input) {
+  const out = {};
+  if (!input || typeof input !== 'object') return out;
+  Object.keys(input).forEach((k) => {
+    const known = Object.prototype.hasOwnProperty.call(DEFAULT_CODES, k)
+      || Object.prototype.hasOwnProperty.call(DEFAULT_SETS, k);
+    if (!known) return;
+    const v = input[k];
+    if (v == null) return;
+    const str = Array.isArray(v) ? v.join(',') : String(v);
+    const trimmed = str.split(',').map((c) => c.trim()).filter(Boolean).join(',');
+    if (trimmed) out[k] = trimmed;
+  });
+  return out;
+}
+
 module.exports = {
   getSpecialAccount,
   getSpecialAccountSet,
   specialAccountCode,
   specialAccountSetCodes,
+  describeSpecialAccounts,
+  sanitiseOverrides,
   DEFAULT_CODES,
   DEFAULT_SETS,
+  ROLE_META,
+  SET_META,
+  KNOWN_WARNINGS,
 };

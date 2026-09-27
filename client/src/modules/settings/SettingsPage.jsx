@@ -27,6 +27,7 @@ import PermissionsPanel from './PermissionsPanel';
 import BranchAccessPanel from './BranchAccessPanel';
 import BranchesTab from './BranchesTab';
 import ChartMaintenanceTab from './ChartMaintenanceTab';
+import SpecialAccountsTab from './SpecialAccountsTab';
 // ---------- Styles ----------
 const styles = {
   heading: {
@@ -1410,6 +1411,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
     '/settings/integrations': 'integrations', '/settings/whitelabel': 'whitelabel',
     '/settings/branches': 'branches',
     '/settings/chart-maintenance': 'chartMaintenance',
+    '/settings/special-accounts': 'specialAccounts',
   };
   useEffect(() => {
     const t = PATH_TO_TAB[location.pathname];
@@ -1692,6 +1694,7 @@ const { companyName, subdomain, settings, plan, updateSettings } = useTenant();
       
       {activeTab === 'branches' && isAdmin && <BranchesTab />}
       {activeTab === 'chartMaintenance' && isAdmin && <ChartMaintenanceTab />}
+      {activeTab === 'specialAccounts' && isAdmin && <SpecialAccountsTab />}
       {activeTab === 'company' && isAdmin && (
         <CompanyTab
           companyName={companyName}
