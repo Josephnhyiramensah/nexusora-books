@@ -1,5 +1,6 @@
 const { getModel } = require('../utils/getModel');
 const { getSpecialAccount, specialAccountCode } = require('../utils/specialAccounts');
+const { checkLineAccountTypes } = require('../utils/lineAccountGuard');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
 const { generateBillPDF } = require('../utils/pdfGenerator');
@@ -109,6 +110,13 @@ const createBill = async (req, res) => {
       amount: Math.round(Number(l.quantity) * Number(l.unitPrice) * 100) / 100,
       account: l.account || defaultExpenseAcct?._id,
     }));
+
+    // A purchase line must post to an expense, cost-of-sales or asset account.
+    // Enforced here because the form's dropdown filter does not bind the API.
+    const lineTypeError = await checkLineAccountTypes(req, processedLines, 'bill');
+    if (lineTypeError) {
+      return res.status(400).json({ success: false, message: lineTypeError.error });
+    }
 
     const subtotal = processedLines.reduce((sum, l) => sum + l.amount, 0);
     const tax = taxRate ? Math.round(subtotal * (Number(taxRate) / 100) * 100) / 100 : 0;

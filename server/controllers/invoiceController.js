@@ -1,5 +1,6 @@
 const { getModel } = require('../utils/getModel');
 const { getSpecialAccount, specialAccountCode } = require('../utils/specialAccounts');
+const { checkLineAccountTypes } = require('../utils/lineAccountGuard');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
 const { scopedFilter } = require('../utils/branchScope');
@@ -116,6 +117,14 @@ const createInvoice = async (req, res) => {
       account: l.account || defaultRevenueAcct?._id,
     }));
 
+    // A sales line must post to revenue. The form already limits the dropdown,
+    // but the API did not — so a direct caller (script, PHP integration) could
+    // put a sale on an expense account and quietly distort the P&L.
+    const lineTypeError = await checkLineAccountTypes(req, processedLines, 'invoice');
+    if (lineTypeError) {
+      return res.status(400).json({ success: false, message: lineTypeError.error });
+    }
+
     const subtotal = processedLines.reduce((sum, l) => sum + l.amount, 0);
     const tax = taxRate ? Math.round(subtotal * (Number(taxRate) / 100) * 100) / 100 : 0;
     const total = Math.round((subtotal + tax) * 100) / 100;
@@ -169,6 +178,12 @@ const updateInvoice = async (req, res) => {
         amount: Math.round(Number(l.quantity) * Number(l.unitPrice) * 100) / 100,
         account: l.account,
       }));
+      // Same guard on edit — a draft can be re-lined through the API too.
+      const editTypeError = await checkLineAccountTypes(req, processedLines, 'invoice');
+      if (editTypeError) {
+        return res.status(400).json({ success: false, message: editTypeError.error });
+      }
+
       invoice.lines = processedLines;
       invoice.subtotal = processedLines.reduce((sum, l) => sum + l.amount, 0);
       const tr = taxRate !== undefined ? Number(taxRate) : invoice.taxRate;
