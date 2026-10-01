@@ -49,6 +49,21 @@ function applyMapping(mapping, raw) {
   if (debitAccountCode == null) return { ok: false, error: `No account mapping for external debit account "${extDebit}".` };
   if (creditAccountCode == null) return { ok: false, error: `No account mapping for external credit account "${extCredit}".` };
 
+  // 3b. Translate external branch -> Books branch code via branchMap.
+  //     If the record carries a branch value, it MUST map (an unmapped branch is
+  //     rejected rather than silently mis-filed). If no branch value is sent, fall
+  //     back to fixedBranch (may be null — the caller then applies the write-branch
+  //     rule for single- vs multi-branch tenants).
+  let branchCode = null;
+  const extBranch = val('branch');
+  if (extBranch != null && extBranch !== '') {
+    const hit = (mapping.branchMap || []).find((b) => String(b.externalBranch) === String(extBranch));
+    if (!hit) return { ok: false, error: `No branch mapping for external branch "${extBranch}".` };
+    branchCode = hit.booksBranchCode;
+  } else if (mapping.fixedBranch) {
+    branchCode = mapping.fixedBranch;
+  }
+
   // 4. externalId is required for dedup.
   const externalId = val('externalId');
   if (externalId == null || externalId === '') return { ok: false, error: 'externalId mapping is required (dedup).' };
@@ -67,6 +82,7 @@ function applyMapping(mapping, raw) {
     mode: val('mode') || 'other',
     debitAccountCode: String(debitAccountCode),
     creditAccountCode: String(creditAccountCode),
+    branchCode: branchCode == null ? null : String(branchCode),
     autopost: mapping.autopost !== false,
   };
   return { ok: true, voucher };

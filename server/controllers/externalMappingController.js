@@ -27,7 +27,7 @@ const getMapping = async (req, res) => {
 const saveMapping = async (req, res) => {
   try {
     const ExternalMapping = getModel(req.tenantDb, 'ExternalMapping');
-    const { _id, source, label, fieldMap, accountMap, typeMap, fixedVoucherType, autopost, active } = req.body;
+    const { _id, source, label, fieldMap, accountMap, typeMap, branchMap, fixedVoucherType, fixedBranch, autopost, active } = req.body;
     if (!source) return res.status(400).json({ success: false, message: 'source is required.' });
 
     let mapping;
@@ -46,7 +46,9 @@ const saveMapping = async (req, res) => {
     if (fieldMap !== undefined) mapping.fieldMap = fieldMap;
     if (accountMap !== undefined) mapping.accountMap = accountMap;
     if (typeMap !== undefined) mapping.typeMap = typeMap;
+    if (branchMap !== undefined) mapping.branchMap = branchMap;
     if (fixedVoucherType !== undefined) mapping.fixedVoucherType = fixedVoucherType || null;
+    if (fixedBranch !== undefined) mapping.fixedBranch = fixedBranch || null;
     if (autopost !== undefined) mapping.autopost = autopost;
     if (active !== undefined) mapping.active = active;
     await mapping.save();

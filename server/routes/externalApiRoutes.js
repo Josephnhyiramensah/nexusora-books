@@ -224,13 +224,16 @@ router.post('/vouchers', async (req, res) => {
 async function createVoucherFromBooksPayload(req, payload) {
   const Voucher = getModel(req.tenantDb, 'Voucher');
   const Account = getModel(req.tenantDb, 'Account');
+  const Branch = getModel(req.tenantDb, 'Branch');
   const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
   const { validateDoubleEntry, generateEntryNumber } = require('../utils/accountingHelpers');
   const { generateVoucherNumber, journalTypeForVoucher } = require('../utils/voucherHelpers');
+  const { resolveWriteBranch } = require('../utils/branchWrite');
 
   const {
     voucherType, date, amount, narration, reference, externalId,
     partyName, mode, paymentDetails, debitAccountCode, creditAccountCode,
+    branchCode,
     autopost = true,
   } = payload;
 
@@ -251,6 +254,21 @@ async function createVoucherFromBooksPayload(req, payload) {
   if (!creditAcct) return { status: 400, body: { success:false, message:'Credit account code "'+creditAccountCode+'" not found.' } };
   if (creditAcct.isActive === false) return { status: 400, body: { success:false, message:'Credit account "'+creditAccountCode+'" is inactive.' } };
 
+  // Resolve the branch to stamp. A mapped branchCode is turned into a Branch id,
+  // then validated through resolveWriteBranch (the same write-branch rule the UI
+  // and REST API use): explicit branch must be active, and a multi-branch tenant
+  // with no branch resolved is rejected rather than mis-filed.
+  let requestedBranchId = null;
+  if (branchCode != null && branchCode !== '') {
+    const br = await Branch.findOne({ code: String(branchCode) }).select('_id isActive').lean();
+    if (!br) return { status: 400, body: { success:false, message:'Branch code "'+branchCode+'" not found.' } };
+    if (br.isActive === false) return { status: 400, body: { success:false, message:'Branch "'+branchCode+'" is inactive.' } };
+    requestedBranchId = br._id;
+  }
+  const branchChoice = await resolveWriteBranch(req, requestedBranchId);
+  if (branchChoice.error) return { status: branchChoice.status, body: { success:false, message: branchChoice.error } };
+  const branch = branchChoice.branch; // Branch id, or null only for a pre-branch tenant
+
   const amt = Math.round(Number(amount) * 100) / 100;
   const lines = [
     { account: debitAcct._id, accountCode: debitAcct.code, accountName: debitAcct.name, debit: amt, credit: 0, description: narration || '' },
@@ -263,7 +281,7 @@ async function createVoucherFromBooksPayload(req, payload) {
   const voucher = await Voucher.create({
     voucherNumber, voucherType, date, narration, reference,
     partyName, mode: mode || 'other', paymentDetails: paymentDetails || {},
-    amount: amt, lines,
+    amount: amt, lines, branch,
     totalDebit: validation.totalDebit, totalCredit: validation.totalCredit,
     status: 'draft', createdBy: null,
     createdViaApi: true, apiKeyId: req.apiKey._id, externalId,
@@ -275,7 +293,7 @@ async function createVoucherFromBooksPayload(req, payload) {
     journalEntry = await JournalEntry.create({
       entryNumber, date: voucher.date, journalType: journalTypeForVoucher(voucherType),
       description: narration || (voucherType + ' voucher ' + voucherNumber),
-      reference: voucherNumber, lines,
+      reference: voucherNumber, lines, branch,
       totalDebit: validation.totalDebit, totalCredit: validation.totalCredit,
       status: 'posted', createdBy: null, createdViaApi: true, apiKeyId: req.apiKey._id,
     });

@@ -22,11 +22,12 @@ const FIELDS = [
   ['mode', 'Payment mode', false],
   ['debitAccount', 'Debit account', true],
   ['creditAccount', 'Credit account', true],
+  ['branch', 'Branch', false],
 ];
 
 const blank = () => ({
-  source: '', label: '', fixedVoucherType: '', autopost: true, active: true,
-  fieldMap: {}, accountMap: [], typeMap: [],
+  source: '', label: '', fixedVoucherType: '', fixedBranch: '', autopost: true, active: true,
+  fieldMap: {}, accountMap: [], typeMap: [], branchMap: [],
 });
 
 export default function ExternalMappingPage() {
@@ -34,6 +35,7 @@ export default function ExternalMappingPage() {
   const [loading, setLoading] = useState(true);
   const [list, setList] = useState([]);
   const [accounts, setAccounts] = useState([]);
+  const [branches, setBranches] = useState([]);
   const [editing, setEditing] = useState(null); // null = list view; object = editor
   const [saving, setSaving] = useState(false);
 
@@ -49,6 +51,10 @@ export default function ExternalMappingPage() {
       try {
         const acctRes = await api.get('/accounts');
         if (acctRes.data.success) setAccounts(acctRes.data.data.filter((a) => a.isActive !== false));
+        try {
+          const brRes = await api.get('/branches');
+          if (brRes.data.success) setBranches(brRes.data.data.filter((b) => b.isActive !== false));
+        } catch { /* branches optional; leave empty */ }
         await loadList();
       } finally { setLoading(false); }
     })();
@@ -93,7 +99,7 @@ export default function ExternalMappingPage() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button style={ghostBtn} onClick={() => setEditing({ ...blank(), ...it, fieldMap: it.fieldMap || {}, accountMap: it.accountMap || [], typeMap: it.typeMap || [] })}><FiEdit2 size={13} /> Edit</button>
+                  <button style={ghostBtn} onClick={() => setEditing({ ...blank(), ...it, fieldMap: it.fieldMap || {}, accountMap: it.accountMap || [], typeMap: it.typeMap || [], branchMap: it.branchMap || [] })}><FiEdit2 size={13} /> Edit</button>
                 </div>
               </div>
             ))}
@@ -113,6 +119,9 @@ export default function ExternalMappingPage() {
   const addType = () => setEditing((s) => ({ ...s, typeMap: [...s.typeMap, { externalType: '', voucherType: 'payment' }] }));
   const setType = (i, k, v) => setEditing((s) => ({ ...s, typeMap: s.typeMap.map((r, idx) => idx === i ? { ...r, [k]: v } : r) }));
   const delType = (i) => setEditing((s) => ({ ...s, typeMap: s.typeMap.filter((_, idx) => idx !== i) }));
+  const addBranch = () => setEditing((s) => ({ ...s, branchMap: [...(s.branchMap || []), { externalBranch: '', booksBranchCode: '', label: '' }] }));
+  const setBranch = (i, k, v) => setEditing((s) => ({ ...s, branchMap: s.branchMap.map((r, idx) => idx === i ? { ...r, [k]: v } : r) }));
+  const delBranch = (i) => setEditing((s) => ({ ...s, branchMap: s.branchMap.filter((_, idx) => idx !== i) }));
 
   const save = async () => {
     if (!m.source.trim()) { showToast('A source key is required', 'error'); return; }
@@ -178,6 +187,13 @@ export default function ExternalMappingPage() {
               {VOUCHER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, color: '#6B7280' }}>Default branch:</span>
+            <select style={{ ...input, width: 'auto' }} value={m.fixedBranch || ''} onChange={(e) => setM({ fixedBranch: e.target.value })}>
+              <option value="">— use branch map —</option>
+              {branches.map((b) => <option key={b._id} value={b.code}>{b.code} — {b.name}</option>)}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -227,6 +243,26 @@ export default function ExternalMappingPage() {
               {VOUCHER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
             <button style={{ ...ghostBtn, padding: 8, color: '#DC2626', justifyContent: 'center' }} onClick={() => delType(i)}><FiTrash2 size={14} /></button>
+          </div>
+        ))}
+      </div>
+
+      <div style={card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary, #012158)', margin: 0 }}>4. Branch Mapping</h3>
+          <button style={ghostBtn} onClick={addBranch}><FiPlus size={14} /> Add</button>
+        </div>
+        <p style={{ fontSize: 12, color: '#6B7280', marginTop: 0 }}>Match each external branch identifier to a Books branch. Skip if the system does not send a branch, or set a Default branch above.</p>
+        {(m.branchMap || []).length === 0 && <p style={{ fontSize: 13, color: '#9CA3AF' }}>No branch mappings yet.</p>}
+        {(m.branchMap || []).map((r, i) => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 36px', gap: 10, marginBottom: 8, alignItems: 'center' }}>
+            <input style={input} value={r.externalBranch} onChange={(e) => setBranch(i, 'externalBranch', e.target.value)} placeholder="external branch id" />
+            <select style={input} value={r.booksBranchCode} onChange={(e) => setBranch(i, 'booksBranchCode', e.target.value)}>
+              <option value="">Books branch…</option>
+              {branches.map((b) => <option key={b._id} value={b.code}>{b.code} — {b.name}</option>)}
+            </select>
+            <input style={input} value={r.label || ''} onChange={(e) => setBranch(i, 'label', e.target.value)} placeholder="note (optional)" />
+            <button style={{ ...ghostBtn, padding: 8, color: '#DC2626', justifyContent: 'center' }} onClick={() => delBranch(i)}><FiTrash2 size={14} /></button>
           </div>
         ))}
       </div>

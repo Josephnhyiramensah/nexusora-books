@@ -9,10 +9,11 @@
  * admin maps the external system's fields, accounts and types ONCE, and every
  * future inbound record is translated automatically.
  *
- * Three translation layers:
+ * Translation layers:
  *   1. fieldMap    — external field name -> our voucher field
  *   2. accountMap  — external account id/name -> our Books account code
  *   3. typeMap     — external transaction type -> our voucherType
+ *   4. branchMap   — external branch id/name -> our Books branch code
  */
 
 const { Schema } = require('mongoose');
@@ -30,6 +31,7 @@ const FieldMapSchema = new Schema(
     mode:         { type: String, default: null },
     debitAccount: { type: String, default: null }, // external field holding their debit account id
     creditAccount:{ type: String, default: null }, // external field holding their credit account id
+    branch:       { type: String, default: null }, // external field holding their branch id (optional)
   },
   { _id: false }
 );
@@ -53,6 +55,16 @@ const TypeMapEntrySchema = new Schema(
   { _id: false }
 );
 
+// external branch id/name -> our Books branch code.
+const BranchMapEntrySchema = new Schema(
+  {
+    externalBranch:  { type: String, required: true }, // e.g. "1", "PATASI"
+    booksBranchCode: { type: String, required: true }, // our Branch.code, e.g. "HO", "KP"
+    label:           { type: String, default: '' },    // optional human note
+  },
+  { _id: false }
+);
+
 const ExternalMappingSchema = new Schema(
   {
     // Which external system this mapping is for. One mapping per source.
@@ -62,10 +74,16 @@ const ExternalMappingSchema = new Schema(
     fieldMap:   { type: FieldMapSchema, default: () => ({}) },
     accountMap: { type: [AccountMapEntrySchema], default: [] },
     typeMap:    { type: [TypeMapEntrySchema], default: [] },
+    branchMap:  { type: [BranchMapEntrySchema], default: [] },
 
     // If the source always sends one voucher type, set it here and leave
     // fieldMap.voucherType null.
     fixedVoucherType: { type: String, default: null },
+
+    // If the source does not send a branch (or always belongs to one branch),
+    // set the Books branch code here. Used as the fallback when no per-record
+    // branch is mapped. Leave null to require an explicit/mapped branch.
+    fixedBranch: { type: String, default: null },
 
     // Post vouchers immediately on import (vs. leaving as draft for review).
     autopost: { type: Boolean, default: true },
