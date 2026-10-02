@@ -16,7 +16,7 @@
 const { getModel } = require('../utils/getModel');
 const { getSpecialAccount, specialAccountCode } = require('../utils/specialAccounts');
 const { logAudit } = require('../middleware/auditMiddleware');
-const { validateDoubleEntry, generateEntryNumber } = require('../utils/accountingHelpers');
+const { validateDoubleEntry, generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
 const { generateVoucherNumber, journalTypeForVoucher } = require('../utils/voucherHelpers');
 const { scopedFilter } = require('../utils/branchScope');
 const { resolveWriteBranch } = require('../utils/branchWrite');
@@ -425,6 +425,13 @@ const postVoucher = async (req, res) => {
     // sub-ledger moves with the journal instead of drifting from it.
     await moveCreditApplication(req, voucher, +1);
 
+    // Maintain account balances on post (same pattern as journal/bill/payment).
+    const Account = getModel(req.tenantDb, 'Account');
+    for (const _l of entry.lines) {
+      const _a = await Account.findById(_l.account);
+      if (_a) { _a.balance = Math.round((_a.balance + calculateBalanceChange(_a.normalBalance, _l.debit, _l.credit)) * 100) / 100; await _a.save(); }
+    }
+
     voucher.status = 'posted';
     voucher.journalEntry = entry._id;
     await voucher.save();
@@ -479,6 +486,13 @@ const reverseVoucher = async (req, res) => {
     // amount back on the customer's outstanding, so a reversal is complete
     // rather than only reversing the journal half.
     await moveCreditApplication(req, voucher, -1);
+
+    // Maintain account balances for the reversal lines.
+    const Account = getModel(req.tenantDb, 'Account');
+    for (const _l of reversedLines) {
+      const _a = await Account.findById(_l.account);
+      if (_a) { _a.balance = Math.round((_a.balance + calculateBalanceChange(_a.normalBalance, _l.debit, _l.credit)) * 100) / 100; await _a.save(); }
+    }
 
     voucher.status = 'reversed';
     await voucher.save();

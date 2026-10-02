@@ -121,7 +121,7 @@ router.post('/vouchers', async (req, res) => {
     const Voucher = getModel(req.tenantDb, 'Voucher');
     const Account = getModel(req.tenantDb, 'Account');
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
-    const { validateDoubleEntry, generateEntryNumber } = require('../utils/accountingHelpers');
+    const { validateDoubleEntry, generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
     const { generateVoucherNumber, journalTypeForVoucher } = require('../utils/voucherHelpers');
 
     const {
@@ -195,6 +195,10 @@ router.post('/vouchers', async (req, res) => {
         status: 'posted', createdBy: null,
         createdViaApi: true, apiKeyId: req.apiKey._id,
       });
+            for (const _l of lines) {
+        const _a = await Account.findById(_l.account);
+        if (_a) { _a.balance = Math.round((_a.balance + calculateBalanceChange(_a.normalBalance, _l.debit, _l.credit)) * 100) / 100; await _a.save(); }
+      }
       voucher.status = 'posted';
       voucher.journalEntry = journalEntry._id;
       await voucher.save();
@@ -226,7 +230,7 @@ async function createVoucherFromBooksPayload(req, payload) {
   const Account = getModel(req.tenantDb, 'Account');
   const Branch = getModel(req.tenantDb, 'Branch');
   const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
-  const { validateDoubleEntry, generateEntryNumber } = require('../utils/accountingHelpers');
+  const { validateDoubleEntry, generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
   const { generateVoucherNumber, journalTypeForVoucher } = require('../utils/voucherHelpers');
   const { resolveWriteBranch } = require('../utils/branchWrite');
 
@@ -297,7 +301,11 @@ async function createVoucherFromBooksPayload(req, payload) {
       totalDebit: validation.totalDebit, totalCredit: validation.totalCredit,
       status: 'posted', createdBy: null, createdViaApi: true, apiKeyId: req.apiKey._id,
     });
-    voucher.status = 'posted';
+          for (const _l of lines) {
+        const _a = await Account.findById(_l.account);
+        if (_a) { _a.balance = Math.round((_a.balance + calculateBalanceChange(_a.normalBalance, _l.debit, _l.credit)) * 100) / 100; await _a.save(); }
+      }
+      voucher.status = 'posted';
     voucher.journalEntry = journalEntry._id;
     await voucher.save();
   }
