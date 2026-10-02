@@ -1,0 +1,218 @@
+// server/controllers/financialAnalyticsController.js
+//
+// Financial analytics layer for the interactive dashboards. It computes KPIs,
+// ratios and monthly time-series ON TOP of the existing report engine
+// (reportController) so the numbers reconcile with the Balance Sheet / P&L
+// reports rather than being a second, divergent source of truth.
+//
+// Totals are summed the SAME way reportController does (sum of |signed balance|
+// per account within a type), so the dashboard matches those statements. The
+// only classification this layer adds is CURRENT vs NON-CURRENT, which the chart
+// of accounts expresses through code ranges (there is no explicit flag on the
+// Account model). Those ranges — and every ratio formula — are the labelled
+// constants below; adjust them here if KGR defines a metric differently.
+//
+// MULTI-BRANCH: honours the request's branch scope exactly like the reports do
+// (X-Branch header / branch-restricted user), via ledgerMovement + scopedFilter.
+
+const { getModel } = require('../utils/getModel');
+const { logAudit } = require('../middleware/auditMiddleware');
+const { scopedFilter } = require('../utils/branchScope');
+const { ledgerMovement, acctSignedBalance } = require('./reportController');
+
+// ── Account classification by code range (end-exclusive) ──
+const RANGE = {
+  currentAsset:     [1000, 1400], // Cash, AR, Inventory, Prepaids, Input VAT…
+  nonCurrentAsset:  [1400, 2000], // Fixed assets, Intangibles, LT investments
+  currentLiability: [2000, 2600], // AP, Accruals, Taxes payable, ST loans…
+  nonCurrentLiab:   [2600, 3000], // LT loans, Lease liabilities
+  cash:             [1000, 1100], // 1000/1010/1015/1020 cash & equivalents
+  receivables:      [1100, 1200], // Accounts Receivable (+ allowance contra)
+  inventory:        [1200, 1300], // Inventory, Raw materials, WIP, Finished goods
+  payables:         [2000, 2100], // Accounts Payable (trade)
+};
+
+const codeNum = (a) => parseInt(String(a.code).replace(/\D/g, ''), 10) || 0;
+const inRange = (a, [lo, hi]) => { const c = codeNum(a); return c >= lo && c < hi; };
+const round2 = (n) => Math.round((n || 0) * 100) / 100;
+const safeDiv = (a, b) => (b ? a / b : 0); // 0 when denominator is 0/undefined
+
+// Resolve a reporting period from ?year= & ?quarter=. Returns {start,end,months}
+// or null for "all time".
+function resolvePeriod(year, quarter) {
+  if (!year && !quarter) return null;
+  const y = Number(year) || new Date().getFullYear();
+  if (quarter) {
+    const q = Math.min(4, Math.max(1, Number(quarter)));
+    const startMonth = (q - 1) * 3;
+    return { start: new Date(y, startMonth, 1), end: new Date(y, startMonth + 3, 0, 23, 59, 59), months: 3 };
+  }
+  return { start: new Date(y, 0, 1), end: new Date(y, 11, 31, 23, 59, 59), months: 12 };
+}
+
+function monthKey(d) { return d.toISOString().slice(0, 7); } // 'YYYY-MM'
+
+const getFinancialDashboard = async (req, res) => {
+  try {
+    const Account = getModel(req.tenantDb, 'Account');
+    const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
+
+    const period = resolvePeriod(req.query.year, req.query.quarter);
+    const asOfEnd = period ? period.end : null;
+
+    const accounts = await Account.find({ isActive: true }).lean();
+
+    // Point-in-time balances (as of period end, or all-time when no period).
+    const asOfMovement = await ledgerMovement(req, JournalEntry, asOfEnd ? { dateFilter: { date: { $lte: asOfEnd } } } : {});
+    // Period flows (revenue/COGS/expenses within the period, or all-time).
+    const periodMovement = await ledgerMovement(req, JournalEntry, period ? { dateFilter: { date: { $gte: period.start, $lte: period.end } } } : {});
+
+    const byType = (t) => accounts.filter((a) => a.type === t);
+    const sumAbs = (accts, mv) => round2(accts.reduce((s, a) => s + Math.abs(acctSignedBalance(a, mv)), 0));
+
+    // ── Balance-sheet figures (point-in-time) ──
+    const assetAccts = byType('asset');
+    const liabilityAccts = byType('liability');
+    const equityAccts = byType('equity');
+
+    const totalAssets      = sumAbs(assetAccts, asOfMovement);
+    const currentAssets    = sumAbs(assetAccts.filter((a) => inRange(a, RANGE.currentAsset)), asOfMovement);
+    const inventory        = sumAbs(assetAccts.filter((a) => inRange(a, RANGE.inventory)), asOfMovement);
+    const cash             = sumAbs(assetAccts.filter((a) => inRange(a, RANGE.cash)), asOfMovement);
+    const accountsReceivable = sumAbs(assetAccts.filter((a) => inRange(a, RANGE.receivables)), asOfMovement);
+
+    const totalLiabilities   = sumAbs(liabilityAccts, asOfMovement);
+    const currentLiabilities = sumAbs(liabilityAccts.filter((a) => inRange(a, RANGE.currentLiability)), asOfMovement);
+    const accountsPayable    = sumAbs(liabilityAccts.filter((a) => inRange(a, RANGE.payables)), asOfMovement);
+
+    // ── P&L figures (period flows) ──
+    const revenue  = sumAbs(byType('revenue'), periodMovement);
+    const cogs     = sumAbs(byType('cogs'), periodMovement);
+    const expenses = sumAbs(byType('expense'), periodMovement);
+    const grossProfit = round2(revenue - cogs);
+    const netIncome   = round2(revenue - cogs - expenses);
+
+    // Equity total mirrors the Balance Sheet: stored equity + current net income.
+    const totalEquity = round2(sumAbs(equityAccts, asOfMovement) + netIncome);
+
+    // ── Ratios (formulas are the source of truth — adjust here) ──
+    const months = period ? period.months : 12; // all-time burn rate annualised to /12
+    const kpis = {
+      accountsReceivable,
+      accountsPayable,
+      revenue,
+      grossProfitMargin: round2(safeDiv(grossProfit, revenue) * 100), // (Rev−COGS)/Rev %
+      equityRatio:       round2(safeDiv(totalEquity, totalAssets) * 100), // Equity/Assets %
+      currentRatio:      round2(safeDiv(currentAssets, currentLiabilities)), // CA/CL
+      quickRatio:        round2(safeDiv(currentAssets - inventory, currentLiabilities)), // (CA−Inv)/CL
+      workingCapital:    round2(currentAssets - currentLiabilities),
+      burnRate:          round2(safeDiv(expenses, months)), // avg monthly operating expense
+      // context figures the cards also use
+      cash, inventory, netIncome, grossProfit,
+      totalAssets, totalLiabilities, totalEquity,
+      arTurnover: round2(safeDiv(revenue, accountsReceivable)), // Revenue / AR
+      apTurnover: round2(safeDiv(cogs, accountsPayable)),       // Purchases(≈COGS) / AP
+    };
+
+    // ── Monthly time-series (trailing 6 months ending at asOf/now) ──
+    const series = await buildMonthlySeries(req, JournalEntry, accounts, asOfEnd || new Date(), 6);
+
+    await logAudit(req.tenantDb, {
+      userId: req.user._id, action: 'read', module: 'reports',
+      description: 'Viewed Financial Management dashboard' + (period ? ` (${req.query.year || ''} Q${req.query.quarter || ''})` : ''),
+    }, req);
+
+    res.json({
+      success: true,
+      data: {
+        dashboard: 'financial-management',
+        period: period ? { start: period.start, end: period.end } : 'All time',
+        generatedAt: new Date().toISOString(),
+        kpis,
+        series,
+        assumptions: {
+          note: 'Totals reconcile with the Balance Sheet / P&L reports (sum of |signed balance| per account). Current vs non-current is by account-code range.',
+          ranges: RANGE,
+          burnRate: 'Average monthly operating expense over the selected period (all-time uses /12).',
+        },
+      },
+    });
+  } catch (error) {
+    console.error('[Analytics] Financial dashboard error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to build the financial dashboard.' });
+  }
+};
+
+// Build trailing-N-month series: month-end Inventory, and monthly AR/AP turnover.
+// One query over posted entries (branch-scoped); running balances for AR/AP/Inv
+// are accumulated from all time, snapshotted at each month end.
+async function buildMonthlySeries(req, JournalEntry, accounts, endDate, n) {
+  // Month buckets: [{key,'YYYY-MM', start, end, label}]
+  const buckets = [];
+  const base = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+  for (let i = n - 1; i >= 0; i--) {
+    const start = new Date(base.getFullYear(), base.getMonth() - i, 1);
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59);
+    buckets.push({ key: monthKey(start), start, end,
+      label: start.toLocaleString('en-US', { month: 'short', year: 'numeric' }) });
+  }
+  const windowStart = buckets[0].start;
+
+  const idSet = (pred) => new Set(accounts.filter(pred).map((a) => String(a._id)));
+  const arIds  = idSet((a) => a.type === 'asset' && inRange(a, RANGE.receivables));
+  const apIds  = idSet((a) => a.type === 'liability' && inRange(a, RANGE.payables));
+  const invIds = idSet((a) => a.type === 'asset' && inRange(a, RANGE.inventory));
+  const revIds = idSet((a) => a.type === 'revenue');
+  const cogsIds = idSet((a) => a.type === 'cogs');
+
+  // All posted entries up to window end (for cumulative balances), branch-scoped.
+  const entries = await JournalEntry.find(
+    scopedFilter(req, { status: 'posted', date: { $lte: buckets[n - 1].end } })
+  ).sort({ date: 1 }).lean();
+
+  // Running cumulative (signed to normal side) for balance accounts.
+  let runAR = 0, runAP = 0, runInv = 0;
+  // Per-month flows for turnover.
+  const flow = {}; // key -> { revenue, cogs }
+  buckets.forEach((b) => { flow[b.key] = { revenue: 0, cogs: 0 }; });
+  // Snapshot of month-end balances.
+  const snap = {}; // key -> { ar, ap, inv }
+
+  let bi = 0;
+  for (const e of entries) {
+    const d = new Date(e.date);
+    // Advance snapshots for any months that have ended before this entry's month.
+    while (bi < buckets.length && d > buckets[bi].end) {
+      snap[buckets[bi].key] = { ar: runAR, ap: runAP, inv: runInv };
+      bi++;
+    }
+    for (const line of (e.lines || [])) {
+      const id = String(line.account);
+      const dr = line.debit || 0, cr = line.credit || 0;
+      if (arIds.has(id))  runAR  += dr - cr;        // asset: debit-normal
+      if (invIds.has(id)) runInv += dr - cr;        // asset: debit-normal
+      if (apIds.has(id))  runAP  += cr - dr;        // liability: credit-normal
+      if (d >= windowStart) {
+        if (revIds.has(id))  flow[monthKey(new Date(d.getFullYear(), d.getMonth(), 1))].revenue += cr - dr;
+        if (cogsIds.has(id)) flow[monthKey(new Date(d.getFullYear(), d.getMonth(), 1))].cogs    += dr - cr;
+      }
+    }
+  }
+  // Any remaining months end after the last entry — snapshot current running totals.
+  while (bi < buckets.length) { snap[buckets[bi].key] = { ar: runAR, ap: runAP, inv: runInv }; bi++; }
+
+  const inventoryTrend = buckets.map((b) => ({ month: b.label, value: round2(Math.abs(snap[b.key].inv)) }));
+  const arApTurnover = buckets.map((b) => {
+    const f = flow[b.key]; const s = snap[b.key];
+    return {
+      month: b.label,
+      arTurnover: round2(safeDiv(Math.abs(f.revenue), Math.abs(s.ar))),
+      apTurnover: round2(safeDiv(Math.abs(f.cogs), Math.abs(s.ap))),
+    };
+  });
+  const revenueByMonth = buckets.map((b) => ({ month: b.label, value: round2(Math.abs(flow[b.key].revenue)) }));
+
+  return { inventoryTrend, arApTurnover, revenueByMonth };
+}
+
+module.exports = { getFinancialDashboard };

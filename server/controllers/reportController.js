@@ -521,4 +521,7 @@ module.exports = {
   getBalanceSheet,
   getCashFlow,
   getGeneralLedger,
+  // Exposed so the analytics layer computes ratios/series on the same engine.
+  ledgerMovement,
+  acctSignedBalance,
 };
