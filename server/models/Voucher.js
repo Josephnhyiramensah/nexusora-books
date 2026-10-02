@@ -51,6 +51,24 @@ const voucherSchema = new mongoose.Schema(
     // Party (only some are relevant per type — kept flexible).
     partyName: String,                 // payee / received-from / name
     customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer' },
+    // CREDIT NOTES: which invoices this note is applied against, and how much of
+    // it each one absorbs. Before this existed a credit note moved the AR CONTROL
+    // account but never touched the invoice it related to, so the sub-ledger
+    // (invoice balances, customer outstanding) drifted away from the ledger and
+    // a "settled" invoice could still show a balance forever.
+    //
+    // Applied at POST time, not at create — a draft must not move balances — and
+    // un-applied when the voucher is reversed. The invoice number is captured at
+    // allocation time so the note still reads correctly if the document is later
+    // renumbered.
+    appliedTo: {
+      type: [new mongoose.Schema({
+        invoice: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice' },
+        documentNumber: String,
+        amount: { type: Number, required: true, min: 0.01 },
+      }, { _id: false })],
+      default: [],
+    },
     vendor:   { type: mongoose.Schema.Types.ObjectId, ref: 'Vendor' },
 
     // Payment/receipt mechanics.

@@ -9,6 +9,7 @@ import { useToast } from '../../hooks/useToast';
 import useIsMobile from '../../hooks/useIsMobile';
 import VoucherLineItems from './VoucherLineItems';
 import JournalVoucherLines from './JournalVoucherLines';
+import invoiceService from '../../services/invoiceService';
 import BranchSelect, { useBranchField } from '../../components/branches/BranchSelect';
 
 
@@ -112,6 +113,10 @@ export default function VoucherFormPage() {
   const isMobile = useIsMobile();
   const branchField = useBranchField();
   const [accounts, setAccounts] = useState([]);
+  // Credit notes can be applied to a customer's open invoices.
+  const [openInvoices, setOpenInvoices] = useState([]);
+  const [creditApplied, setCreditApplied] = useState({});   // invoiceId -> amount (string)
+  const [creditCustomer, setCreditCustomer] = useState('');
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     voucherType: 'payment',
@@ -135,6 +140,10 @@ export default function VoucherFormPage() {
         if (data.success) setAccounts(data.data.filter((a) => a.isActive !== false));
       } catch { showToast('Could not load accounts', 'error'); }
     })();
+    // Open invoices, for applying a credit note against them.
+    invoiceService.getAll().then((r) => {
+      if (r.success) setOpenInvoices(r.data.filter((i) => ['sent', 'partially_paid', 'overdue'].includes(i.status) && i.balance > 0));
+    }).catch(() => {});
   }, []);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -148,6 +157,22 @@ export default function VoucherFormPage() {
   }));
 
   const isJournal = form.voucherType === 'journal';
+  const isCreditNote = form.voucherType === 'credit_note';
+
+  // Customers that currently owe something.
+  const creditCustomers = useMemo(() => {
+    const seen = new Map();
+    openInvoices.forEach((i) => { if (i.customer?._id && !seen.has(i.customer._id)) seen.set(i.customer._id, i.customer); });
+    return [...seen.values()].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [openInvoices]);
+
+  const creditInvoices = useMemo(() => (
+    creditCustomer
+      ? openInvoices.filter((i) => String(i.customer?._id) === String(creditCustomer)).sort((a, b) => new Date(a.date) - new Date(b.date))
+      : []
+  ), [openInvoices, creditCustomer]);
+
+  const creditTotal = Math.round(Object.values(creditApplied).reduce((s2, v) => s2 + (Number(v) || 0), 0) * 100) / 100;
   const currentType = VOUCHER_TYPES.find((t) => t.value === form.voucherType);
   const modeFields = MODE_FIELDS[form.mode] || [];
   const acctLabel = (id) => { const a = accounts.find((x) => x._id === id); return a ? `${a.code} — ${a.name}` : ''; };
@@ -234,6 +259,10 @@ export default function VoucherFormPage() {
       showToast('Fill in date, debit account, credit account and amount (or items).', 'error'); return;
     }
     if (form.debitAccount === form.creditAccount) { showToast('Debit and credit accounts must be different.', 'error'); return; }
+    if (isCreditNote && creditTotal > 0 && creditTotal !== grandTotal) {
+      showToast(`Applied ${money(creditTotal)} of ${money(grandTotal)} — the applied amounts must match the note amount.`, 'error');
+      return;
+    }
     setSaving(true);
     try {
       const result = await voucherService.create({
@@ -246,6 +275,12 @@ export default function VoucherFormPage() {
         lineItems: form.isItemized ? form.lineItems : [],
         discount: form.isItemized ? Number(form.discount) || 0 : 0,
         vatEnabled: form.vatEnabled, vatRate: form.vatEnabled ? Number(form.vatRate) || 0 : 0,
+        // Credit note: which invoices this note settles (empty = not applied).
+        appliedTo: isCreditNote
+          ? creditInvoices
+            .filter((inv) => Number(creditApplied[inv._id]) > 0)
+            .map((inv) => ({ invoice: inv._id, amount: Math.round(Number(creditApplied[inv._id]) * 100) / 100 }))
+          : undefined,
       });
       if (!result.success) { showToast(result.message || 'Failed', 'error'); setSaving(false); return; }
       if (thenPost) {
@@ -345,6 +380,81 @@ export default function VoucherFormPage() {
         </select>
         {currentType && <p style={{ fontSize: 12, color: 'var(--text-secondary, #6B7280)', marginTop: 8, marginBottom: 0 }}>{currentType.hint}</p>}
       </div>
+
+      {/* Credit note → apply to invoices. Optional: leave it empty for a general
+          credit that doesn't settle a specific invoice. When used, the credit
+          side is forced to Accounts Receivable server-side, because reducing an
+          invoice while crediting anything else would contradict the ledger. */}
+      {isCreditNote && (
+        <div style={card}>
+          <label style={label}>Apply to invoices <span style={{ fontWeight: 400, color: '#9CA3AF' }}>(optional)</span></label>
+          <p style={{ fontSize: 12, color: 'var(--text-secondary, #6B7280)', margin: '0 0 12px' }}>
+            Choose the customer and spread this note across their open invoices. The applied amounts must add up to the
+            voucher amount. Leave blank to raise a credit that isn&apos;t tied to a specific invoice.
+          </p>
+
+          <select style={input} value={creditCustomer}
+            onChange={(e) => { setCreditCustomer(e.target.value); setCreditApplied({}); }}>
+            <option value="">Not applied to an invoice</option>
+            {creditCustomers.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
+          </select>
+
+          {creditCustomer && creditInvoices.length === 0 && (
+            <p style={{ fontSize: 13, color: '#9CA3AF', marginTop: 12, marginBottom: 0 }}>This customer has no open invoices.</p>
+          )}
+
+          {creditInvoices.length > 0 && (
+            <>
+              <div style={{ marginTop: 14, border: '1px solid var(--border, #E5E7EB)', borderRadius: 8, overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--deep-navy, #012158)' }}>
+                      <th style={{ padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#fff' }}>Invoice #</th>
+                      <th style={{ padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#fff' }}>Date</th>
+                      <th style={{ padding: '9px 12px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: '#fff' }}>Balance</th>
+                      <th style={{ padding: '9px 12px', textAlign: 'right', fontSize: 11, fontWeight: 600, color: '#fff', width: 140 }}>Apply</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {creditInvoices.map((inv) => {
+                      const val = creditApplied[inv._id] || '';
+                      const tooMuch = Number(val) > inv.balance + 0.0001;
+                      return (
+                        <tr key={inv._id} style={{ borderBottom: '1px solid #F0F0F0', background: Number(val) > 0 ? '#F0FFF4' : '#fff' }}>
+                          <td style={{ padding: '8px 12px', fontSize: 13, fontFamily: 'monospace', fontWeight: 600 }}>{inv.invoiceNumber}</td>
+                          <td style={{ padding: '8px 12px', fontSize: 13 }}>{new Date(inv.date).toLocaleDateString('en-GB')}</td>
+                          <td style={{ padding: '8px 12px', fontSize: 13, textAlign: 'right', fontFamily: 'monospace' }}>{money(inv.balance)}</td>
+                          <td style={{ padding: '6px 10px', textAlign: 'right' }}>
+                            <input type="number" step="0.01" min="0" max={inv.balance} value={val}
+                              onChange={(e) => setCreditApplied((p) => ({ ...p, [inv._id]: e.target.value }))}
+                              placeholder="0.00"
+                              style={{ width: '100%', padding: '6px 9px', textAlign: 'right', fontFamily: 'monospace', fontSize: 13,
+                                border: `1px solid ${tooMuch ? '#DC2626' : 'var(--border, #D1D5DB)'}`, borderRadius: 6, outline: 'none' }} />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', marginTop: 10, padding: '9px 14px', borderRadius: 8,
+                fontSize: 13, fontWeight: 600,
+                background: creditTotal === grandTotal && grandTotal > 0 ? '#D1FAE5' : '#FEF3C7',
+                color: creditTotal === grandTotal && grandTotal > 0 ? '#065F46' : '#92400E',
+              }}>
+                <span>Note amount {money(grandTotal)} · Applied {money(creditTotal)}</span>
+                <span style={{ fontFamily: 'monospace' }}>
+                  {creditTotal === grandTotal && grandTotal > 0 ? '✓ Fully applied' : `Difference ${money(Math.abs(grandTotal - creditTotal))}`}
+                </span>
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--text-secondary, #6B7280)', margin: '10px 0 0' }}>
+                The credit side posts to Accounts Receivable automatically. Choose the debit account below (usually Sales Returns).
+              </p>
+            </>
+          )}
+        </div>
+      )}
 
       {branchField.visible && (
         <div style={card}>
@@ -485,4 +595,4 @@ export default function VoucherFormPage() {
       )}
     </div>
   );
-}
+}                                                               

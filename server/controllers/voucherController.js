@@ -14,7 +14,7 @@
 // not touch a single debit, credit, or how the entry posts.
 
 const { getModel } = require('../utils/getModel');
-const { getSpecialAccount } = require('../utils/specialAccounts');
+const { getSpecialAccount, specialAccountCode } = require('../utils/specialAccounts');
 const { logAudit } = require('../middleware/auditMiddleware');
 const { validateDoubleEntry, generateEntryNumber } = require('../utils/accountingHelpers');
 const { generateVoucherNumber, journalTypeForVoucher } = require('../utils/voucherHelpers');
@@ -90,6 +90,109 @@ const getVoucher = async (req, res) => {
   }
 };
 
+// ─── Credit-note application ─────────────────────────────────────────────────
+//
+// A credit note used to move the AR CONTROL account without ever touching the
+// invoice it related to. The GL was right, the sub-ledger was not: the invoice
+// kept its full balance and the customer's outstanding never came down, so the
+// two drifted apart permanently. `appliedTo` closes that — the note names the
+// invoices it settles, and posting it reduces them for real.
+//
+// The rules below mirror the ones on payment allocation deliberately, because a
+// credit note IS a negative receipt as far as the receivables ledger is
+// concerned. Overpayment is refused for the same reason: an unapplied remainder
+// is a customer credit balance, which is its own (deferred) feature rather than
+// something to leave floating.
+async function validateCreditApplication(req, voucherAmount, appliedTo, branch) {
+  if (!Array.isArray(appliedTo) || appliedTo.length === 0) return { rows: [], total: 0 };
+
+  const Invoice = getModel(req.tenantDb, 'Invoice');
+  const seen = new Set();
+  const rows = [];
+  let total = 0;
+
+  for (let i = 0; i < appliedTo.length; i += 1) {
+    const id = appliedTo[i].invoice || appliedTo[i].id;
+    const amount = Math.round((Number(appliedTo[i].amount) || 0) * 100) / 100;
+
+    if (!id) return { error: `Line ${i + 1}: no invoice selected.` };
+    if (seen.has(String(id))) {
+      return { error: 'The same invoice appears more than once. Combine those rows into one amount.' };
+    }
+    seen.add(String(id));
+    if (!(amount > 0)) return { error: `Line ${i + 1}: the amount must be greater than zero.` };
+
+    const inv = await Invoice.findOne(scopedFilter(req, { _id: id }));
+    if (!inv) return { error: `Line ${i + 1}: invoice not found.` };
+    if (['draft', 'cancelled'].includes(inv.status)) {
+      return { error: `${inv.invoiceNumber} is ${inv.status} and cannot take a credit note.` };
+    }
+    if (amount > inv.balance) {
+      return { error: `${inv.invoiceNumber}: ${amount} is more than its outstanding balance of ${inv.balance}.` };
+    }
+
+    total = Math.round((total + amount) * 100) / 100;
+    rows.push({ invoice: inv, amount });
+  }
+
+  // One customer — a note settles one customer's debt.
+  const customers = [...new Set(rows.map((r) => String(r.invoice.customer)))];
+  if (customers.length > 1) {
+    return { error: 'Those invoices belong to different customers. Raise one credit note per customer.' };
+  }
+
+  // One branch, and it must be the branch the note itself is stamped with —
+  // otherwise the journal would relieve one branch's AR while the sub-ledger
+  // moved in another.
+  const invBranches = [...new Set(rows.map((r) => (r.invoice.branch ? String(r.invoice.branch) : 'none')))];
+  if (invBranches.length > 1) {
+    return { error: `Those invoices belong to different branches (${rows.map((r) => r.invoice.invoiceNumber).join(', ')}). Raise a separate credit note per branch.` };
+  }
+  if (branch && invBranches[0] !== 'none' && invBranches[0] !== String(branch)) {
+    return { error: 'Those invoices belong to a different branch than this credit note. Choose the matching branch.' };
+  }
+
+  // Exact application — see the note above on unapplied remainders.
+  const amt = Math.round((Number(voucherAmount) || 0) * 100) / 100;
+  if (total !== amt) {
+    return {
+      error: `The amounts applied (${total}) do not add up to the credit note total of ${amt}. `
+        + 'Apply the full amount across invoices, or change the note amount to match.',
+    };
+  }
+
+  return { rows, total, customer: rows[0].invoice.customer };
+}
+
+// Move the invoices and the customer's outstanding by `sign` (+1 applying a
+// credit note, -1 un-applying it on reversal). Kept in one place so posting and
+// reversal can never drift apart.
+async function moveCreditApplication(req, voucher, sign) {
+  if (!voucher.appliedTo || voucher.appliedTo.length === 0) return;
+  const Invoice = getModel(req.tenantDb, 'Invoice');
+  const Customer = getModel(req.tenantDb, 'Customer');
+
+  let moved = 0;
+  for (const alloc of voucher.appliedTo) {
+    const inv = await Invoice.findById(alloc.invoice);
+    if (!inv) continue;                      // deleted since — skip rather than crash
+    const delta = Math.round(alloc.amount * sign * 100) / 100;
+    inv.amountPaid = Math.round((inv.amountPaid + delta) * 100) / 100;
+    inv.balance = Math.round((inv.total - inv.amountPaid) * 100) / 100;
+    inv.status = inv.balance <= 0 ? 'paid' : (inv.amountPaid > 0 ? 'partially_paid' : 'sent');
+    await inv.save();
+    moved = Math.round((moved + delta) * 100) / 100;
+  }
+
+  if (voucher.customer && moved !== 0) {
+    const cust = await Customer.findById(voucher.customer);
+    if (cust) {
+      cust.outstandingBalance = Math.round((cust.outstandingBalance - moved) * 100) / 100;
+      await cust.save();
+    }
+  }
+}
+
 // ─── Create (draft) ──────────────────────────────────────────────────────────
 const createVoucher = async (req, res) => {
   try {
@@ -104,6 +207,8 @@ const createVoucher = async (req, res) => {
       debitAccount, creditAccount, amount,
       // Multi-line mode:
       lines: rawLines,
+      // Credit notes: the invoices this note settles.
+      appliedTo,
     } = req.body;
 
     if (!voucherType || !date) {
@@ -122,13 +227,35 @@ const createVoucher = async (req, res) => {
     }
     const branch = branchChoice.branch;
 
+    // ── Credit note applied to invoices ──
+    // When a credit note names the invoices it settles, the CREDIT side must be
+    // Accounts Receivable — reducing an invoice balance while crediting anything
+    // else would contradict the ledger. The debit side stays the user's choice
+    // (Sales Returns, or whichever revenue account they are reversing).
+    let creditApplication = { rows: [], total: 0 };
+    let effectiveCreditAccount = creditAccount;
+    if (voucherType === 'credit_note' && Array.isArray(appliedTo) && appliedTo.length > 0) {
+      const arAccount = await getSpecialAccount(req, 'accountsReceivable', { required: false });
+      if (!arAccount) {
+        return res.status(400).json({
+          success: false,
+          message: `Accounts Receivable (code ${specialAccountCode(req, 'accountsReceivable')}) was not found, so this credit note cannot be applied to invoices. Map it under Settings → Special Accounts.`,
+        });
+      }
+      creditApplication = await validateCreditApplication(req, amount, appliedTo, branch);
+      if (creditApplication.error) {
+        return res.status(400).json({ success: false, message: creditApplication.error });
+      }
+      effectiveCreditAccount = String(arAccount._id);
+    }
+
 
     // Resolve lines: either provided multi-line, or built from simple fields.
     let lines;
     if (Array.isArray(rawLines) && rawLines.length >= 2) {
       lines = rawLines;
-    } else if (debitAccount && creditAccount && amount) {
-      lines = simpleLines({ debitAccount, creditAccount, amount, narration });
+    } else if (debitAccount && effectiveCreditAccount && amount) {
+      lines = simpleLines({ debitAccount, creditAccount: effectiveCreditAccount, amount, narration });
     } else {
       return res.status(400).json({
         success: false,
@@ -210,7 +337,12 @@ const createVoucher = async (req, res) => {
 
     const voucher = await Voucher.create({
       voucherNumber, voucherType, date, narration, reference,
-      partyName, customer: customer || undefined, vendor: vendor || undefined,
+      partyName,
+      // A credit note applied to invoices belongs to that invoice's customer, so
+      // link it even when the form didn't set one — reversal needs it to put the
+      // customer's outstanding back.
+      customer: customer || creditApplication.customer || undefined,
+      vendor: vendor || undefined,
       mode, bankAccount: bankAccount || undefined, bankName, instrumentNo,
       paymentDetails: paymentDetails || {},
       amount: itemizedTotal != null ? itemizedTotal : computedAmount,
@@ -224,6 +356,12 @@ const createVoucher = async (req, res) => {
       totalDebit: validation.totalDebit, totalCredit: validation.totalCredit,
       status: 'draft', createdBy: req.user._id,
       branch,
+      // Recorded on the draft, but only ACTED ON when the voucher is posted.
+      appliedTo: creditApplication.rows.map((r) => ({
+        invoice: r.invoice._id,
+        documentNumber: r.invoice.invoiceNumber,
+        amount: r.amount,
+      })),
     });
 
     await logAudit(req.tenantDb, {
@@ -282,6 +420,11 @@ const postVoucher = async (req, res) => {
       branch,
     });
 
+    // A credit note that names invoices settles them for real at POST time —
+    // reducing each invoice's balance and the customer's outstanding, so the
+    // sub-ledger moves with the journal instead of drifting from it.
+    await moveCreditApplication(req, voucher, +1);
+
     voucher.status = 'posted';
     voucher.journalEntry = entry._id;
     await voucher.save();
@@ -331,6 +474,11 @@ const reverseVoucher = async (req, res) => {
       status: 'posted', createdBy: req.user._id,
       branch: voucher.branch || original.branch || await headOfficeId(req),
     });
+
+    // Un-apply the credit note: put the balance back on each invoice and the
+    // amount back on the customer's outstanding, so a reversal is complete
+    // rather than only reversing the journal half.
+    await moveCreditApplication(req, voucher, -1);
 
     voucher.status = 'reversed';
     await voucher.save();
