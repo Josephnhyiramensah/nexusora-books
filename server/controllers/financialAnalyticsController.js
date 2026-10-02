@@ -62,10 +62,17 @@ const getFinancialDashboard = async (req, res) => {
 
     const accounts = await Account.find({ isActive: true }).lean();
 
-    // Point-in-time balances (as of period end, or all-time when no period).
-    const asOfMovement = await ledgerMovement(req, JournalEntry, asOfEnd ? { dateFilter: { date: { $lte: asOfEnd } } } : {});
-    // Period flows (revenue/COGS/expenses within the period, or all-time).
-    const periodMovement = await ledgerMovement(req, JournalEntry, period ? { dateFilter: { date: { $gte: period.start, $lte: period.end } } } : {});
+    // Always compute from the POSTED LEDGER, never the stored account.balance —
+    // that field is not maintained on posting (it reads 0), so relying on it would
+    // zero out the dashboard. Passing a dateFilter forces ledgerMovement to build
+    // the signed-movement map from posted journal lines for every view.
+    const asOfCeil = asOfEnd || new Date();
+    // Point-in-time balances: cumulative posted movement up to as-of (period end / now).
+    const asOfMovement = await ledgerMovement(req, JournalEntry, { dateFilter: { date: { $lte: asOfCeil } } });
+    // Period flows (revenue/COGS/expenses): within the period, or all-time up to now.
+    const periodMovement = await ledgerMovement(req, JournalEntry, {
+      dateFilter: period ? { date: { $gte: period.start, $lte: period.end } } : { date: { $lte: asOfCeil } },
+    });
 
     const byType = (t) => accounts.filter((a) => a.type === t);
     const sumAbs = (accts, mv) => round2(accts.reduce((s, a) => s + Math.abs(acctSignedBalance(a, mv)), 0));
