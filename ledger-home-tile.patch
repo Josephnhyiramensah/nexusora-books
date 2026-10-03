@@ -1,0 +1,12 @@
+diff --git a/client/src/pages/HomeScreen.jsx b/client/src/pages/HomeScreen.jsx
+index ebf891c..7ca8c80 100644
+--- a/client/src/pages/HomeScreen.jsx
++++ b/client/src/pages/HomeScreen.jsx
+@@ -35,6 +35,7 @@ const moduleTiles = [
+   { label: 'Budget',              subtitle: 'Budget vs actual & variance',    path: '/budget',               accentColor: '#65A30D', icon: FiTarget },
+   { label: 'Tax',                 subtitle: 'VAT, PAYE, corporate tax',       path: '/tax',                  accentColor: '#78716C', icon: FiPercent },
+   { label: 'Reports',             subtitle: 'Financial statements & exports', path: '/reports',              accentColor: '#8B5CF6', icon: FiBarChart2 },
++  { label: 'Party Ledgers',       subtitle: 'Per-person receivables & payables', path: '/ledgers',           accentColor: '#0D9488', icon: FiBookOpen },
+   { label: 'Notes',               subtitle: 'Personal, company, announcements', path: '/notes',              accentColor: '#CA8A04', icon: FiEdit3 },
+   { label: 'To-Do',               subtitle: 'Tasks, assignments, checklists', path: '/todos',               accentColor: '#E11D48', icon: FiCheckSquare },
+   { label: 'AI Assistant',        subtitle: 'Anomaly detection & forecasting', path: '/ai',                  accentColor: '#C9A227', icon: FiZap },

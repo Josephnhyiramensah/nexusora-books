@@ -1,0 +1,390 @@
+diff --git a/client/src/modules/accounts/AccountListPage.jsx b/client/src/modules/accounts/AccountListPage.jsx
+index aa516df..e6de6fc 100644
+--- a/client/src/modules/accounts/AccountListPage.jsx
++++ b/client/src/modules/accounts/AccountListPage.jsx
+@@ -23,7 +23,7 @@ export default function AccountListPage() {
+   const fetchAccounts = async () => {
+     try {
+       setLoading(true);
+-      const filters = {};
++      const filters = { excludeSubLedger: true };
+       if (filterType) filters.type = filterType;
+       const result = await accountService.getAll(filters);
+       if (result.success) setAccounts(result.data);
+diff --git a/client/src/modules/ledgers/PartyLedgerListPage.jsx b/client/src/modules/ledgers/PartyLedgerListPage.jsx
+index f3a6fec..b98acc1 100644
+--- a/client/src/modules/ledgers/PartyLedgerListPage.jsx
++++ b/client/src/modules/ledgers/PartyLedgerListPage.jsx
+@@ -1,14 +1,14 @@
+ // client/src/modules/ledgers/PartyLedgerListPage.jsx
+ //
+-// Subsidiary ledgers — one dynamic ledger per person, auto-provisioned from the
+-// integration and keyed by the external person ID. A ledger's balance is
+-// dynamic: a debit balance means the party owes us (Receivable); a credit
+-// balance means we owe the party (Payable). This page lists every party as
+-// "ID — Name" (names can duplicate; the ID is the key), split by that sign, and
+-// opens the running-balance statement on click.
+-import { useState, useEffect, useMemo } from 'react';
++// Subsidiary ledgers — one dynamic ledger per person, keyed by an ID. Ledgers
++// are auto-provisioned from the integration, and can also be created by hand
++// here (for clients not using any external app). A ledger's balance is dynamic:
++// a debit balance means the party owes us (Receivable); a credit balance means
++// we owe the party (Payable). Balances only move through posted vouchers /
++// journals — they are never edited here.
++import { useState, useEffect, useMemo, useCallback } from 'react';
+ import { useNavigate } from 'react-router-dom';
+-import { FiSearch, FiChevronRight } from 'react-icons/fi';
++import { FiSearch, FiChevronRight, FiPlus, FiEdit2, FiSlash, FiCheckCircle, FiX } from 'react-icons/fi';
+ import api from '../../services/api';
+ import { formatCurrency } from '../../utils/formatters';
+ 
+@@ -28,11 +28,13 @@ function SummaryCard({ label, value, accent, sub }) {
+   );
+ }
+ 
+-function PartyTable({ title, accent, rows, onOpen }) {
++const iconBtn = { background: 'none', border: 'none', cursor: 'pointer', padding: 6, borderRadius: 6, color: C.grey, display: 'inline-flex', alignItems: 'center' };
++
++function PartyTable({ title, accent, rows, onOpen, onRename, onToggle }) {
+   if (!rows.length) return null;
+   return (
+     <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: 'hidden', marginBottom: 20 }}>
+-      <div style={{ padding: '12px 18px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
++      <div style={{ padding: '12px 18px', borderBottom: `1px solid ${C.border}` }}>
+         <h3 style={{ fontSize: 14, fontWeight: 700, color: C.navy, margin: 0 }}>
+           <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: accent, marginRight: 8 }} />
+           {title} <span style={{ color: C.mute, fontWeight: 500 }}>· {rows.length}</span>
+@@ -41,23 +43,24 @@ function PartyTable({ title, accent, rows, onOpen }) {
+       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+         <tbody>
+           {rows.map((p) => (
+-            <tr
+-              key={p.id}
+-              onClick={() => onOpen(p.id)}
+-              style={{ cursor: 'pointer', borderBottom: `1px solid ${C.border}` }}
+-              onMouseEnter={(e) => (e.currentTarget.style.background = '#F8FAFC')}
+-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+-            >
+-              <td style={{ padding: '12px 18px' }}>
++            <tr key={p.id} style={{ borderBottom: `1px solid ${C.border}`, opacity: p.isActive ? 1 : 0.55 }}>
++              <td onClick={() => onOpen(p.id)} style={{ padding: '12px 18px', cursor: 'pointer' }}>
+                 <span style={{ fontFamily: 'monospace', fontSize: 12, color: C.grey, background: '#F1F5F9', padding: '2px 7px', borderRadius: 5, marginRight: 10 }}>
+                   {p.externalPartyId || p.code}
+                 </span>
+                 <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>{p.name}</span>
++                {!p.isActive && <span style={{ fontSize: 10, fontWeight: 700, color: C.mute, background: '#F1F5F9', padding: '2px 7px', borderRadius: 10, marginLeft: 8 }}>INACTIVE</span>}
+               </td>
+-              <td style={{ padding: '12px 18px', textAlign: 'right', fontWeight: 700, color: accent, whiteSpace: 'nowrap' }}>
++              <td onClick={() => onOpen(p.id)} style={{ padding: '12px 10px', textAlign: 'right', fontWeight: 700, color: accent, whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                 {money(p.balance)}
+               </td>
+-              <td style={{ padding: '12px 10px 12px 0', width: 28, color: C.mute }}><FiChevronRight size={16} /></td>
++              <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', textAlign: 'right' }}>
++                <button title="Rename" style={iconBtn} onClick={(e) => { e.stopPropagation(); onRename(p); }}><FiEdit2 size={15} /></button>
++                <button title={p.isActive ? 'Deactivate' : 'Reactivate'} style={{ ...iconBtn, color: p.isActive ? C.red : C.green }} onClick={(e) => { e.stopPropagation(); onToggle(p); }}>
++                  {p.isActive ? <FiSlash size={15} /> : <FiCheckCircle size={15} />}
++                </button>
++                <button title="Open statement" style={iconBtn} onClick={() => onOpen(p.id)}><FiChevronRight size={16} /></button>
++              </td>
+             </tr>
+           ))}
+         </tbody>
+@@ -66,6 +69,26 @@ function PartyTable({ title, accent, rows, onOpen }) {
+   );
+ }
+ 
++// Minimal modal.
++function Modal({ title, children, onClose }) {
++  return (
++    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 }}>
++      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
++        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: `1px solid ${C.border}` }}>
++          <h3 style={{ fontSize: 16, fontWeight: 700, color: C.navy, margin: 0 }}>{title}</h3>
++          <button style={iconBtn} onClick={onClose}><FiX size={18} /></button>
++        </div>
++        <div style={{ padding: 20 }}>{children}</div>
++      </div>
++    </div>
++  );
++}
++
++const inputStyle = { width: '100%', padding: '10px 12px', borderRadius: 9, border: '1px solid #D1D5DB', fontSize: 14, boxSizing: 'border-box' };
++const label = { fontSize: 12, color: C.grey, fontWeight: 600, display: 'block', margin: '0 0 6px' };
++const goldBtn = { background: C.gold, color: '#1A1A1A', border: 'none', borderRadius: 9, padding: '10px 18px', fontSize: 14, fontWeight: 700, cursor: 'pointer' };
++const ghostBtn = { background: '#fff', color: C.grey, border: '1px solid #D1D5DB', borderRadius: 9, padding: '10px 18px', fontSize: 14, fontWeight: 600, cursor: 'pointer' };
++
+ export default function PartyLedgerListPage() {
+   const navigate = useNavigate();
+   const [data, setData] = useState(null);
+@@ -73,15 +96,19 @@ export default function PartyLedgerListPage() {
+   const [error, setError] = useState('');
+   const [q, setQ] = useState('');
+ 
+-  useEffect(() => {
+-    let alive = true;
++  const [create, setCreate] = useState(null);   // { name, partyId } when open
++  const [rename, setRename] = useState(null);    // { id, name } when open
++  const [busy, setBusy] = useState(false);
++  const [formErr, setFormErr] = useState('');
++
++  const load = useCallback(() => {
+     setLoading(true); setError('');
+     api.get('/ledgers/parties')
+-      .then((res) => { if (alive && res.data?.success) setData(res.data.data); })
+-      .catch((e) => alive && setError(e.response?.data?.message || 'Could not load ledgers.'))
+-      .finally(() => alive && setLoading(false));
+-    return () => { alive = false; };
++      .then((res) => { if (res.data?.success) setData(res.data.data); })
++      .catch((e) => setError(e.response?.data?.message || 'Could not load ledgers.'))
++      .finally(() => setLoading(false));
+   }, []);
++  useEffect(() => { load(); }, [load]);
+ 
+   const { receivables, payables, settled } = useMemo(() => {
+     const parties = data?.parties || [];
+@@ -101,13 +128,47 @@ export default function PartyLedgerListPage() {
+   const open = (id) => navigate(`/ledgers/parties/${id}`);
+   const s = data?.summary || {};
+ 
++  const submitCreate = async () => {
++    setFormErr('');
++    if (!create.name.trim() || !create.partyId.trim()) { setFormErr('Name and ID are both required.'); return; }
++    setBusy(true);
++    try {
++      const res = await api.post('/ledgers/parties', { name: create.name.trim(), partyId: create.partyId.trim() });
++      if (res.data?.success) { setCreate(null); load(); }
++      else setFormErr(res.data?.message || 'Could not create the ledger.');
++    } catch (e) { setFormErr(e.response?.data?.message || 'Could not create the ledger.'); }
++    finally { setBusy(false); }
++  };
++
++  const submitRename = async () => {
++    setFormErr('');
++    if (!rename.name.trim()) { setFormErr('Name is required.'); return; }
++    setBusy(true);
++    try {
++      const res = await api.patch(`/ledgers/parties/${rename.id}`, { name: rename.name.trim() });
++      if (res.data?.success) { setRename(null); load(); }
++      else setFormErr(res.data?.message || 'Could not rename.');
++    } catch (e) { setFormErr(e.response?.data?.message || 'Could not rename.'); }
++    finally { setBusy(false); }
++  };
++
++  const toggleActive = async (p) => {
++    try { await api.patch(`/ledgers/parties/${p.id}`, { isActive: !p.isActive }); load(); }
++    catch { /* no-op; list reload would show truth */ }
++  };
++
+   return (
+     <div style={{ maxWidth: 1100 }}>
+-      <div style={{ marginBottom: 18 }}>
+-        <h1 style={{ fontSize: 22, fontWeight: 800, color: C.navy, margin: 0 }}>Party Ledgers</h1>
+-        <p style={{ fontSize: 13, color: C.grey, margin: '4px 0 0' }}>
+-          Statement of account for each person. A ledger moves between receivable and payable as its balance changes.
+-        </p>
++      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
++        <div>
++          <h1 style={{ fontSize: 22, fontWeight: 800, color: C.navy, margin: 0 }}>Party Ledgers</h1>
++          <p style={{ fontSize: 13, color: C.grey, margin: '4px 0 0' }}>
++            Statement of account for each person. A ledger moves between receivable and payable as its balance changes.
++          </p>
++        </div>
++        <button style={goldBtn} onClick={() => { setFormErr(''); setCreate({ name: '', partyId: '' }); }}>
++          <FiPlus size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> New Party Ledger
++        </button>
+       </div>
+ 
+       {error && <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#B91C1C', borderRadius: 10, padding: '12px 16px', fontSize: 14, marginBottom: 16 }}>{error}</div>}
+@@ -125,26 +186,51 @@ export default function PartyLedgerListPage() {
+ 
+           <div style={{ position: 'relative', marginBottom: 18, maxWidth: 420 }}>
+             <FiSearch size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: C.mute }} />
+-            <input
+-              value={q} onChange={(e) => setQ(e.target.value)}
+-              placeholder="Search by ID or name…"
+-              style={{ width: '100%', padding: '10px 12px 10px 34px', borderRadius: 9, border: `1px solid #D1D5DB`, fontSize: 14, background: '#fff' }}
+-            />
++            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by ID or name…"
++              style={{ width: '100%', padding: '10px 12px 10px 34px', borderRadius: 9, border: '1px solid #D1D5DB', fontSize: 14, boxSizing: 'border-box' }} />
+           </div>
+ 
+           {receivables.length === 0 && payables.length === 0 && settled.length === 0 ? (
+             <div style={{ padding: 40, textAlign: 'center', color: C.mute, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14 }}>
+-              {q ? 'No party matches your search.' : 'No party ledgers yet. They are created automatically as transactions arrive from the integration.'}
++              {q ? 'No party matches your search.' : 'No party ledgers yet. Create one with “New Party Ledger”, or they appear automatically as transactions arrive from the integration.'}
+             </div>
+           ) : (
+             <>
+-              <PartyTable title="Receivables — they owe us" accent={C.teal} rows={receivables} onOpen={open} />
+-              <PartyTable title="Payables — we owe them" accent={C.red} rows={payables} onOpen={open} />
+-              <PartyTable title="Settled — zero balance" accent={C.mute} rows={settled} onOpen={open} />
++              <PartyTable title="Receivables — they owe us" accent={C.teal} rows={receivables} onOpen={open} onRename={(p) => { setFormErr(''); setRename({ id: p.id, name: p.name }); }} onToggle={toggleActive} />
++              <PartyTable title="Payables — we owe them" accent={C.red} rows={payables} onOpen={open} onRename={(p) => { setFormErr(''); setRename({ id: p.id, name: p.name }); }} onToggle={toggleActive} />
++              <PartyTable title="Settled — zero balance" accent={C.mute} rows={settled} onOpen={open} onRename={(p) => { setFormErr(''); setRename({ id: p.id, name: p.name }); }} onToggle={toggleActive} />
+             </>
+           )}
+         </>
+       )}
++
++      {create && (
++        <Modal title="New Party Ledger" onClose={() => setCreate(null)}>
++          <label style={label}>Name</label>
++          <input autoFocus style={inputStyle} value={create.name} onChange={(e) => setCreate({ ...create, name: e.target.value })} placeholder="e.g. Kofi Mensah" />
++          <label style={{ ...label, marginTop: 14 }}>Unique ID (ledger key)</label>
++          <input style={inputStyle} value={create.partyId} onChange={(e) => setCreate({ ...create, partyId: e.target.value })} placeholder="e.g. K-007 or a phone number" />
++          <p style={{ fontSize: 11.5, color: C.mute, margin: '8px 0 0' }}>Any unique identifier you use for this person. Balances build up only from posted vouchers/journals.</p>
++          {formErr && <p style={{ color: C.red, fontSize: 13, margin: '12px 0 0' }}>{formErr}</p>}
++          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
++            <button style={ghostBtn} onClick={() => setCreate(null)} disabled={busy}>Cancel</button>
++            <button style={goldBtn} onClick={submitCreate} disabled={busy}>{busy ? 'Creating…' : 'Create'}</button>
++          </div>
++        </Modal>
++      )}
++
++      {rename && (
++        <Modal title="Rename Ledger" onClose={() => setRename(null)}>
++          <label style={label}>Name</label>
++          <input autoFocus style={inputStyle} value={rename.name} onChange={(e) => setRename({ ...rename, name: e.target.value })} />
++          <p style={{ fontSize: 11.5, color: C.mute, margin: '8px 0 0' }}>The ID and balance don’t change — only the display name.</p>
++          {formErr && <p style={{ color: C.red, fontSize: 13, margin: '12px 0 0' }}>{formErr}</p>}
++          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
++            <button style={ghostBtn} onClick={() => setRename(null)} disabled={busy}>Cancel</button>
++            <button style={goldBtn} onClick={submitRename} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
++          </div>
++        </Modal>
++      )}
+     </div>
+   );
+ }
+diff --git a/client/src/services/accountService.js b/client/src/services/accountService.js
+index 3b1ce90..d870085 100644
+--- a/client/src/services/accountService.js
++++ b/client/src/services/accountService.js
+@@ -9,6 +9,7 @@ const accountService = {
+     const params = new URLSearchParams();
+     if (filters.type) params.append('type', filters.type);
+     if (filters.isActive !== undefined) params.append('isActive', filters.isActive);
++    if (filters.excludeSubLedger) params.append('excludeSubLedger', 'true');
+     const { data } = await api.get(`/accounts?${params.toString()}`);
+     return data;
+   },
+diff --git a/server/controllers/accountController.js b/server/controllers/accountController.js
+index 375301c..07e6f50 100644
+--- a/server/controllers/accountController.js
++++ b/server/controllers/accountController.js
+@@ -11,6 +11,10 @@ const getAccounts = async (req, res) => {
+     const filter = {};
+     if (req.query.type) filter.type = req.query.type;
+     if (req.query.isActive !== undefined) filter.isActive = req.query.isActive === 'true';
++    // Chart-of-Accounts views pass excludeSubLedger=true so the per-person
++    // ledgers (potentially hundreds) don't clutter the COA. Voucher/journal
++    // pickers omit it, so party ledgers stay selectable for manual postings.
++    if (req.query.excludeSubLedger === 'true') filter.isSubLedger = { $ne: true };
+     const accounts = await Account.find(filter).sort({ code: 1 }).lean();
+     res.json({ success: true, data: accounts, count: accounts.length });
+   } catch (error) {
+@@ -22,7 +26,9 @@ const getAccounts = async (req, res) => {
+ const getAccountTree = async (req, res) => {
+   try {
+     const Account = getModel(req.tenantDb, 'Account');
+-    const accounts = await Account.find({ isActive: true }).sort({ code: 1 }).lean();
++    // The chart-of-accounts tree is the COA structure — per-person sub-ledgers
++    // live in the Ledgers area, not here, so they are excluded.
++    const accounts = await Account.find({ isActive: true, isSubLedger: { $ne: true } }).sort({ code: 1 }).lean();
+ 
+     const tree = {};
+     const typeOrder = ['asset', 'liability', 'equity', 'revenue', 'cogs', 'expense'];
+diff --git a/server/controllers/ledgerController.js b/server/controllers/ledgerController.js
+index 4d9d083..551bd34 100644
+--- a/server/controllers/ledgerController.js
++++ b/server/controllers/ledgerController.js
+@@ -174,4 +174,59 @@ const getPartyStatement = async (req, res) => {
+   }
+ };
+ 
+-module.exports = { getPartyLedgers, getPartyStatement };
++/**
++ * POST /api/ledgers/parties
++ * Manually create a party ledger (for clients not using the integration).
++ * Body: { name, partyId, controlCode?, prefix? }. Balances are never set here —
++ * they only move through posted vouchers/journals.
++ */
++const createPartyLedger = async (req, res) => {
++  try {
++    const Account = getModel(req.tenantDb, 'Account');
++    const { name, partyId, controlCode, prefix } = req.body;
++    if (!name || !String(name).trim()) return res.status(400).json({ success: false, message: 'Name is required.' });
++    if (!partyId || !String(partyId).trim()) return res.status(400).json({ success: false, message: 'A unique ID is required.' });
++
++    const pid = String(partyId).trim();
++    const existing = await Account.findOne({ externalPartyId: pid });
++    if (existing) {
++      return res.status(409).json({ success: false, message: `A ledger with ID "${pid}" already exists (${existing.name}).`, data: { id: String(existing._id) } });
++    }
++
++    const { getOrCreatePartyLedger } = require('../utils/subLedger');
++    const acct = await getOrCreatePartyLedger(Account, {
++      partyId: pid, partyName: name,
++      controlCode: controlCode || '1100', prefix: prefix || 'SL-',
++      createdBy: req.user ? req.user._id : null,
++    });
++    res.status(201).json({ success: true, message: 'Party ledger created.', data: { id: String(acct._id), code: acct.code, name: acct.name, externalPartyId: acct.externalPartyId } });
++  } catch (error) {
++    if (error.code === 11000) return res.status(409).json({ success: false, message: 'A ledger with that ID already exists.' });
++    console.error('[Ledgers] create error:', error.message);
++    res.status(500).json({ success: false, message: 'Failed to create the party ledger.' });
++  }
++};
++
++/**
++ * PATCH /api/ledgers/parties/:id
++ * Rename or activate/deactivate a party ledger. Code, ID and balance are not
++ * editable here — the balance only changes through postings.
++ */
++const updatePartyLedger = async (req, res) => {
++  try {
++    const Account = getModel(req.tenantDb, 'Account');
++    const acct = await Account.findById(req.params.id);
++    if (!acct || !acct.isSubLedger) return res.status(404).json({ success: false, message: 'Party ledger not found.' });
++
++    const { name, isActive } = req.body;
++    if (name !== undefined && String(name).trim()) acct.name = String(name).trim();
++    if (isActive !== undefined) acct.isActive = !!isActive;
++    await acct.save();
++    res.json({ success: true, message: 'Ledger updated.', data: { id: String(acct._id), name: acct.name, isActive: acct.isActive } });
++  } catch (error) {
++    console.error('[Ledgers] update error:', error.message);
++    res.status(500).json({ success: false, message: 'Failed to update the party ledger.' });
++  }
++};
++
++module.exports = { getPartyLedgers, getPartyStatement, createPartyLedger, updatePartyLedger };
+diff --git a/server/routes/ledgerRoutes.js b/server/routes/ledgerRoutes.js
+index 847ca3f..1416a71 100644
+--- a/server/routes/ledgerRoutes.js
++++ b/server/routes/ledgerRoutes.js
+@@ -4,15 +4,17 @@
+ // this is the same financial data, viewed per party.
+ const express = require('express');
+ const router = express.Router();
+-const { protect, allow } = require('../middleware/authMiddleware');
+-const { getPartyLedgers, getPartyStatement } = require('../controllers/ledgerController');
++const { protect, allow, authorise } = require('../middleware/authMiddleware');
++const { getPartyLedgers, getPartyStatement, createPartyLedger, updatePartyLedger } = require('../controllers/ledgerController');
+ 
+ router.use(protect);
+-router.use(allow('reports.view', 'super_admin', 'admin', 'accountant'));
+ 
+-// GET /api/ledgers/parties?q=
+-router.get('/parties', getPartyLedgers);
+-// GET /api/ledgers/parties/:id/statement?startDate=&endDate=
+-router.get('/parties/:id/statement', getPartyStatement);
++// Reading — same access rule as the reports.
++router.get('/parties', allow('reports.view', 'super_admin', 'admin', 'accountant'), getPartyLedgers);
++router.get('/parties/:id/statement', allow('reports.view', 'super_admin', 'admin', 'accountant'), getPartyStatement);
++
++// Writing — same roles that can manage the chart of accounts.
++router.post('/parties', authorise('super_admin', 'admin', 'accountant'), createPartyLedger);
++router.patch('/parties/:id', authorise('super_admin', 'admin', 'accountant'), updatePartyLedger);
+ 
+ module.exports = router;

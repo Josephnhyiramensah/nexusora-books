@@ -9,6 +9,7 @@ const accountService = {
     const params = new URLSearchParams();
     if (filters.type) params.append('type', filters.type);
     if (filters.isActive !== undefined) params.append('isActive', filters.isActive);
+    if (filters.excludeSubLedger) params.append('excludeSubLedger', 'true');
     const { data } = await api.get(`/accounts?${params.toString()}`);
     return data;
   },

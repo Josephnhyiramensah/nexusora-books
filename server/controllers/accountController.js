@@ -11,6 +11,10 @@ const getAccounts = async (req, res) => {
     const filter = {};
     if (req.query.type) filter.type = req.query.type;
     if (req.query.isActive !== undefined) filter.isActive = req.query.isActive === 'true';
+    // Chart-of-Accounts views pass excludeSubLedger=true so the per-person
+    // ledgers (potentially hundreds) don't clutter the COA. Voucher/journal
+    // pickers omit it, so party ledgers stay selectable for manual postings.
+    if (req.query.excludeSubLedger === 'true') filter.isSubLedger = { $ne: true };
     const accounts = await Account.find(filter).sort({ code: 1 }).lean();
     res.json({ success: true, data: accounts, count: accounts.length });
   } catch (error) {
@@ -22,7 +26,9 @@ const getAccounts = async (req, res) => {
 const getAccountTree = async (req, res) => {
   try {
     const Account = getModel(req.tenantDb, 'Account');
-    const accounts = await Account.find({ isActive: true }).sort({ code: 1 }).lean();
+    // The chart-of-accounts tree is the COA structure — per-person sub-ledgers
+    // live in the Ledgers area, not here, so they are excluded.
+    const accounts = await Account.find({ isActive: true, isSubLedger: { $ne: true } }).sort({ code: 1 }).lean();
 
     const tree = {};
     const typeOrder = ['asset', 'liability', 'equity', 'revenue', 'cogs', 'expense'];

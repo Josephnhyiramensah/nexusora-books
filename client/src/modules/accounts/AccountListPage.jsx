@@ -23,7 +23,7 @@ export default function AccountListPage() {
   const fetchAccounts = async () => {
     try {
       setLoading(true);
-      const filters = {};
+      const filters = { excludeSubLedger: true };
       if (filterType) filters.type = filterType;
       const result = await accountService.getAll(filters);
       if (result.success) setAccounts(result.data);

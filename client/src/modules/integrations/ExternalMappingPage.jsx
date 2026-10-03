@@ -19,6 +19,7 @@ const FIELDS = [
   ['narration', 'Narration', false],
   ['reference', 'Reference', false],
   ['partyName', 'Party name', false],
+  ['partyId', 'Person ID (ledger key)', false],
   ['mode', 'Payment mode', false],
   ['debitAccount', 'Debit account', true],
   ['creditAccount', 'Credit account', true],
@@ -27,6 +28,7 @@ const FIELDS = [
 
 const blank = () => ({
   source: '', label: '', fixedVoucherType: '', fixedBranch: '', autopost: true, active: true,
+  partyControlCode: '1100', partyCodePrefix: 'SL-',
   fieldMap: {}, accountMap: [], typeMap: [], branchMap: [],
 });
 
@@ -236,11 +238,38 @@ export default function ExternalMappingPage() {
           <button style={ghostBtn} onClick={addType}><FiPlus size={14} /> Add</button>
         </div>
         <p style={{ fontSize: 12, color: '#6B7280', marginTop: 0 }}>Match the external system's transaction type values to Books voucher types. Skip if using a fixed type above.</p>
+
+        {/* Per-person ledger settings. "Party side" turns a type into a person
+            ledger posting: the person is debited (they owe us, e.g. an advance)
+            or credited (we owe/settle them, e.g. gold received). It only applies
+            when the record also carries a Person ID — so a type left on "— none —",
+            or any record with no Person ID, posts as an ordinary two-account voucher. */}
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', margin: '4px 0 14px', paddingBottom: 12, borderBottom: '1px solid #EEF2F6' }}>
+          <label style={{ fontSize: 12, color: '#6B7280' }}>Person ledger control a/c
+            <input style={{ ...input, width: 140, display: 'block', marginTop: 4 }} value={m.partyControlCode || ''} onChange={(e) => setM({ partyControlCode: e.target.value })} placeholder="1100" />
+          </label>
+          <label style={{ fontSize: 12, color: '#6B7280' }}>Ledger code prefix
+            <input style={{ ...input, width: 120, display: 'block', marginTop: 4 }} value={m.partyCodePrefix || ''} onChange={(e) => setM({ partyCodePrefix: e.target.value })} placeholder="SL-" />
+          </label>
+          <span style={{ fontSize: 11, color: '#9CA3AF', flex: 1, minWidth: 180 }}>Person ledgers are created as <code>{(m.partyCodePrefix || 'SL-')}&lt;id&gt;</code> under control {m.partyControlCode || '1100'}.</span>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 36px', gap: 10, marginBottom: 6 }}>
+          <span style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 600 }}>External type</span>
+          <span style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 600 }}>Books voucher type</span>
+          <span style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 600 }}>Party side (person ledger)</span>
+          <span />
+        </div>
         {m.typeMap.map((r, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 36px', gap: 10, marginBottom: 8, alignItems: 'center' }}>
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 36px', gap: 10, marginBottom: 8, alignItems: 'center' }}>
             <input style={input} value={r.externalType} onChange={(e) => setType(i, 'externalType', e.target.value)} placeholder="external type value" />
             <select style={input} value={r.voucherType} onChange={(e) => setType(i, 'voucherType', e.target.value)}>
               {VOUCHER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select style={input} value={r.partySide || ''} onChange={(e) => setType(i, 'partySide', e.target.value || null)}>
+              <option value="">— none —</option>
+              <option value="debit">Debit person (they owe us)</option>
+              <option value="credit">Credit person (we owe them)</option>
             </select>
             <button style={{ ...ghostBtn, padding: 8, color: '#DC2626', justifyContent: 'center' }} onClick={() => delType(i)}><FiTrash2 size={14} /></button>
           </div>

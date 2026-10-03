@@ -174,4 +174,59 @@ const getPartyStatement = async (req, res) => {
   }
 };
 
-module.exports = { getPartyLedgers, getPartyStatement };
+/**
+ * POST /api/ledgers/parties
+ * Manually create a party ledger (for clients not using the integration).
+ * Body: { name, partyId, controlCode?, prefix? }. Balances are never set here —
+ * they only move through posted vouchers/journals.
+ */
+const createPartyLedger = async (req, res) => {
+  try {
+    const Account = getModel(req.tenantDb, 'Account');
+    const { name, partyId, controlCode, prefix } = req.body;
+    if (!name || !String(name).trim()) return res.status(400).json({ success: false, message: 'Name is required.' });
+    if (!partyId || !String(partyId).trim()) return res.status(400).json({ success: false, message: 'A unique ID is required.' });
+
+    const pid = String(partyId).trim();
+    const existing = await Account.findOne({ externalPartyId: pid });
+    if (existing) {
+      return res.status(409).json({ success: false, message: `A ledger with ID "${pid}" already exists (${existing.name}).`, data: { id: String(existing._id) } });
+    }
+
+    const { getOrCreatePartyLedger } = require('../utils/subLedger');
+    const acct = await getOrCreatePartyLedger(Account, {
+      partyId: pid, partyName: name,
+      controlCode: controlCode || '1100', prefix: prefix || 'SL-',
+      createdBy: req.user ? req.user._id : null,
+    });
+    res.status(201).json({ success: true, message: 'Party ledger created.', data: { id: String(acct._id), code: acct.code, name: acct.name, externalPartyId: acct.externalPartyId } });
+  } catch (error) {
+    if (error.code === 11000) return res.status(409).json({ success: false, message: 'A ledger with that ID already exists.' });
+    console.error('[Ledgers] create error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to create the party ledger.' });
+  }
+};
+
+/**
+ * PATCH /api/ledgers/parties/:id
+ * Rename or activate/deactivate a party ledger. Code, ID and balance are not
+ * editable here — the balance only changes through postings.
+ */
+const updatePartyLedger = async (req, res) => {
+  try {
+    const Account = getModel(req.tenantDb, 'Account');
+    const acct = await Account.findById(req.params.id);
+    if (!acct || !acct.isSubLedger) return res.status(404).json({ success: false, message: 'Party ledger not found.' });
+
+    const { name, isActive } = req.body;
+    if (name !== undefined && String(name).trim()) acct.name = String(name).trim();
+    if (isActive !== undefined) acct.isActive = !!isActive;
+    await acct.save();
+    res.json({ success: true, message: 'Ledger updated.', data: { id: String(acct._id), name: acct.name, isActive: acct.isActive } });
+  } catch (error) {
+    console.error('[Ledgers] update error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to update the party ledger.' });
+  }
+};
+
+module.exports = { getPartyLedgers, getPartyStatement, createPartyLedger, updatePartyLedger };
