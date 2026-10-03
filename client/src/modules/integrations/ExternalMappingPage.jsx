@@ -268,13 +268,8 @@ export default function ExternalMappingPage() {
             </select>
             <select style={input} value={r.partySide || ''} onChange={(e) => setType(i, 'partySide', e.target.value || null)}>
               <option value="">— none —</option>
-<<<<<<< ours
-              <option value="debit">Debit person (they owe us)</option>
-              <option value="credit">Credit person (we owe them)</option>
-=======
               <option value="debit">Debit</option>
               <option value="credit">Credit</option>
->>>>>>> theirs
             </select>
             <button style={{ ...ghostBtn, padding: 8, color: '#DC2626', justifyContent: 'center' }} onClick={() => delType(i)}><FiTrash2 size={14} /></button>
           </div>
