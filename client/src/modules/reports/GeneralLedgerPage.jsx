@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import reportService from '../../services/reportService';
 import accountService from '../../services/accountService';
 import { useTenant } from '../../context/TenantContext';
@@ -16,10 +17,23 @@ export default function GeneralLedgerPage() {
   const { companyName, settings } = useTenant();
   const { showToast, ToastComponent } = useToast();
   const printRef = useRef(null);
+  const [searchParams] = useSearchParams();
 
   useEffect(() => {
-    accountService.getAll({ isActive: 'true' }).then((r) => { if (r.success) setAccounts(r.data); }).catch(() => {});
-  }, []);
+    accountService.getAll({ isActive: 'true' }).then((r) => {
+      if (!r.success) return;
+      setAccounts(r.data);
+      // Deep-link from a dashboard KPI card: ?code=1100 pre-selects that control
+      // account so the drill-down lands on the right ledger. Matches on the
+      // leading numeric part so "1100" also catches codes like "1100-01".
+      const code = searchParams.get('code');
+      if (code) {
+        const hit = r.data.find((a) => String(a.code) === code)
+                 || r.data.find((a) => String(a.code).replace(/\D/g, '').startsWith(code));
+        if (hit) setSelectedAccount(hit._id);
+      }
+    }).catch(() => {});
+  }, [searchParams]);
 
   const fetchReport = () => {
     setLoading(true);

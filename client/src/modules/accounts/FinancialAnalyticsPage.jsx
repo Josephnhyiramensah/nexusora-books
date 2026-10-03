@@ -8,6 +8,7 @@ import { FiTrendingUp, FiTrendingDown, FiDollarSign, FiAlertCircle, FiCheckCircl
 import { useBreakpoint } from '../../hooks/useBreakpoint';
 import { formatCurrency } from '../../utils/formatters';
 import api from '../../services/api';
+import FinancialDashboardPage from '../dashboard/FinancialDashboardPage';
 
 // ─── Color Palette ────────────────────────────────────────────────────────────
 const COLORS = {
@@ -153,8 +154,10 @@ function ChartSection({ title, subtitle, children }) {
   );
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
-export default function FinancialAnalyticsPage() {
+// ─── Analysis tab ─────────────────────────────────────────────────────────────
+// The original client-computed analytics view (P&L, balance-sheet, cash-flow,
+// insights). It now lives as the second tab inside the merged page below.
+function AnalysisTab() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [activePieIndex, setActivePieIndex] = useState(0);
@@ -365,7 +368,7 @@ export default function FinancialAnalyticsPage() {
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 28 }}>
         <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: isMobile ? 20 : 24, fontWeight: 700, color: '#1A3560', marginBottom: 4 }}>
-          Financial Analytics
+          Financial Analysis
         </h1>
         <p style={{ fontSize: 13, color: '#9CA3AF' }}>
           {data.accountCount} accounts · {data.transactionCount} posted transactions · Live data
@@ -594,6 +597,61 @@ export default function FinancialAnalyticsPage() {
       <p style={{ fontSize: 11, color: '#9CA3AF', textAlign: 'center', marginTop: 8 }}>
         Analytics are based on posted journal entries and active accounts. Refresh the page to update.
       </p>
+    </div>
+  );
+}
+
+// ─── Merged page (tabbed SPA) ───────────────────────────────────────────────
+// One home for financial analytics. The "Dashboard" tab is the server-driven
+// KPI / gauge / trend view (figures from the posted ledger, branch-scoped,
+// with Year/Quarter filters and clickable drill-down cards). The "Analysis"
+// tab is the richer client-side breakdown (P&L, balance sheet, cash flow,
+// insights). Both live here so no feature is duplicated across two pages.
+const TABS = [
+  { key: 'dashboard', label: 'Dashboard' },
+  { key: 'analysis',  label: 'Analysis' },
+];
+
+export default function FinancialAnalyticsPage() {
+  const { isMobile } = useBreakpoint();
+  const [tab, setTab] = useState('dashboard');
+
+  return (
+    <div>
+      {/* Tab bar */}
+      <div style={{
+        display: 'flex', gap: 4, marginBottom: 20,
+        borderBottom: '1px solid #E2E8F0',
+      }}>
+        {TABS.map((t) => {
+          const active = tab === t.key;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              style={{
+                appearance: 'none', background: 'none', border: 'none', cursor: 'pointer',
+                padding: isMobile ? '10px 14px' : '12px 20px', fontSize: 14,
+                fontWeight: active ? 700 : 500,
+                color: active ? '#1A3560' : '#9CA3AF',
+                borderBottom: active ? '2.5px solid #C9A227' : '2.5px solid transparent',
+                marginBottom: -1, transition: 'color 160ms',
+              }}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Both tabs stay mounted so each keeps its own fetched data and filter
+          state when the user switches back and forth; only the active one shows. */}
+      <div style={{ display: tab === 'dashboard' ? 'block' : 'none' }}>
+        <FinancialDashboardPage />
+      </div>
+      <div style={{ display: tab === 'analysis' ? 'block' : 'none' }}>
+        <AnalysisTab />
+      </div>
     </div>
   );
 }

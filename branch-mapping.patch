@@ -1,0 +1,276 @@
+diff --git a/client/src/modules/integrations/ExternalMappingPage.jsx b/client/src/modules/integrations/ExternalMappingPage.jsx
+index d68aa73..de997f3 100644
+--- a/client/src/modules/integrations/ExternalMappingPage.jsx
++++ b/client/src/modules/integrations/ExternalMappingPage.jsx
+@@ -22,11 +22,12 @@ const FIELDS = [
+   ['mode', 'Payment mode', false],
+   ['debitAccount', 'Debit account', true],
+   ['creditAccount', 'Credit account', true],
++  ['branch', 'Branch', false],
+ ];
+ 
+ const blank = () => ({
+-  source: '', label: '', fixedVoucherType: '', autopost: true, active: true,
+-  fieldMap: {}, accountMap: [], typeMap: [],
++  source: '', label: '', fixedVoucherType: '', fixedBranch: '', autopost: true, active: true,
++  fieldMap: {}, accountMap: [], typeMap: [], branchMap: [],
+ });
+ 
+ export default function ExternalMappingPage() {
+@@ -34,6 +35,7 @@ export default function ExternalMappingPage() {
+   const [loading, setLoading] = useState(true);
+   const [list, setList] = useState([]);
+   const [accounts, setAccounts] = useState([]);
++  const [branches, setBranches] = useState([]);
+   const [editing, setEditing] = useState(null); // null = list view; object = editor
+   const [saving, setSaving] = useState(false);
+ 
+@@ -49,6 +51,10 @@ export default function ExternalMappingPage() {
+       try {
+         const acctRes = await api.get('/accounts');
+         if (acctRes.data.success) setAccounts(acctRes.data.data.filter((a) => a.isActive !== false));
++        try {
++          const brRes = await api.get('/branches');
++          if (brRes.data.success) setBranches(brRes.data.data.filter((b) => b.isActive !== false));
++        } catch { /* branches optional; leave empty */ }
+         await loadList();
+       } finally { setLoading(false); }
+     })();
+@@ -93,7 +99,7 @@ export default function ExternalMappingPage() {
+                   </div>
+                 </div>
+                 <div style={{ display: 'flex', gap: 8 }}>
+-                  <button style={ghostBtn} onClick={() => setEditing({ ...blank(), ...it, fieldMap: it.fieldMap || {}, accountMap: it.accountMap || [], typeMap: it.typeMap || [] })}><FiEdit2 size={13} /> Edit</button>
++                  <button style={ghostBtn} onClick={() => setEditing({ ...blank(), ...it, fieldMap: it.fieldMap || {}, accountMap: it.accountMap || [], typeMap: it.typeMap || [], branchMap: it.branchMap || [] })}><FiEdit2 size={13} /> Edit</button>
+                 </div>
+               </div>
+             ))}
+@@ -113,6 +119,9 @@ export default function ExternalMappingPage() {
+   const addType = () => setEditing((s) => ({ ...s, typeMap: [...s.typeMap, { externalType: '', voucherType: 'payment' }] }));
+   const setType = (i, k, v) => setEditing((s) => ({ ...s, typeMap: s.typeMap.map((r, idx) => idx === i ? { ...r, [k]: v } : r) }));
+   const delType = (i) => setEditing((s) => ({ ...s, typeMap: s.typeMap.filter((_, idx) => idx !== i) }));
++  const addBranch = () => setEditing((s) => ({ ...s, branchMap: [...(s.branchMap || []), { externalBranch: '', booksBranchCode: '', label: '' }] }));
++  const setBranch = (i, k, v) => setEditing((s) => ({ ...s, branchMap: s.branchMap.map((r, idx) => idx === i ? { ...r, [k]: v } : r) }));
++  const delBranch = (i) => setEditing((s) => ({ ...s, branchMap: s.branchMap.filter((_, idx) => idx !== i) }));
+ 
+   const save = async () => {
+     if (!m.source.trim()) { showToast('A source key is required', 'error'); return; }
+@@ -178,6 +187,13 @@ export default function ExternalMappingPage() {
+               {VOUCHER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+             </select>
+           </div>
++          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
++            <span style={{ fontSize: 13, color: '#6B7280' }}>Default branch:</span>
++            <select style={{ ...input, width: 'auto' }} value={m.fixedBranch || ''} onChange={(e) => setM({ fixedBranch: e.target.value })}>
++              <option value="">— use branch map —</option>
++              {branches.map((b) => <option key={b._id} value={b.code}>{b.code} — {b.name}</option>)}
++            </select>
++          </div>
+         </div>
+       </div>
+ 
+@@ -231,6 +247,26 @@ export default function ExternalMappingPage() {
+         ))}
+       </div>
+ 
++      <div style={card}>
++        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
++          <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary, #012158)', margin: 0 }}>4. Branch Mapping</h3>
++          <button style={ghostBtn} onClick={addBranch}><FiPlus size={14} /> Add</button>
++        </div>
++        <p style={{ fontSize: 12, color: '#6B7280', marginTop: 0 }}>Match each external branch identifier to a Books branch. Skip if the system does not send a branch, or set a Default branch above.</p>
++        {(m.branchMap || []).length === 0 && <p style={{ fontSize: 13, color: '#9CA3AF' }}>No branch mappings yet.</p>}
++        {(m.branchMap || []).map((r, i) => (
++          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 36px', gap: 10, marginBottom: 8, alignItems: 'center' }}>
++            <input style={input} value={r.externalBranch} onChange={(e) => setBranch(i, 'externalBranch', e.target.value)} placeholder="external branch id" />
++            <select style={input} value={r.booksBranchCode} onChange={(e) => setBranch(i, 'booksBranchCode', e.target.value)}>
++              <option value="">Books branch…</option>
++              {branches.map((b) => <option key={b._id} value={b.code}>{b.code} — {b.name}</option>)}
++            </select>
++            <input style={input} value={r.label || ''} onChange={(e) => setBranch(i, 'label', e.target.value)} placeholder="note (optional)" />
++            <button style={{ ...ghostBtn, padding: 8, color: '#DC2626', justifyContent: 'center' }} onClick={() => delBranch(i)}><FiTrash2 size={14} /></button>
++          </div>
++        ))}
++      </div>
++
+       <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+         <button onClick={save} disabled={saving} style={goldBtn}><FiSave size={15} /> {saving ? 'Saving…' : 'Save Integration'}</button>
+         {m._id && <button onClick={remove} disabled={saving} style={{ ...ghostBtn, color: '#DC2626' }}><FiTrash2 size={14} /> Delete</button>}
+diff --git a/server/controllers/externalMappingController.js b/server/controllers/externalMappingController.js
+index 60b99c7..a64786f 100644
+--- a/server/controllers/externalMappingController.js
++++ b/server/controllers/externalMappingController.js
+@@ -27,7 +27,7 @@ const getMapping = async (req, res) => {
+ const saveMapping = async (req, res) => {
+   try {
+     const ExternalMapping = getModel(req.tenantDb, 'ExternalMapping');
+-    const { _id, source, label, fieldMap, accountMap, typeMap, fixedVoucherType, autopost, active } = req.body;
++    const { _id, source, label, fieldMap, accountMap, typeMap, branchMap, fixedVoucherType, fixedBranch, autopost, active } = req.body;
+     if (!source) return res.status(400).json({ success: false, message: 'source is required.' });
+ 
+     let mapping;
+@@ -46,7 +46,9 @@ const saveMapping = async (req, res) => {
+     if (fieldMap !== undefined) mapping.fieldMap = fieldMap;
+     if (accountMap !== undefined) mapping.accountMap = accountMap;
+     if (typeMap !== undefined) mapping.typeMap = typeMap;
++    if (branchMap !== undefined) mapping.branchMap = branchMap;
+     if (fixedVoucherType !== undefined) mapping.fixedVoucherType = fixedVoucherType || null;
++    if (fixedBranch !== undefined) mapping.fixedBranch = fixedBranch || null;
+     if (autopost !== undefined) mapping.autopost = autopost;
+     if (active !== undefined) mapping.active = active;
+     await mapping.save();
+diff --git a/server/models/ExternalMapping.js b/server/models/ExternalMapping.js
+index dbee929..fcd8cbb 100644
+--- a/server/models/ExternalMapping.js
++++ b/server/models/ExternalMapping.js
+@@ -9,10 +9,11 @@
+  * admin maps the external system's fields, accounts and types ONCE, and every
+  * future inbound record is translated automatically.
+  *
+- * Three translation layers:
++ * Translation layers:
+  *   1. fieldMap    — external field name -> our voucher field
+  *   2. accountMap  — external account id/name -> our Books account code
+  *   3. typeMap     — external transaction type -> our voucherType
++ *   4. branchMap   — external branch id/name -> our Books branch code
+  */
+ 
+ const { Schema } = require('mongoose');
+@@ -30,6 +31,7 @@ const FieldMapSchema = new Schema(
+     mode:         { type: String, default: null },
+     debitAccount: { type: String, default: null }, // external field holding their debit account id
+     creditAccount:{ type: String, default: null }, // external field holding their credit account id
++    branch:       { type: String, default: null }, // external field holding their branch id (optional)
+   },
+   { _id: false }
+ );
+@@ -53,6 +55,16 @@ const TypeMapEntrySchema = new Schema(
+   { _id: false }
+ );
+ 
++// external branch id/name -> our Books branch code.
++const BranchMapEntrySchema = new Schema(
++  {
++    externalBranch:  { type: String, required: true }, // e.g. "1", "PATASI"
++    booksBranchCode: { type: String, required: true }, // our Branch.code, e.g. "HO", "KP"
++    label:           { type: String, default: '' },    // optional human note
++  },
++  { _id: false }
++);
++
+ const ExternalMappingSchema = new Schema(
+   {
+     // Which external system this mapping is for. One mapping per source.
+@@ -62,11 +74,17 @@ const ExternalMappingSchema = new Schema(
+     fieldMap:   { type: FieldMapSchema, default: () => ({}) },
+     accountMap: { type: [AccountMapEntrySchema], default: [] },
+     typeMap:    { type: [TypeMapEntrySchema], default: [] },
++    branchMap:  { type: [BranchMapEntrySchema], default: [] },
+ 
+     // If the source always sends one voucher type, set it here and leave
+     // fieldMap.voucherType null.
+     fixedVoucherType: { type: String, default: null },
+ 
++    // If the source does not send a branch (or always belongs to one branch),
++    // set the Books branch code here. Used as the fallback when no per-record
++    // branch is mapped. Leave null to require an explicit/mapped branch.
++    fixedBranch: { type: String, default: null },
++
+     // Post vouchers immediately on import (vs. leaving as draft for review).
+     autopost: { type: Boolean, default: true },
+ 
+diff --git a/server/routes/externalApiRoutes.js b/server/routes/externalApiRoutes.js
+index 64471e5..8d41e2e 100644
+--- a/server/routes/externalApiRoutes.js
++++ b/server/routes/externalApiRoutes.js
+@@ -224,13 +224,16 @@ router.post('/vouchers', async (req, res) => {
+ async function createVoucherFromBooksPayload(req, payload) {
+   const Voucher = getModel(req.tenantDb, 'Voucher');
+   const Account = getModel(req.tenantDb, 'Account');
++  const Branch = getModel(req.tenantDb, 'Branch');
+   const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
+   const { validateDoubleEntry, generateEntryNumber } = require('../utils/accountingHelpers');
+   const { generateVoucherNumber, journalTypeForVoucher } = require('../utils/voucherHelpers');
++  const { resolveWriteBranch } = require('../utils/branchWrite');
+ 
+   const {
+     voucherType, date, amount, narration, reference, externalId,
+     partyName, mode, paymentDetails, debitAccountCode, creditAccountCode,
++    branchCode,
+     autopost = true,
+   } = payload;
+ 
+@@ -251,6 +254,21 @@ async function createVoucherFromBooksPayload(req, payload) {
+   if (!creditAcct) return { status: 400, body: { success:false, message:'Credit account code "'+creditAccountCode+'" not found.' } };
+   if (creditAcct.isActive === false) return { status: 400, body: { success:false, message:'Credit account "'+creditAccountCode+'" is inactive.' } };
+ 
++  // Resolve the branch to stamp. A mapped branchCode is turned into a Branch id,
++  // then validated through resolveWriteBranch (the same write-branch rule the UI
++  // and REST API use): explicit branch must be active, and a multi-branch tenant
++  // with no branch resolved is rejected rather than mis-filed.
++  let requestedBranchId = null;
++  if (branchCode != null && branchCode !== '') {
++    const br = await Branch.findOne({ code: String(branchCode) }).select('_id isActive').lean();
++    if (!br) return { status: 400, body: { success:false, message:'Branch code "'+branchCode+'" not found.' } };
++    if (br.isActive === false) return { status: 400, body: { success:false, message:'Branch "'+branchCode+'" is inactive.' } };
++    requestedBranchId = br._id;
++  }
++  const branchChoice = await resolveWriteBranch(req, requestedBranchId);
++  if (branchChoice.error) return { status: branchChoice.status, body: { success:false, message: branchChoice.error } };
++  const branch = branchChoice.branch; // Branch id, or null only for a pre-branch tenant
++
+   const amt = Math.round(Number(amount) * 100) / 100;
+   const lines = [
+     { account: debitAcct._id, accountCode: debitAcct.code, accountName: debitAcct.name, debit: amt, credit: 0, description: narration || '' },
+@@ -263,7 +281,7 @@ async function createVoucherFromBooksPayload(req, payload) {
+   const voucher = await Voucher.create({
+     voucherNumber, voucherType, date, narration, reference,
+     partyName, mode: mode || 'other', paymentDetails: paymentDetails || {},
+-    amount: amt, lines,
++    amount: amt, lines, branch,
+     totalDebit: validation.totalDebit, totalCredit: validation.totalCredit,
+     status: 'draft', createdBy: null,
+     createdViaApi: true, apiKeyId: req.apiKey._id, externalId,
+@@ -275,7 +293,7 @@ async function createVoucherFromBooksPayload(req, payload) {
+     journalEntry = await JournalEntry.create({
+       entryNumber, date: voucher.date, journalType: journalTypeForVoucher(voucherType),
+       description: narration || (voucherType + ' voucher ' + voucherNumber),
+-      reference: voucherNumber, lines,
++      reference: voucherNumber, lines, branch,
+       totalDebit: validation.totalDebit, totalCredit: validation.totalCredit,
+       status: 'posted', createdBy: null, createdViaApi: true, apiKeyId: req.apiKey._id,
+     });
+diff --git a/server/utils/externalMappingHelper.js b/server/utils/externalMappingHelper.js
+index 650e5bd..1a2babe 100644
+--- a/server/utils/externalMappingHelper.js
++++ b/server/utils/externalMappingHelper.js
+@@ -49,6 +49,21 @@ function applyMapping(mapping, raw) {
+   if (debitAccountCode == null) return { ok: false, error: `No account mapping for external debit account "${extDebit}".` };
+   if (creditAccountCode == null) return { ok: false, error: `No account mapping for external credit account "${extCredit}".` };
+ 
++  // 3b. Translate external branch -> Books branch code via branchMap.
++  //     If the record carries a branch value, it MUST map (an unmapped branch is
++  //     rejected rather than silently mis-filed). If no branch value is sent, fall
++  //     back to fixedBranch (may be null — the caller then applies the write-branch
++  //     rule for single- vs multi-branch tenants).
++  let branchCode = null;
++  const extBranch = val('branch');
++  if (extBranch != null && extBranch !== '') {
++    const hit = (mapping.branchMap || []).find((b) => String(b.externalBranch) === String(extBranch));
++    if (!hit) return { ok: false, error: `No branch mapping for external branch "${extBranch}".` };
++    branchCode = hit.booksBranchCode;
++  } else if (mapping.fixedBranch) {
++    branchCode = mapping.fixedBranch;
++  }
++
+   // 4. externalId is required for dedup.
+   const externalId = val('externalId');
+   if (externalId == null || externalId === '') return { ok: false, error: 'externalId mapping is required (dedup).' };
+@@ -67,6 +82,7 @@ function applyMapping(mapping, raw) {
+     mode: val('mode') || 'other',
+     debitAccountCode: String(debitAccountCode),
+     creditAccountCode: String(creditAccountCode),
++    branchCode: branchCode == null ? null : String(branchCode),
+     autopost: mapping.autopost !== false,
+   };
+   return { ok: true, voucher };

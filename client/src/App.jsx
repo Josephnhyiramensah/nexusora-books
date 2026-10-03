@@ -59,7 +59,6 @@ import GeneralLedgerPage from './modules/reports/GeneralLedgerPage';
 
 // Phase 5
 import DashboardFullPage from './modules/dashboard/DashboardPage';
-import FinancialDashboardPage from './modules/dashboard/FinancialDashboardPage';
 import NotesPage from './modules/notes/NotesPage';
 import AnnouncementsPage from './modules/announcements/AnnouncementsPage';
 import TodosPage from './modules/todos/TodosPage';
@@ -190,12 +189,12 @@ export default function App() {
             } />
 
             {/* ── Dashboard ── */}
+            {/* The Financial Dashboard is not a separate page: it is the first tab
+                of Financial Analytics (Assets → Analytics), so it is not duplicated here. */}
             <Route element={<ProtectedRoute><ModuleShell moduleTitle="Dashboard" sidebarItems={[
               { path: '/dashboard', label: 'Overview', icon: FiList, exact: true },
-              { path: '/dashboard/financial', label: 'Financial Dashboard', icon: FiBarChart2, exact: true },
             ]} /></ProtectedRoute>}>
               <Route path="/dashboard" element={<DashboardFullPage />} />
-              <Route path="/dashboard/financial" element={<ProtectedRoute permission="reports.view" roles={['super_admin','admin','accountant']}><FinancialDashboardPage /></ProtectedRoute>} />
             </Route>
 
             {/* ── AI Assistant ── */}

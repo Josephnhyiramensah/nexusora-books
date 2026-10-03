@@ -1,0 +1,97 @@
+diff --git a/server/controllers/voucherController.js b/server/controllers/voucherController.js
+index c6aded0..ea98691 100644
+--- a/server/controllers/voucherController.js
++++ b/server/controllers/voucherController.js
+@@ -16,7 +16,7 @@
+ const { getModel } = require('../utils/getModel');
+ const { getSpecialAccount } = require('../utils/specialAccounts');
+ const { logAudit } = require('../middleware/auditMiddleware');
+-const { validateDoubleEntry, generateEntryNumber } = require('../utils/accountingHelpers');
++const { validateDoubleEntry, generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
+ const { generateVoucherNumber, journalTypeForVoucher } = require('../utils/voucherHelpers');
+ const { scopedFilter } = require('../utils/branchScope');
+ const { resolveWriteBranch } = require('../utils/branchWrite');
+@@ -282,6 +282,16 @@ const postVoucher = async (req, res) => {
+       branch,
+     });
+ 
++    // Maintain account balances on post (same pattern as journal/bill/payment).
++    const Account = getModel(req.tenantDb, 'Account');
++    for (const line of entry.lines) {
++      const account = await Account.findById(line.account);
++      if (account) {
++        account.balance = Math.round((account.balance + calculateBalanceChange(account.normalBalance, line.debit, line.credit)) * 100) / 100;
++        await account.save();
++      }
++    }
++
+     voucher.status = 'posted';
+     voucher.journalEntry = entry._id;
+     await voucher.save();
+@@ -332,6 +342,16 @@ const reverseVoucher = async (req, res) => {
+       branch: voucher.branch || original.branch || await headOfficeId(req),
+     });
+ 
++    // Maintain account balances for the reversal lines.
++    const Account = getModel(req.tenantDb, 'Account');
++    for (const line of reversedLines) {
++      const account = await Account.findById(line.account);
++      if (account) {
++        account.balance = Math.round((account.balance + calculateBalanceChange(account.normalBalance, line.debit, line.credit)) * 100) / 100;
++        await account.save();
++      }
++    }
++
+     voucher.status = 'reversed';
+     await voucher.save();
+ 
+diff --git a/server/routes/externalApiRoutes.js b/server/routes/externalApiRoutes.js
+index 8d41e2e..e57c4cc 100644
+--- a/server/routes/externalApiRoutes.js
++++ b/server/routes/externalApiRoutes.js
+@@ -121,7 +121,7 @@ router.post('/vouchers', async (req, res) => {
+     const Voucher = getModel(req.tenantDb, 'Voucher');
+     const Account = getModel(req.tenantDb, 'Account');
+     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
+-    const { validateDoubleEntry, generateEntryNumber } = require('../utils/accountingHelpers');
++    const { validateDoubleEntry, generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
+     const { generateVoucherNumber, journalTypeForVoucher } = require('../utils/voucherHelpers');
+ 
+     const {
+@@ -195,6 +195,13 @@ router.post('/vouchers', async (req, res) => {
+         status: 'posted', createdBy: null,
+         createdViaApi: true, apiKeyId: req.apiKey._id,
+       });
++      for (const line of lines) {
++        const acct = await Account.findById(line.account);
++        if (acct) {
++          acct.balance = Math.round((acct.balance + calculateBalanceChange(acct.normalBalance, line.debit, line.credit)) * 100) / 100;
++          await acct.save();
++        }
++      }
+       voucher.status = 'posted';
+       voucher.journalEntry = journalEntry._id;
+       await voucher.save();
+@@ -226,7 +233,7 @@ async function createVoucherFromBooksPayload(req, payload) {
+   const Account = getModel(req.tenantDb, 'Account');
+   const Branch = getModel(req.tenantDb, 'Branch');
+   const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
+-  const { validateDoubleEntry, generateEntryNumber } = require('../utils/accountingHelpers');
++  const { validateDoubleEntry, generateEntryNumber, calculateBalanceChange } = require('../utils/accountingHelpers');
+   const { generateVoucherNumber, journalTypeForVoucher } = require('../utils/voucherHelpers');
+   const { resolveWriteBranch } = require('../utils/branchWrite');
+ 
+@@ -297,6 +304,13 @@ async function createVoucherFromBooksPayload(req, payload) {
+       totalDebit: validation.totalDebit, totalCredit: validation.totalCredit,
+       status: 'posted', createdBy: null, createdViaApi: true, apiKeyId: req.apiKey._id,
+     });
++    for (const line of lines) {
++      const acct = await Account.findById(line.account);
++      if (acct) {
++        acct.balance = Math.round((acct.balance + calculateBalanceChange(acct.normalBalance, line.debit, line.credit)) * 100) / 100;
++        await acct.save();
++      }
++    }
+     voucher.status = 'posted';
+     voucher.journalEntry = journalEntry._id;
+     await voucher.save();

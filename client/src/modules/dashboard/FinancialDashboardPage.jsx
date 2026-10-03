@@ -7,11 +7,12 @@
 // layer (X-Branch header from the top-bar switcher); the Year/Quarter filters
 // below set the reporting period.
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   LineChart, Line, RadialBarChart, RadialBar, PolarAngleAxis,
 } from 'recharts';
-import { FiRefreshCw } from 'react-icons/fi';
+import { FiRefreshCw, FiArrowRight } from 'react-icons/fi';
 import api from '../../services/api';
 import { formatCurrency } from '../../utils/formatters';
 
@@ -29,12 +30,41 @@ const YEARS = (() => { const y = new Date().getFullYear(); return [y, y - 1, y -
 const QUARTERS = [{ v: '', l: 'Full year / all' }, { v: '1', l: 'Q1' }, { v: '2', l: 'Q2' }, { v: '3', l: 'Q3' }, { v: '4', l: 'Q4' }];
 
 // ── small presentational pieces ──
-function Stat({ label, value, accent, sub }) {
+// `onClick` makes a card a drill-down: it gets a pointer cursor, a subtle hover
+// lift, and a "View details" hint so users know it opens the backing report.
+function Stat({ label, value, accent, sub, onClick }) {
+  const [hover, setHover] = useState(false);
+  const clickable = typeof onClick === 'function';
   return (
-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderLeft: `4px solid ${accent}`, borderRadius: 10, padding: '16px 18px' }}>
+    <div
+      onClick={onClick}
+      onMouseEnter={() => clickable && setHover(true)}
+      onMouseLeave={() => clickable && setHover(false)}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+      title={clickable ? 'View details' : undefined}
+      style={{
+        background: C.surface, border: `1px solid ${C.border}`, borderLeft: `4px solid ${accent}`,
+        borderRadius: 10, padding: '16px 18px', position: 'relative',
+        cursor: clickable ? 'pointer' : 'default',
+        transform: hover ? 'translateY(-2px)' : 'none',
+        boxShadow: hover ? '0 10px 26px rgba(26,53,96,0.12)' : 'none',
+        transition: 'transform 160ms, box-shadow 160ms',
+      }}
+    >
       <p style={{ fontSize: 11, color: C.mute, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, margin: '0 0 6px' }}>{label}</p>
       <p style={{ fontSize: 24, fontWeight: 800, color: C.navy, margin: 0, fontFamily: 'var(--font-heading)' }}>{value}</p>
       {sub && <p style={{ fontSize: 12, color: C.mute, margin: '4px 0 0' }}>{sub}</p>}
+      {clickable && (
+        <span style={{
+          position: 'absolute', right: 12, bottom: 10, display: 'inline-flex', alignItems: 'center', gap: 3,
+          fontSize: 10.5, fontWeight: 700, letterSpacing: '0.03em', textTransform: 'uppercase',
+          color: accent, opacity: hover ? 1 : 0.55, transition: 'opacity 160ms',
+        }}>
+          Details <FiArrowRight size={11} />
+        </span>
+      )}
     </div>
   );
 }
@@ -75,11 +105,20 @@ function Gauge({ value, caption }) {
 const tooltipStyle = { background: '#fff', border: `1px solid ${C.border}`, borderRadius: 10, fontSize: 12 };
 
 export default function FinancialDashboardPage() {
+  const navigate = useNavigate();
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [quarter, setQuarter] = useState('');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Drill-down: each KPI opens the report that backs it. AR/AP/Cash/Inventory
+  // open the General Ledger pre-filtered to the control-account code; the P&L
+  // and Balance Sheet carry the same reporting period as the dashboard filters.
+  const period = `?${new URLSearchParams({ ...(year ? { year } : {}), ...(quarter ? { quarter } : {}) }).toString()}`;
+  const toLedger = (code) => () => navigate(`/reports/general-ledger?code=${code}`);
+  const toPL = () => navigate(`/reports/profit-loss${period === '?' ? '' : period}`);
+  const toBS = () => navigate(`/reports/balance-sheet${period === '?' ? '' : period}`);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -139,12 +178,12 @@ export default function FinancialDashboardPage() {
         <>
           {/* KPI cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14, marginBottom: 16 }}>
-            <Stat label="Accounts Receivable" value={money(k.accountsReceivable)} accent={C.teal} />
-            <Stat label="Accounts Payable" value={money(k.accountsPayable)} accent={C.red} />
-            <Stat label="Revenue" value={money(k.revenue)} accent={C.green} sub="selected period" />
-            <Stat label="Equity Ratio" value={pct(k.equityRatio)} accent={C.purple} sub="equity ÷ assets" />
-            <Stat label="Current Ratio" value={ratio(k.currentRatio)} accent={C.navy} sub="CA ÷ CL" />
-            <Stat label="Burn Rate" value={money(k.burnRate)} accent={C.orange} sub="avg monthly opex" />
+            <Stat label="Accounts Receivable" value={money(k.accountsReceivable)} accent={C.teal} sub="open balance" onClick={toLedger('1100')} />
+            <Stat label="Accounts Payable" value={money(k.accountsPayable)} accent={C.red} sub="open balance" onClick={toLedger('2000')} />
+            <Stat label="Revenue" value={money(k.revenue)} accent={C.green} sub="selected period" onClick={toPL} />
+            <Stat label="Equity Ratio" value={pct(k.equityRatio)} accent={C.purple} sub="equity ÷ assets" onClick={toBS} />
+            <Stat label="Current Ratio" value={ratio(k.currentRatio)} accent={C.navy} sub="CA ÷ CL" onClick={toBS} />
+            <Stat label="Burn Rate" value={money(k.burnRate)} accent={C.orange} sub="avg monthly opex" onClick={toPL} />
           </div>
 
           {/* Gauge + secondary stats */}
@@ -154,12 +193,12 @@ export default function FinancialDashboardPage() {
             </Panel>
             <Panel title="Position at a glance">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-                <Stat label="Cash & Bank" value={money(k.cash)} accent={C.teal} />
-                <Stat label="Inventory" value={money(k.inventory)} accent={C.amber} />
-                <Stat label="Working Capital" value={money(k.workingCapital)} accent={C.green} />
-                <Stat label="Net Income" value={money(k.netIncome)} accent={k.netIncome >= 0 ? C.green : C.red} sub="selected period" />
-                <Stat label="Quick Ratio" value={ratio(k.quickRatio)} accent={C.navy} sub="(CA − Inv) ÷ CL" />
-                <Stat label="Total Assets" value={money(k.totalAssets)} accent={C.purple} />
+                <Stat label="Cash & Bank" value={money(k.cash)} accent={C.teal} onClick={toLedger('1000')} />
+                <Stat label="Inventory" value={money(k.inventory)} accent={C.amber} onClick={toLedger('1200')} />
+                <Stat label="Working Capital" value={money(k.workingCapital)} accent={C.green} onClick={toBS} />
+                <Stat label="Net Income" value={money(k.netIncome)} accent={k.netIncome >= 0 ? C.green : C.red} sub="selected period" onClick={toPL} />
+                <Stat label="Quick Ratio" value={ratio(k.quickRatio)} accent={C.navy} sub="(CA − Inv) ÷ CL" onClick={toBS} />
+                <Stat label="Total Assets" value={money(k.totalAssets)} accent={C.purple} onClick={toBS} />
               </div>
             </Panel>
           </div>

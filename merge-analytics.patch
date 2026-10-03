@@ -1,0 +1,280 @@
+diff --git a/client/src/App.jsx b/client/src/App.jsx
+index 0407b27..03483b2 100644
+--- a/client/src/App.jsx
++++ b/client/src/App.jsx
+@@ -59,7 +59,6 @@ import GeneralLedgerPage from './modules/reports/GeneralLedgerPage';
+ 
+ // Phase 5
+ import DashboardFullPage from './modules/dashboard/DashboardPage';
+-import FinancialDashboardPage from './modules/dashboard/FinancialDashboardPage';
+ import NotesPage from './modules/notes/NotesPage';
+ import AnnouncementsPage from './modules/announcements/AnnouncementsPage';
+ import TodosPage from './modules/todos/TodosPage';
+@@ -190,12 +189,12 @@ export default function App() {
+             } />
+ 
+             {/* ── Dashboard ── */}
++            {/* The Financial Dashboard is not a separate page: it is the first tab
++                of Financial Analytics (Assets → Analytics), so it is not duplicated here. */}
+             <Route element={<ProtectedRoute><ModuleShell moduleTitle="Dashboard" sidebarItems={[
+               { path: '/dashboard', label: 'Overview', icon: FiList, exact: true },
+-              { path: '/dashboard/financial', label: 'Financial Dashboard', icon: FiBarChart2, exact: true },
+             ]} /></ProtectedRoute>}>
+               <Route path="/dashboard" element={<DashboardFullPage />} />
+-              <Route path="/dashboard/financial" element={<ProtectedRoute permission="reports.view" roles={['super_admin','admin','accountant']}><FinancialDashboardPage /></ProtectedRoute>} />
+             </Route>
+ 
+             {/* ── AI Assistant ── */}
+diff --git a/client/src/modules/accounts/FinancialAnalyticsPage.jsx b/client/src/modules/accounts/FinancialAnalyticsPage.jsx
+index a00774f..f6bc3ac 100644
+--- a/client/src/modules/accounts/FinancialAnalyticsPage.jsx
++++ b/client/src/modules/accounts/FinancialAnalyticsPage.jsx
+@@ -8,6 +8,7 @@ import { FiTrendingUp, FiTrendingDown, FiDollarSign, FiAlertCircle, FiCheckCircl
+ import { useBreakpoint } from '../../hooks/useBreakpoint';
+ import { formatCurrency } from '../../utils/formatters';
+ import api from '../../services/api';
++import FinancialDashboardPage from '../dashboard/FinancialDashboardPage';
+ 
+ // ─── Color Palette ────────────────────────────────────────────────────────────
+ const COLORS = {
+@@ -153,8 +154,10 @@ function ChartSection({ title, subtitle, children }) {
+   );
+ }
+ 
+-// ─── Main Component ───────────────────────────────────────────────────────────
+-export default function FinancialAnalyticsPage() {
++// ─── Analysis tab ─────────────────────────────────────────────────────────────
++// The original client-computed analytics view (P&L, balance-sheet, cash-flow,
++// insights). It now lives as the second tab inside the merged page below.
++function AnalysisTab() {
+   const [loading, setLoading] = useState(true);
+   const [data, setData] = useState(null);
+   const [activePieIndex, setActivePieIndex] = useState(0);
+@@ -365,7 +368,7 @@ export default function FinancialAnalyticsPage() {
+       {/* Header */}
+       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 28 }}>
+         <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: isMobile ? 20 : 24, fontWeight: 700, color: '#1A3560', marginBottom: 4 }}>
+-          Financial Analytics
++          Financial Analysis
+         </h1>
+         <p style={{ fontSize: 13, color: '#9CA3AF' }}>
+           {data.accountCount} accounts · {data.transactionCount} posted transactions · Live data
+@@ -596,4 +599,59 @@ export default function FinancialAnalyticsPage() {
+       </p>
+     </div>
+   );
++}
++
++// ─── Merged page (tabbed SPA) ───────────────────────────────────────────────
++// One home for financial analytics. The "Dashboard" tab is the server-driven
++// KPI / gauge / trend view (figures from the posted ledger, branch-scoped,
++// with Year/Quarter filters and clickable drill-down cards). The "Analysis"
++// tab is the richer client-side breakdown (P&L, balance sheet, cash flow,
++// insights). Both live here so no feature is duplicated across two pages.
++const TABS = [
++  { key: 'dashboard', label: 'Dashboard' },
++  { key: 'analysis',  label: 'Analysis' },
++];
++
++export default function FinancialAnalyticsPage() {
++  const { isMobile } = useBreakpoint();
++  const [tab, setTab] = useState('dashboard');
++
++  return (
++    <div>
++      {/* Tab bar */}
++      <div style={{
++        display: 'flex', gap: 4, marginBottom: 20,
++        borderBottom: '1px solid #E2E8F0',
++      }}>
++        {TABS.map((t) => {
++          const active = tab === t.key;
++          return (
++            <button
++              key={t.key}
++              onClick={() => setTab(t.key)}
++              style={{
++                appearance: 'none', background: 'none', border: 'none', cursor: 'pointer',
++                padding: isMobile ? '10px 14px' : '12px 20px', fontSize: 14,
++                fontWeight: active ? 700 : 500,
++                color: active ? '#1A3560' : '#9CA3AF',
++                borderBottom: active ? '2.5px solid #C9A227' : '2.5px solid transparent',
++                marginBottom: -1, transition: 'color 160ms',
++              }}
++            >
++              {t.label}
++            </button>
++          );
++        })}
++      </div>
++
++      {/* Both tabs stay mounted so each keeps its own fetched data and filter
++          state when the user switches back and forth; only the active one shows. */}
++      <div style={{ display: tab === 'dashboard' ? 'block' : 'none' }}>
++        <FinancialDashboardPage />
++      </div>
++      <div style={{ display: tab === 'analysis' ? 'block' : 'none' }}>
++        <AnalysisTab />
++      </div>
++    </div>
++  );
+ }
+\ No newline at end of file
+diff --git a/client/src/modules/dashboard/FinancialDashboardPage.jsx b/client/src/modules/dashboard/FinancialDashboardPage.jsx
+index b52aa38..96e1154 100644
+--- a/client/src/modules/dashboard/FinancialDashboardPage.jsx
++++ b/client/src/modules/dashboard/FinancialDashboardPage.jsx
+@@ -7,11 +7,12 @@
+ // layer (X-Branch header from the top-bar switcher); the Year/Quarter filters
+ // below set the reporting period.
+ import { useState, useEffect, useCallback } from 'react';
++import { useNavigate } from 'react-router-dom';
+ import {
+   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+   LineChart, Line, RadialBarChart, RadialBar, PolarAngleAxis,
+ } from 'recharts';
+-import { FiRefreshCw } from 'react-icons/fi';
++import { FiRefreshCw, FiArrowRight } from 'react-icons/fi';
+ import api from '../../services/api';
+ import { formatCurrency } from '../../utils/formatters';
+ 
+@@ -29,12 +30,41 @@ const YEARS = (() => { const y = new Date().getFullYear(); return [y, y - 1, y -
+ const QUARTERS = [{ v: '', l: 'Full year / all' }, { v: '1', l: 'Q1' }, { v: '2', l: 'Q2' }, { v: '3', l: 'Q3' }, { v: '4', l: 'Q4' }];
+ 
+ // ── small presentational pieces ──
+-function Stat({ label, value, accent, sub }) {
++// `onClick` makes a card a drill-down: it gets a pointer cursor, a subtle hover
++// lift, and a "View details" hint so users know it opens the backing report.
++function Stat({ label, value, accent, sub, onClick }) {
++  const [hover, setHover] = useState(false);
++  const clickable = typeof onClick === 'function';
+   return (
+-    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderLeft: `4px solid ${accent}`, borderRadius: 10, padding: '16px 18px' }}>
++    <div
++      onClick={onClick}
++      onMouseEnter={() => clickable && setHover(true)}
++      onMouseLeave={() => clickable && setHover(false)}
++      role={clickable ? 'button' : undefined}
++      tabIndex={clickable ? 0 : undefined}
++      onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
++      title={clickable ? 'View details' : undefined}
++      style={{
++        background: C.surface, border: `1px solid ${C.border}`, borderLeft: `4px solid ${accent}`,
++        borderRadius: 10, padding: '16px 18px', position: 'relative',
++        cursor: clickable ? 'pointer' : 'default',
++        transform: hover ? 'translateY(-2px)' : 'none',
++        boxShadow: hover ? '0 10px 26px rgba(26,53,96,0.12)' : 'none',
++        transition: 'transform 160ms, box-shadow 160ms',
++      }}
++    >
+       <p style={{ fontSize: 11, color: C.mute, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, margin: '0 0 6px' }}>{label}</p>
+       <p style={{ fontSize: 24, fontWeight: 800, color: C.navy, margin: 0, fontFamily: 'var(--font-heading)' }}>{value}</p>
+       {sub && <p style={{ fontSize: 12, color: C.mute, margin: '4px 0 0' }}>{sub}</p>}
++      {clickable && (
++        <span style={{
++          position: 'absolute', right: 12, bottom: 10, display: 'inline-flex', alignItems: 'center', gap: 3,
++          fontSize: 10.5, fontWeight: 700, letterSpacing: '0.03em', textTransform: 'uppercase',
++          color: accent, opacity: hover ? 1 : 0.55, transition: 'opacity 160ms',
++        }}>
++          Details <FiArrowRight size={11} />
++        </span>
++      )}
+     </div>
+   );
+ }
+@@ -75,12 +105,21 @@ function Gauge({ value, caption }) {
+ const tooltipStyle = { background: '#fff', border: `1px solid ${C.border}`, borderRadius: 10, fontSize: 12 };
+ 
+ export default function FinancialDashboardPage() {
++  const navigate = useNavigate();
+   const [year, setYear] = useState(String(new Date().getFullYear()));
+   const [quarter, setQuarter] = useState('');
+   const [data, setData] = useState(null);
+   const [loading, setLoading] = useState(true);
+   const [error, setError] = useState('');
+ 
++  // Drill-down: each KPI opens the report that backs it. AR/AP/Cash/Inventory
++  // open the General Ledger pre-filtered to the control-account code; the P&L
++  // and Balance Sheet carry the same reporting period as the dashboard filters.
++  const period = `?${new URLSearchParams({ ...(year ? { year } : {}), ...(quarter ? { quarter } : {}) }).toString()}`;
++  const toLedger = (code) => () => navigate(`/reports/general-ledger?code=${code}`);
++  const toPL = () => navigate(`/reports/profit-loss${period === '?' ? '' : period}`);
++  const toBS = () => navigate(`/reports/balance-sheet${period === '?' ? '' : period}`);
++
+   const load = useCallback(async () => {
+     setLoading(true); setError('');
+     try {
+@@ -139,12 +178,12 @@ export default function FinancialDashboardPage() {
+         <>
+           {/* KPI cards */}
+           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14, marginBottom: 16 }}>
+-            <Stat label="Accounts Receivable" value={money(k.accountsReceivable)} accent={C.teal} />
+-            <Stat label="Accounts Payable" value={money(k.accountsPayable)} accent={C.red} />
+-            <Stat label="Revenue" value={money(k.revenue)} accent={C.green} sub="selected period" />
+-            <Stat label="Equity Ratio" value={pct(k.equityRatio)} accent={C.purple} sub="equity ÷ assets" />
+-            <Stat label="Current Ratio" value={ratio(k.currentRatio)} accent={C.navy} sub="CA ÷ CL" />
+-            <Stat label="Burn Rate" value={money(k.burnRate)} accent={C.orange} sub="avg monthly opex" />
++            <Stat label="Accounts Receivable" value={money(k.accountsReceivable)} accent={C.teal} sub="open balance" onClick={toLedger('1100')} />
++            <Stat label="Accounts Payable" value={money(k.accountsPayable)} accent={C.red} sub="open balance" onClick={toLedger('2000')} />
++            <Stat label="Revenue" value={money(k.revenue)} accent={C.green} sub="selected period" onClick={toPL} />
++            <Stat label="Equity Ratio" value={pct(k.equityRatio)} accent={C.purple} sub="equity ÷ assets" onClick={toBS} />
++            <Stat label="Current Ratio" value={ratio(k.currentRatio)} accent={C.navy} sub="CA ÷ CL" onClick={toBS} />
++            <Stat label="Burn Rate" value={money(k.burnRate)} accent={C.orange} sub="avg monthly opex" onClick={toPL} />
+           </div>
+ 
+           {/* Gauge + secondary stats */}
+@@ -154,12 +193,12 @@ export default function FinancialDashboardPage() {
+             </Panel>
+             <Panel title="Position at a glance">
+               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+-                <Stat label="Cash & Bank" value={money(k.cash)} accent={C.teal} />
+-                <Stat label="Inventory" value={money(k.inventory)} accent={C.amber} />
+-                <Stat label="Working Capital" value={money(k.workingCapital)} accent={C.green} />
+-                <Stat label="Net Income" value={money(k.netIncome)} accent={k.netIncome >= 0 ? C.green : C.red} sub="selected period" />
+-                <Stat label="Quick Ratio" value={ratio(k.quickRatio)} accent={C.navy} sub="(CA − Inv) ÷ CL" />
+-                <Stat label="Total Assets" value={money(k.totalAssets)} accent={C.purple} />
++                <Stat label="Cash & Bank" value={money(k.cash)} accent={C.teal} onClick={toLedger('1000')} />
++                <Stat label="Inventory" value={money(k.inventory)} accent={C.amber} onClick={toLedger('1200')} />
++                <Stat label="Working Capital" value={money(k.workingCapital)} accent={C.green} onClick={toBS} />
++                <Stat label="Net Income" value={money(k.netIncome)} accent={k.netIncome >= 0 ? C.green : C.red} sub="selected period" onClick={toPL} />
++                <Stat label="Quick Ratio" value={ratio(k.quickRatio)} accent={C.navy} sub="(CA − Inv) ÷ CL" onClick={toBS} />
++                <Stat label="Total Assets" value={money(k.totalAssets)} accent={C.purple} onClick={toBS} />
+               </div>
+             </Panel>
+           </div>
+diff --git a/client/src/modules/reports/GeneralLedgerPage.jsx b/client/src/modules/reports/GeneralLedgerPage.jsx
+index 0cc2d56..2c282df 100644
+--- a/client/src/modules/reports/GeneralLedgerPage.jsx
++++ b/client/src/modules/reports/GeneralLedgerPage.jsx
+@@ -1,4 +1,5 @@
+ import { useState, useEffect, useRef } from 'react';
++import { useSearchParams } from 'react-router-dom';
+ import reportService from '../../services/reportService';
+ import accountService from '../../services/accountService';
+ import { useTenant } from '../../context/TenantContext';
+@@ -16,10 +17,23 @@ export default function GeneralLedgerPage() {
+   const { companyName, settings } = useTenant();
+   const { showToast, ToastComponent } = useToast();
+   const printRef = useRef(null);
++  const [searchParams] = useSearchParams();
+ 
+   useEffect(() => {
+-    accountService.getAll({ isActive: 'true' }).then((r) => { if (r.success) setAccounts(r.data); }).catch(() => {});
+-  }, []);
++    accountService.getAll({ isActive: 'true' }).then((r) => {
++      if (!r.success) return;
++      setAccounts(r.data);
++      // Deep-link from a dashboard KPI card: ?code=1100 pre-selects that control
++      // account so the drill-down lands on the right ledger. Matches on the
++      // leading numeric part so "1100" also catches codes like "1100-01".
++      const code = searchParams.get('code');
++      if (code) {
++        const hit = r.data.find((a) => String(a.code) === code)
++                 || r.data.find((a) => String(a.code).replace(/\D/g, '').startsWith(code));
++        if (hit) setSelectedAccount(hit._id);
++      }
++    }).catch(() => {});
++  }, [searchParams]);
+ 
+   const fetchReport = () => {
+     setLoading(true);
