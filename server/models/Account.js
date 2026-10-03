@@ -25,6 +25,15 @@ const accountSchema = new mongoose.Schema(
     },
     balance: { type: Number, default: 0 },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+
+    // ── Per-person subsidiary ledger (one dynamic ledger per party) ──
+    // Set when this account is auto-provisioned for an external party (e.g. a
+    // gold seller) so the control account (parentCode) carries a running
+    // sub-ledger. The ledger is debit-normal: a debit balance means the party
+    // owes us (receivable), a credit balance means we owe the party (payable);
+    // the Ledgers area splits parties into Receivables/Payables by that sign.
+    isSubLedger:     { type: Boolean, default: false },
+    externalPartyId: { type: String, trim: true, default: null }, // the source system's person/ledger id
   },
   { timestamps: true }
 );
@@ -32,5 +41,8 @@ const accountSchema = new mongoose.Schema(
 accountSchema.index({ type: 1 });
 accountSchema.index({ isActive: 1 });
 accountSchema.index({ parentCode: 1 });
+// One ledger per external party. Sparse so ordinary accounts (null) are exempt.
+accountSchema.index({ externalPartyId: 1 }, { unique: true, sparse: true });
+accountSchema.index({ isSubLedger: 1 });
 
 module.exports = accountSchema;

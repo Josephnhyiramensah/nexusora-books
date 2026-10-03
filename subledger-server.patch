@@ -1,0 +1,452 @@
+diff --git a/server/controllers/ledgerController.js b/server/controllers/ledgerController.js
+new file mode 100644
+index 0000000..4d9d083
+--- /dev/null
++++ b/server/controllers/ledgerController.js
+@@ -0,0 +1,177 @@
++// server/controllers/ledgerController.js
++//
++// Per-person subsidiary ledgers (one dynamic ledger per party). These are the
++// Account documents flagged isSubLedger, provisioned automatically from the
++// external integration and keyed by externalPartyId.
++//
++// A party ledger is debit-normal: a positive (debit) balance means the party
++// owes us (receivable); a negative (credit) balance means we owe the party
++// (payable). The list below splits parties into Receivables / Payables by that
++// sign, and the statement reproduces the running-balance view the accountant
++// described — time (date/entry/mode) shows on the row, the table leads with the
++// running balance.
++'use strict';
++
++const { getModel } = require('../utils/getModel');
++const { scopedFilter } = require('../utils/branchScope');
++const { ledgerMovement, acctSignedBalance } = require('./reportController');
++
++const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
++
++/**
++ * GET /api/ledgers/parties
++ * List every party ledger with its current signed balance and side.
++ * Branch scope (X-Branch) applies, same as the reports.
++ */
++const getPartyLedgers = async (req, res) => {
++  try {
++    const Account = getModel(req.tenantDb, 'Account');
++    const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
++
++    const { q } = req.query;
++    const ledgers = await Account.find({ isSubLedger: true }).sort({ name: 1 }).lean();
++
++    // One movement map (branch-scoped); null = consolidated all-time → stored balance.
++    const movement = await ledgerMovement(req, JournalEntry);
++
++    let parties = ledgers.map((a) => {
++      const balance = acctSignedBalance(a, movement); // signed on the debit side
++      return {
++        id: String(a._id),
++        externalPartyId: a.externalPartyId || null,
++        code: a.code,
++        name: a.name,
++        control: a.parentCode || null,
++        balance,                                   // + = receivable, − = payable
++        side: balance >= 0 ? 'receivable' : 'payable',
++        isActive: a.isActive !== false,
++      };
++    });
++
++    // Optional search over "id — name" (matches the select format in the UI).
++    if (q && String(q).trim()) {
++      const needle = String(q).trim().toLowerCase();
++      parties = parties.filter((p) =>
++        (p.name || '').toLowerCase().includes(needle) ||
++        (p.externalPartyId || '').toLowerCase().includes(needle) ||
++        (p.code || '').toLowerCase().includes(needle));
++    }
++
++    const receivableTotal = round2(parties.filter((p) => p.balance > 0).reduce((s, p) => s + p.balance, 0));
++    const payableTotal = round2(parties.filter((p) => p.balance < 0).reduce((s, p) => s + Math.abs(p.balance), 0));
++
++    res.json({
++      success: true,
++      data: {
++        parties,
++        summary: {
++          count: parties.length,
++          receivableTotal,
++          payableTotal,
++          net: round2(receivableTotal - payableTotal),
++        },
++        generatedAt: new Date().toISOString(),
++      },
++    });
++  } catch (error) {
++    console.error('[Ledgers] party list error:', error.message);
++    res.status(500).json({ success: false, message: 'Failed to load party ledgers.' });
++  }
++};
++
++/**
++ * GET /api/ledgers/parties/:id/statement?startDate=&endDate=
++ * Running-balance statement of account for one party ledger. Honours branch
++ * scope and an optional date range (an opening balance carries in the range).
++ */
++const getPartyStatement = async (req, res) => {
++  try {
++    const Account = getModel(req.tenantDb, 'Account');
++    const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
++    const Voucher = getModel(req.tenantDb, 'Voucher');
++
++    const acct = await Account.findById(req.params.id).lean();
++    if (!acct || !acct.isSubLedger) {
++      return res.status(404).json({ success: false, message: 'Party ledger not found.' });
++    }
++
++    const { startDate, endDate } = req.query;
++    const acctId = String(acct._id);
++
++    // Opening balance: all posted movement for this account BEFORE the range
++    // start (branch-scoped), signed on the debit side.
++    let openingBalance = 0;
++    if (startDate) {
++      const openFilter = scopedFilter(req, { status: 'posted', date: { $lt: new Date(startDate) } });
++      const prior = await JournalEntry.find(openFilter).lean();
++      for (const e of prior) {
++        for (const l of (e.lines || [])) {
++          if (String(l.account) === acctId) openingBalance += (l.debit || 0) - (l.credit || 0);
++        }
++      }
++    }
++    openingBalance = round2(openingBalance);
++
++    // In-range (or all-time) entries for this account, oldest first.
++    const base = { status: 'posted' };
++    if (startDate && endDate) base.date = { $gte: new Date(startDate), $lte: new Date(endDate) };
++    else if (startDate) base.date = { $gte: new Date(startDate) };
++    else if (endDate) base.date = { $lte: new Date(endDate) };
++    const entries = await JournalEntry.find(scopedFilter(req, base)).sort({ date: 1, createdAt: 1 }).lean();
++
++    // Enrich with voucher mode / type via the journal reference (= voucherNumber).
++    const refs = [...new Set(entries.map((e) => e.reference).filter(Boolean))];
++    const vouchers = refs.length
++      ? await Voucher.find({ voucherNumber: { $in: refs } }).select('voucherNumber mode voucherType partyName externalId').lean()
++      : [];
++    const vByNumber = new Map(vouchers.map((v) => [v.voucherNumber, v]));
++
++    let running = openingBalance;
++    const rows = [];
++    for (const e of entries) {
++      for (const l of (e.lines || [])) {
++        if (String(l.account) !== acctId) continue;
++        const debit = round2(l.debit || 0);
++        const credit = round2(l.credit || 0);
++        running = round2(running + debit - credit); // debit-normal ledger
++        const v = vByNumber.get(e.reference) || {};
++        rows.push({
++          date: e.date,                       // full timestamp — UI shows time only on drill-down
++          entryNumber: e.entryNumber,
++          reference: e.reference || '',       // voucher number (the "id" on the row)
++          description: e.description || l.description || '',
++          mode: v.mode || '',
++          voucherType: v.voucherType || '',
++          debit,
++          credit,
++          balance: running,                   // running balance (signed, debit-normal)
++        });
++      }
++    }
++
++    const closingBalance = round2(running);
++    res.json({
++      success: true,
++      data: {
++        party: {
++          id: acctId,
++          externalPartyId: acct.externalPartyId || null,
++          code: acct.code,
++          name: acct.name,
++          control: acct.parentCode || null,
++          openingBalance,
++          closingBalance,
++          side: closingBalance >= 0 ? 'receivable' : 'payable',
++        },
++        period: startDate && endDate ? { startDate, endDate } : 'All time',
++        rows,
++        generatedAt: new Date().toISOString(),
++      },
++    });
++  } catch (error) {
++    console.error('[Ledgers] statement error:', error.message);
++    res.status(500).json({ success: false, message: 'Failed to generate the statement of account.' });
++  }
++};
++
++module.exports = { getPartyLedgers, getPartyStatement };
+diff --git a/server/models/Account.js b/server/models/Account.js
+index e9949ef..fe05da4 100644
+--- a/server/models/Account.js
++++ b/server/models/Account.js
+@@ -25,6 +25,15 @@ const accountSchema = new mongoose.Schema(
+     },
+     balance: { type: Number, default: 0 },
+     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
++
++    // ── Per-person subsidiary ledger (one dynamic ledger per party) ──
++    // Set when this account is auto-provisioned for an external party (e.g. a
++    // gold seller) so the control account (parentCode) carries a running
++    // sub-ledger. The ledger is debit-normal: a debit balance means the party
++    // owes us (receivable), a credit balance means we owe the party (payable);
++    // the Ledgers area splits parties into Receivables/Payables by that sign.
++    isSubLedger:     { type: Boolean, default: false },
++    externalPartyId: { type: String, trim: true, default: null }, // the source system's person/ledger id
+   },
+   { timestamps: true }
+ );
+@@ -32,5 +41,8 @@ const accountSchema = new mongoose.Schema(
+ accountSchema.index({ type: 1 });
+ accountSchema.index({ isActive: 1 });
+ accountSchema.index({ parentCode: 1 });
++// One ledger per external party. Sparse so ordinary accounts (null) are exempt.
++accountSchema.index({ externalPartyId: 1 }, { unique: true, sparse: true });
++accountSchema.index({ isSubLedger: 1 });
+ 
+ module.exports = accountSchema;
+\ No newline at end of file
+diff --git a/server/models/ExternalMapping.js b/server/models/ExternalMapping.js
+index fcd8cbb..b72d3c7 100644
+--- a/server/models/ExternalMapping.js
++++ b/server/models/ExternalMapping.js
+@@ -28,6 +28,7 @@ const FieldMapSchema = new Schema(
+     reference:    { type: String, default: null },
+     externalId:   { type: String, default: null }, // REQUIRED mapping — the source row's unique id
+     partyName:    { type: String, default: null },
++    partyId:      { type: String, default: null }, // external PERSON/ledger id (sub-ledger key, distinct from the row's externalId)
+     mode:         { type: String, default: null },
+     debitAccount: { type: String, default: null }, // external field holding their debit account id
+     creditAccount:{ type: String, default: null }, // external field holding their credit account id
+@@ -51,6 +52,12 @@ const TypeMapEntrySchema = new Schema(
+   {
+     externalType: { type: String, required: true },  // e.g. "receipt", "payment", "1", "SALE"
+     voucherType:  { type: String, required: true },  // one of our 9 types
++    // Per-person sub-ledger classification. When set, this transaction type
++    // posts the party's ledger on this side; the other leg stays the mapped
++    // contra account. 'debit' = party owes us more (advance); 'credit' = we
++    // settle/owe the party (gold received). null/absent = no party ledger
++    // (an ordinary two-account voucher).
++    partySide:    { type: String, enum: ['debit', 'credit', null], default: null },
+   },
+   { _id: false }
+ );
+@@ -85,6 +92,13 @@ const ExternalMappingSchema = new Schema(
+     // branch is mapped. Leave null to require an explicit/mapped branch.
+     fixedBranch: { type: String, default: null },
+ 
++    // Per-person sub-ledger settings. When a transaction type carries a
++    // partySide, the party's ledger is auto-provisioned under this control
++    // account with this code prefix (e.g. control 1100, prefix 'SL-' →
++    // account 'SL-<partyId>'). Defaults suit a single AR/AP control.
++    partyControlCode: { type: String, default: '1100' },
++    partyCodePrefix:  { type: String, default: 'SL-' },
++
+     // Post vouchers immediately on import (vs. leaving as draft for review).
+     autopost: { type: Boolean, default: true },
+ 
+diff --git a/server/routes/externalApiRoutes.js b/server/routes/externalApiRoutes.js
+index b03f79e..c26e01e 100644
+--- a/server/routes/externalApiRoutes.js
++++ b/server/routes/externalApiRoutes.js
+@@ -236,14 +236,31 @@ async function createVoucherFromBooksPayload(req, payload) {
+ 
+   const {
+     voucherType, date, amount, narration, reference, externalId,
+-    partyName, mode, paymentDetails, debitAccountCode, creditAccountCode,
++    partyName, mode, paymentDetails,
+     branchCode,
++    partyId, partySide, partyControlCode, partyCodePrefix,
+     autopost = true,
+   } = payload;
++  let { debitAccountCode, creditAccountCode } = payload;
+ 
+   const VALID_TYPES = ['payment','receipt','contra','transfer','journal','purchase','sales','debit_note','credit_note'];
+   if (!voucherType || !VALID_TYPES.includes(voucherType)) return { status: 400, body: { success:false, message:'Valid voucherType is required.' } };
+   if (!date || !amount || Number(amount) <= 0) return { status: 400, body: { success:false, message:'date and a positive amount are required.' } };
++
++  // Per-person sub-ledger: when the transaction type carries a partySide, the
++  // party's own ledger (auto-provisioned, keyed by external id) becomes that
++  // leg; the other leg stays the mapped contra account (Cash, Inventory, …).
++  let partyLedger = null;
++  if ((partySide === 'debit' || partySide === 'credit') && partyId != null && String(partyId).trim() !== '') {
++    const { getOrCreatePartyLedger } = require('../utils/subLedger');
++    partyLedger = await getOrCreatePartyLedger(Account, {
++      partyId, partyName, controlCode: partyControlCode, prefix: partyCodePrefix,
++    });
++    if (!partyLedger) return { status: 400, body: { success:false, message:'Could not provision the party ledger (missing partyId).' } };
++    if (partySide === 'debit') debitAccountCode = partyLedger.code;
++    else creditAccountCode = partyLedger.code;
++  }
++
+   if (!debitAccountCode || !creditAccountCode) return { status: 400, body: { success:false, message:'debit/credit account codes are required.' } };
+   if (debitAccountCode === creditAccountCode) return { status: 400, body: { success:false, message:'Debit and credit accounts must differ.' } };
+   if (!externalId) return { status: 400, body: { success:false, message:'externalId is required (dedup).' } };
+diff --git a/server/routes/ledgerRoutes.js b/server/routes/ledgerRoutes.js
+new file mode 100644
+index 0000000..847ca3f
+--- /dev/null
++++ b/server/routes/ledgerRoutes.js
+@@ -0,0 +1,18 @@
++// server/routes/ledgerRoutes.js
++// Per-person subsidiary ledgers (Receivables / Payables by sign) and their
++// running-balance statements of account. Same access rule as the reports —
++// this is the same financial data, viewed per party.
++const express = require('express');
++const router = express.Router();
++const { protect, allow } = require('../middleware/authMiddleware');
++const { getPartyLedgers, getPartyStatement } = require('../controllers/ledgerController');
++
++router.use(protect);
++router.use(allow('reports.view', 'super_admin', 'admin', 'accountant'));
++
++// GET /api/ledgers/parties?q=
++router.get('/parties', getPartyLedgers);
++// GET /api/ledgers/parties/:id/statement?startDate=&endDate=
++router.get('/parties/:id/statement', getPartyStatement);
++
++module.exports = router;
+diff --git a/server/server.js b/server/server.js
+index 6f312e6..906010b 100644
+--- a/server/server.js
++++ b/server/server.js
+@@ -27,6 +27,7 @@ const paymentRoutes      = require('./routes/paymentRoutes');       // accountin
+ const paymentGwRoutes    = require('./routes/paymentGatewayRoutes'); // Paystack gateway
+ const reportRoutes       = require('./routes/reportRoutes');
+ const analyticsRoutes    = require('./routes/analyticsRoutes');  // interactive financial dashboards
++const ledgerRoutes       = require('./routes/ledgerRoutes');     // per-person subsidiary ledgers
+ const noteRoutes         = require('./routes/noteRoutes');
+ const todoRoutes         = require('./routes/todoRoutes');
+ const dashboardRoutes    = require('./routes/dashboardRoutes');
+@@ -213,6 +214,7 @@ app.use('/api/bills',            tm, es,   billRoutes);
+ app.use('/api/payments',         tm, es,   paymentRoutes);
+ app.use('/api/reports',          tm, es,   reportRoutes);
+ app.use('/api/analytics',        tm, es,   analyticsRoutes);
++app.use('/api/ledgers',          tm, es,   ledgerRoutes);
+ app.use('/api/notes',            tm, es,   noteRoutes);
+ app.use('/api/todos',            tm, es,   todoRoutes);
+ app.use('/api/dashboard',        tm, es,   dashboardRoutes);
+diff --git a/server/utils/externalMappingHelper.js b/server/utils/externalMappingHelper.js
+index 1a2babe..ed9e42a 100644
+--- a/server/utils/externalMappingHelper.js
++++ b/server/utils/externalMappingHelper.js
+@@ -25,15 +25,17 @@ function applyMapping(mapping, raw) {
+   const val = (field) => (fm[field] ? getPath(raw, fm[field]) : undefined);
+ 
+   // 2. Voucher type: fixed, or mapped from an external type value.
+-  let voucherType = mapping.fixedVoucherType || null;
+-  if (!voucherType) {
+-    const extType = val('voucherType');
+-    if (extType != null) {
+-      const hit = (mapping.typeMap || []).find((t) => String(t.externalType) === String(extType));
+-      voucherType = hit ? hit.voucherType : null;
+-    }
+-  }
++  //    The matched typeMap entry also carries the per-person sub-ledger side
++  //    (partySide), so look it up even when the voucher type itself is fixed.
++  const extType = val('voucherType');
++  const typeHit = extType != null
++    ? (mapping.typeMap || []).find((t) => String(t.externalType) === String(extType))
++    : null;
++  let voucherType = mapping.fixedVoucherType || (typeHit ? typeHit.voucherType : null);
+   if (!voucherType) return { ok: false, error: 'Could not determine voucherType (check fixedVoucherType or typeMap).' };
++  const partySide = typeHit && (typeHit.partySide === 'debit' || typeHit.partySide === 'credit')
++    ? typeHit.partySide
++    : null;
+ 
+   // 3. Translate external account ids -> Books account codes via accountMap.
+   const mapAccount = (extVal) => {
+@@ -84,6 +86,12 @@ function applyMapping(mapping, raw) {
+     creditAccountCode: String(creditAccountCode),
+     branchCode: branchCode == null ? null : String(branchCode),
+     autopost: mapping.autopost !== false,
++    // Per-person sub-ledger: the party id + which side its ledger takes. The
++    // caller auto-provisions the ledger and overrides that leg's account.
++    partyId: (() => { const v = val('partyId'); return v == null || v === '' ? null : String(v); })(),
++    partySide,
++    partyControlCode: mapping.partyControlCode || '1100',
++    partyCodePrefix: mapping.partyCodePrefix || 'SL-',
+   };
+   return { ok: true, voucher };
+ }
+diff --git a/server/utils/subLedger.js b/server/utils/subLedger.js
+new file mode 100644
+index 0000000..592262b
+--- /dev/null
++++ b/server/utils/subLedger.js
+@@ -0,0 +1,70 @@
++'use strict';
++
++/**
++ * Per-person subsidiary ledger provisioning.
++ *
++ * One dynamic ledger per party, keyed by the external person/ledger ID. The
++ * ledger lives under a control account (parentCode, default 1100) and is
++ * debit-normal:
++ *   • debit balance  → the party owes us        (receivable)
++ *   • credit balance → we owe the party         (payable)
++ * The Ledgers area splits parties into Receivables / Payables by that sign,
++ * so a single person's whole story lives in one statement that can flip side
++ * over time — matching how the accountant described it.
++ *
++ * Classification is driven by the transaction TYPE (see ExternalMapping
++ * typeMap.partySide): the type decides whether the party ledger is the debit
++ * or the credit leg; the other leg is the mapped contra (Cash, Inventory, …).
++ */
++
++/**
++ * Find or create the ledger account for an external party.
++ *
++ * @param {Model}  Account   the tenant's Account model
++ * @param {object} opts
++ *   partyId      – REQUIRED external person/ledger id (the unique key)
++ *   partyName    – display name (names may duplicate; id stays the key)
++ *   controlCode  – parent control account code (default '1100')
++ *   prefix       – code prefix for the generated account (default 'SL-')
++ *   createdBy    – optional User id
++ * @returns {Promise<Account|null>} the ledger account, or null if no partyId
++ */
++async function getOrCreatePartyLedger(Account, { partyId, partyName, controlCode = '1100', prefix = 'SL-', createdBy = null } = {}) {
++  const pid = partyId == null ? '' : String(partyId).trim();
++  if (!pid) return null;
++
++  // Existing ledger for this party → reuse it (and refresh the display name if
++  // the upstream name changed; the id, not the name, is the identity).
++  const existing = await Account.findOne({ externalPartyId: pid });
++  if (existing) {
++    if (partyName && String(partyName).trim() && existing.name !== String(partyName).trim()) {
++      existing.name = String(partyName).trim();
++      await existing.save();
++    }
++    return existing;
++  }
++
++  // New ledger. Code is deterministic from the party id so it is stable and
++  // readable; if that code somehow clashes with a hand-made account, fall back
++  // to a suffixed one rather than throwing.
++  const baseCode = `${prefix}${pid}`;
++  const clash = await Account.findOne({ code: baseCode });
++  const code = clash ? `${prefix}${pid}-${Date.now().toString().slice(-4)}` : baseCode;
++
++  return Account.create({
++    code,
++    name: (partyName && String(partyName).trim()) || `Party ${pid}`,
++    type: 'asset',                         // debit-normal; sign carries receivable/payable
++    category: 'Trade Receivables / Payables',
++    parentCode: String(controlCode || '1100'),
++    normalBalance: 'debit',
++    isActive: true,
++    isSystemAccount: false,
++    isSubLedger: true,
++    externalPartyId: pid,
++    balance: 0,
++    createdBy,
++  });
++}
++
++module.exports = { getOrCreatePartyLedger };

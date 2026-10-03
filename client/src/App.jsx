@@ -56,6 +56,8 @@ import ProfitLossPage from './modules/reports/ProfitLossPage';
 import BalanceSheetPage from './modules/reports/BalanceSheetPage';
 import CashFlowPage from './modules/reports/CashFlowPage';
 import GeneralLedgerPage from './modules/reports/GeneralLedgerPage';
+import PartyLedgerListPage from './modules/ledgers/PartyLedgerListPage';
+import PartyStatementPage from './modules/ledgers/PartyStatementPage';
 
 // Phase 5
 import DashboardFullPage from './modules/dashboard/DashboardPage';
@@ -117,6 +119,10 @@ const billsSidebar = [
   { path: '/bills/list',         label: 'Bills',         icon: FiCreditCard },
   { path: '/bills/new',          label: '+ New Bill',    icon: FiPlusCircle },
   { path: '/bills/make-payment', label: 'Make Payment',  icon: FiDollarSign },
+];
+
+const ledgersSidebar = [
+  { path: '/ledgers', label: 'Party Ledgers', icon: FiBookOpen, exact: true },
 ];
 
 const reportsSidebar = [
@@ -330,6 +336,12 @@ export default function App() {
               <Route path="/reports/balance-sheet"     element={<BalanceSheetPage />} />
               <Route path="/reports/cash-flow"         element={<CashFlowPage />} />
               <Route path="/reports/general-ledger"    element={<GeneralLedgerPage />} />
+            </Route>
+
+            {/* ── Ledgers (per-person subsidiary ledgers) ── */}
+            <Route element={<ProtectedRoute permission="reports.view" roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Ledgers" sidebarItems={ledgersSidebar} /></ProtectedRoute>}>
+              <Route path="/ledgers"                   element={<PartyLedgerListPage />} />
+              <Route path="/ledgers/parties/:id"       element={<PartyStatementPage />} />
             </Route>
 
             {/* ── Notes ── */}

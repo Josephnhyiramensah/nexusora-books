@@ -27,6 +27,7 @@ const paymentRoutes      = require('./routes/paymentRoutes');       // accountin
 const paymentGwRoutes    = require('./routes/paymentGatewayRoutes'); // Paystack gateway
 const reportRoutes       = require('./routes/reportRoutes');
 const analyticsRoutes    = require('./routes/analyticsRoutes');  // interactive financial dashboards
+const ledgerRoutes       = require('./routes/ledgerRoutes');     // per-person subsidiary ledgers
 const noteRoutes         = require('./routes/noteRoutes');
 const todoRoutes         = require('./routes/todoRoutes');
 const dashboardRoutes    = require('./routes/dashboardRoutes');
@@ -213,6 +214,7 @@ app.use('/api/bills',            tm, es,   billRoutes);
 app.use('/api/payments',         tm, es,   paymentRoutes);
 app.use('/api/reports',          tm, es,   reportRoutes);
 app.use('/api/analytics',        tm, es,   analyticsRoutes);
+app.use('/api/ledgers',          tm, es,   ledgerRoutes);
 app.use('/api/notes',            tm, es,   noteRoutes);
 app.use('/api/todos',            tm, es,   todoRoutes);
 app.use('/api/dashboard',        tm, es,   dashboardRoutes);

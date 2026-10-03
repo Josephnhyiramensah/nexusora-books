@@ -25,15 +25,17 @@ function applyMapping(mapping, raw) {
   const val = (field) => (fm[field] ? getPath(raw, fm[field]) : undefined);
 
   // 2. Voucher type: fixed, or mapped from an external type value.
-  let voucherType = mapping.fixedVoucherType || null;
-  if (!voucherType) {
-    const extType = val('voucherType');
-    if (extType != null) {
-      const hit = (mapping.typeMap || []).find((t) => String(t.externalType) === String(extType));
-      voucherType = hit ? hit.voucherType : null;
-    }
-  }
+  //    The matched typeMap entry also carries the per-person sub-ledger side
+  //    (partySide), so look it up even when the voucher type itself is fixed.
+  const extType = val('voucherType');
+  const typeHit = extType != null
+    ? (mapping.typeMap || []).find((t) => String(t.externalType) === String(extType))
+    : null;
+  let voucherType = mapping.fixedVoucherType || (typeHit ? typeHit.voucherType : null);
   if (!voucherType) return { ok: false, error: 'Could not determine voucherType (check fixedVoucherType or typeMap).' };
+  const partySide = typeHit && (typeHit.partySide === 'debit' || typeHit.partySide === 'credit')
+    ? typeHit.partySide
+    : null;
 
   // 3. Translate external account ids -> Books account codes via accountMap.
   const mapAccount = (extVal) => {
@@ -84,6 +86,12 @@ function applyMapping(mapping, raw) {
     creditAccountCode: String(creditAccountCode),
     branchCode: branchCode == null ? null : String(branchCode),
     autopost: mapping.autopost !== false,
+    // Per-person sub-ledger: the party id + which side its ledger takes. The
+    // caller auto-provisions the ledger and overrides that leg's account.
+    partyId: (() => { const v = val('partyId'); return v == null || v === '' ? null : String(v); })(),
+    partySide,
+    partyControlCode: mapping.partyControlCode || '1100',
+    partyCodePrefix: mapping.partyCodePrefix || 'SL-',
   };
   return { ok: true, voucher };
 }

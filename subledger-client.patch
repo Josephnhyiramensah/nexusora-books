@@ -1,0 +1,415 @@
+diff --git a/client/src/App.jsx b/client/src/App.jsx
+index 03483b2..0d30265 100644
+--- a/client/src/App.jsx
++++ b/client/src/App.jsx
+@@ -56,6 +56,8 @@ import ProfitLossPage from './modules/reports/ProfitLossPage';
+ import BalanceSheetPage from './modules/reports/BalanceSheetPage';
+ import CashFlowPage from './modules/reports/CashFlowPage';
+ import GeneralLedgerPage from './modules/reports/GeneralLedgerPage';
++import PartyLedgerListPage from './modules/ledgers/PartyLedgerListPage';
++import PartyStatementPage from './modules/ledgers/PartyStatementPage';
+ 
+ // Phase 5
+ import DashboardFullPage from './modules/dashboard/DashboardPage';
+@@ -119,6 +121,10 @@ const billsSidebar = [
+   { path: '/bills/make-payment', label: 'Make Payment',  icon: FiDollarSign },
+ ];
+ 
++const ledgersSidebar = [
++  { path: '/ledgers', label: 'Party Ledgers', icon: FiBookOpen, exact: true },
++];
++
+ const reportsSidebar = [
+   { path: '/reports/trial-balance',  label: 'Trial Balance',   icon: FiList },
+   { path: '/reports/profit-loss',    label: 'Profit & Loss',   icon: FiTrendingUp },
+@@ -332,6 +338,12 @@ export default function App() {
+               <Route path="/reports/general-ledger"    element={<GeneralLedgerPage />} />
+             </Route>
+ 
++            {/* ── Ledgers (per-person subsidiary ledgers) ── */}
++            <Route element={<ProtectedRoute permission="reports.view" roles={['super_admin','admin','accountant']}><ModuleShell moduleTitle="Ledgers" sidebarItems={ledgersSidebar} /></ProtectedRoute>}>
++              <Route path="/ledgers"                   element={<PartyLedgerListPage />} />
++              <Route path="/ledgers/parties/:id"       element={<PartyStatementPage />} />
++            </Route>
++
+             {/* ── Notes ── */}
+             <Route element={<ProtectedRoute><ModuleShell moduleTitle="Notes" sidebarItems={g('/notes','Notes')} /></ProtectedRoute>}>
+               <Route path="/notes" element={<NotesPage />} />
+diff --git a/client/src/modules/dashboard/FinancialDashboardPage.jsx b/client/src/modules/dashboard/FinancialDashboardPage.jsx
+index 96e1154..e22955a 100644
+--- a/client/src/modules/dashboard/FinancialDashboardPage.jsx
++++ b/client/src/modules/dashboard/FinancialDashboardPage.jsx
+@@ -178,8 +178,8 @@ export default function FinancialDashboardPage() {
+         <>
+           {/* KPI cards */}
+           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14, marginBottom: 16 }}>
+-            <Stat label="Accounts Receivable" value={money(k.accountsReceivable)} accent={C.teal} sub="open balance" onClick={toLedger('1100')} />
+-            <Stat label="Accounts Payable" value={money(k.accountsPayable)} accent={C.red} sub="open balance" onClick={toLedger('2000')} />
++            <Stat label="Accounts Receivable" value={money(k.accountsReceivable)} accent={C.teal} sub="per-person ledgers" onClick={() => navigate('/ledgers')} />
++            <Stat label="Accounts Payable" value={money(k.accountsPayable)} accent={C.red} sub="per-person ledgers" onClick={() => navigate('/ledgers')} />
+             <Stat label="Revenue" value={money(k.revenue)} accent={C.green} sub="selected period" onClick={toPL} />
+             <Stat label="Equity Ratio" value={pct(k.equityRatio)} accent={C.purple} sub="equity ÷ assets" onClick={toBS} />
+             <Stat label="Current Ratio" value={ratio(k.currentRatio)} accent={C.navy} sub="CA ÷ CL" onClick={toBS} />
+diff --git a/client/src/modules/ledgers/PartyLedgerListPage.jsx b/client/src/modules/ledgers/PartyLedgerListPage.jsx
+new file mode 100644
+index 0000000..f3a6fec
+--- /dev/null
++++ b/client/src/modules/ledgers/PartyLedgerListPage.jsx
+@@ -0,0 +1,150 @@
++// client/src/modules/ledgers/PartyLedgerListPage.jsx
++//
++// Subsidiary ledgers — one dynamic ledger per person, auto-provisioned from the
++// integration and keyed by the external person ID. A ledger's balance is
++// dynamic: a debit balance means the party owes us (Receivable); a credit
++// balance means we owe the party (Payable). This page lists every party as
++// "ID — Name" (names can duplicate; the ID is the key), split by that sign, and
++// opens the running-balance statement on click.
++import { useState, useEffect, useMemo } from 'react';
++import { useNavigate } from 'react-router-dom';
++import { FiSearch, FiChevronRight } from 'react-icons/fi';
++import api from '../../services/api';
++import { formatCurrency } from '../../utils/formatters';
++
++const C = {
++  navy: '#1A3560', gold: '#C9A227', teal: '#0D9488', red: '#DC2626',
++  green: '#16A34A', grey: '#6B7280', mute: '#9CA3AF', border: '#E2E8F0', surface: '#fff',
++};
++const money = (n) => formatCurrency(Math.abs(Number(n) || 0), 'GHS');
++
++function SummaryCard({ label, value, accent, sub }) {
++  return (
++    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderLeft: `4px solid ${accent}`, borderRadius: 10, padding: '14px 18px' }}>
++      <p style={{ fontSize: 11, color: C.mute, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, margin: '0 0 6px' }}>{label}</p>
++      <p style={{ fontSize: 22, fontWeight: 800, color: C.navy, margin: 0, fontFamily: 'var(--font-heading)' }}>{value}</p>
++      {sub && <p style={{ fontSize: 12, color: C.mute, margin: '4px 0 0' }}>{sub}</p>}
++    </div>
++  );
++}
++
++function PartyTable({ title, accent, rows, onOpen }) {
++  if (!rows.length) return null;
++  return (
++    <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: 'hidden', marginBottom: 20 }}>
++      <div style={{ padding: '12px 18px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
++        <h3 style={{ fontSize: 14, fontWeight: 700, color: C.navy, margin: 0 }}>
++          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: accent, marginRight: 8 }} />
++          {title} <span style={{ color: C.mute, fontWeight: 500 }}>· {rows.length}</span>
++        </h3>
++      </div>
++      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
++        <tbody>
++          {rows.map((p) => (
++            <tr
++              key={p.id}
++              onClick={() => onOpen(p.id)}
++              style={{ cursor: 'pointer', borderBottom: `1px solid ${C.border}` }}
++              onMouseEnter={(e) => (e.currentTarget.style.background = '#F8FAFC')}
++              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
++            >
++              <td style={{ padding: '12px 18px' }}>
++                <span style={{ fontFamily: 'monospace', fontSize: 12, color: C.grey, background: '#F1F5F9', padding: '2px 7px', borderRadius: 5, marginRight: 10 }}>
++                  {p.externalPartyId || p.code}
++                </span>
++                <span style={{ fontSize: 14, fontWeight: 600, color: C.navy }}>{p.name}</span>
++              </td>
++              <td style={{ padding: '12px 18px', textAlign: 'right', fontWeight: 700, color: accent, whiteSpace: 'nowrap' }}>
++                {money(p.balance)}
++              </td>
++              <td style={{ padding: '12px 10px 12px 0', width: 28, color: C.mute }}><FiChevronRight size={16} /></td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++    </div>
++  );
++}
++
++export default function PartyLedgerListPage() {
++  const navigate = useNavigate();
++  const [data, setData] = useState(null);
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState('');
++  const [q, setQ] = useState('');
++
++  useEffect(() => {
++    let alive = true;
++    setLoading(true); setError('');
++    api.get('/ledgers/parties')
++      .then((res) => { if (alive && res.data?.success) setData(res.data.data); })
++      .catch((e) => alive && setError(e.response?.data?.message || 'Could not load ledgers.'))
++      .finally(() => alive && setLoading(false));
++    return () => { alive = false; };
++  }, []);
++
++  const { receivables, payables, settled } = useMemo(() => {
++    const parties = data?.parties || [];
++    const needle = q.trim().toLowerCase();
++    const match = (p) => !needle
++      || (p.name || '').toLowerCase().includes(needle)
++      || (p.externalPartyId || '').toLowerCase().includes(needle)
++      || (p.code || '').toLowerCase().includes(needle);
++    const f = parties.filter(match);
++    return {
++      receivables: f.filter((p) => p.balance > 0).sort((a, b) => b.balance - a.balance),
++      payables: f.filter((p) => p.balance < 0).sort((a, b) => a.balance - b.balance),
++      settled: f.filter((p) => p.balance === 0).sort((a, b) => (a.name || '').localeCompare(b.name || '')),
++    };
++  }, [data, q]);
++
++  const open = (id) => navigate(`/ledgers/parties/${id}`);
++  const s = data?.summary || {};
++
++  return (
++    <div style={{ maxWidth: 1100 }}>
++      <div style={{ marginBottom: 18 }}>
++        <h1 style={{ fontSize: 22, fontWeight: 800, color: C.navy, margin: 0 }}>Party Ledgers</h1>
++        <p style={{ fontSize: 13, color: C.grey, margin: '4px 0 0' }}>
++          Statement of account for each person. A ledger moves between receivable and payable as its balance changes.
++        </p>
++      </div>
++
++      {error && <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#B91C1C', borderRadius: 10, padding: '12px 16px', fontSize: 14, marginBottom: 16 }}>{error}</div>}
++
++      {loading ? (
++        <div style={{ padding: 40, color: C.grey }}>Loading ledgers…</div>
++      ) : !data ? null : (
++        <>
++          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14, marginBottom: 18 }}>
++            <SummaryCard label="Total Receivable" value={money(s.receivableTotal)} accent={C.teal} sub="people who owe us" />
++            <SummaryCard label="Total Payable" value={money(s.payableTotal)} accent={C.red} sub="people we owe" />
++            <SummaryCard label="Net Position" value={money(s.net)} accent={s.net >= 0 ? C.green : C.red} sub={s.net >= 0 ? 'net receivable' : 'net payable'} />
++            <SummaryCard label="Parties" value={String(s.count ?? 0)} accent={C.navy} sub="total ledgers" />
++          </div>
++
++          <div style={{ position: 'relative', marginBottom: 18, maxWidth: 420 }}>
++            <FiSearch size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: C.mute }} />
++            <input
++              value={q} onChange={(e) => setQ(e.target.value)}
++              placeholder="Search by ID or name…"
++              style={{ width: '100%', padding: '10px 12px 10px 34px', borderRadius: 9, border: `1px solid #D1D5DB`, fontSize: 14, background: '#fff' }}
++            />
++          </div>
++
++          {receivables.length === 0 && payables.length === 0 && settled.length === 0 ? (
++            <div style={{ padding: 40, textAlign: 'center', color: C.mute, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14 }}>
++              {q ? 'No party matches your search.' : 'No party ledgers yet. They are created automatically as transactions arrive from the integration.'}
++            </div>
++          ) : (
++            <>
++              <PartyTable title="Receivables — they owe us" accent={C.teal} rows={receivables} onOpen={open} />
++              <PartyTable title="Payables — we owe them" accent={C.red} rows={payables} onOpen={open} />
++              <PartyTable title="Settled — zero balance" accent={C.mute} rows={settled} onOpen={open} />
++            </>
++          )}
++        </>
++      )}
++    </div>
++  );
++}
+diff --git a/client/src/modules/ledgers/PartyStatementPage.jsx b/client/src/modules/ledgers/PartyStatementPage.jsx
+new file mode 100644
+index 0000000..515f689
+--- /dev/null
++++ b/client/src/modules/ledgers/PartyStatementPage.jsx
+@@ -0,0 +1,201 @@
++// client/src/modules/ledgers/PartyStatementPage.jsx
++//
++// Statement of account for one party ledger. The table leads with the running
++// balance (Details · Debit · Credit · Balance); the date/time, entry number,
++// mode and voucher reference are revealed per row on click (drill-down), so the
++// header stays clean — exactly as requested. Balance is shown with a Dr/Cr tag:
++// Dr = the party owes us, Cr = we owe the party.
++import { useState, useEffect, useCallback, Fragment } from 'react';
++import { useParams, useNavigate } from 'react-router-dom';
++import { FiArrowLeft, FiChevronDown, FiChevronRight } from 'react-icons/fi';
++import api from '../../services/api';
++import { useTenant } from '../../context/TenantContext';
++import { formatCurrency, formatDate } from '../../utils/formatters';
++import { DateRangePicker, ExportBar, exportToExcelStyled, printReport } from '../reports/ReportShared';
++
++const C = {
++  navy: '#1A3560', gold: '#C9A227', teal: '#0D9488', red: '#DC2626',
++  green: '#16A34A', grey: '#6B7280', mute: '#9CA3AF', border: '#E2E8F0', surface: '#fff',
++};
++const money = (n) => formatCurrency(Math.abs(Number(n) || 0), 'GHS');
++const balTag = (n) => `${money(n)} ${Number(n) >= 0 ? 'Dr' : 'Cr'}`;
++const dateTime = (d) => {
++  try { return new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
++  catch { return formatDate(d); }
++};
++
++export default function PartyStatementPage() {
++  const { id } = useParams();
++  const navigate = useNavigate();
++  const { companyName } = useTenant();
++  const [data, setData] = useState(null);
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState('');
++  const [startDate, setStartDate] = useState('');
++  const [endDate, setEndDate] = useState('');
++  const [open, setOpen] = useState({}); // row index -> expanded
++
++  const load = useCallback(() => {
++    setLoading(true); setError('');
++    const params = {};
++    if (startDate) params.startDate = startDate;
++    if (endDate) params.endDate = endDate;
++    api.get(`/ledgers/parties/${id}/statement`, { params })
++      .then((res) => { if (res.data?.success) setData(res.data.data); else setError(res.data?.message || 'Could not load the statement.'); })
++      .catch((e) => setError(e.response?.data?.message || 'Could not load the statement.'))
++      .finally(() => setLoading(false));
++  }, [id, startDate, endDate]);
++
++  useEffect(() => { load(); }, [load]);
++
++  const party = data?.party;
++  const rows = data?.rows || [];
++
++  const handleExcel = async () => {
++    if (!data) return;
++    const columns = [
++      { header: 'Date', key: 'date', width: 20 },
++      { header: 'Entry #', key: 'entry', width: 14 },
++      { header: 'Details', key: 'details', width: 40 },
++      { header: 'Mode', key: 'mode', width: 12 },
++      { header: 'Ref', key: 'ref', width: 16 },
++      { header: 'Debit', key: 'debit', width: 15, money: true },
++      { header: 'Credit', key: 'credit', width: 15, money: true },
++      { header: 'Balance', key: 'balance', width: 16, money: true },
++    ];
++    const dataRows = [
++      { details: 'Opening balance', balance: party.openingBalance },
++      ...rows.map((r) => ({
++        date: dateTime(r.date), entry: r.entryNumber, details: r.description,
++        mode: r.mode, ref: r.reference,
++        debit: r.debit > 0 ? r.debit : '', credit: r.credit > 0 ? r.credit : '',
++        balance: r.balance,
++      })),
++    ];
++    await exportToExcelStyled({
++      filename: `statement_${party.externalPartyId || party.code}`,
++      companyName,
++      title: `Statement of Account — ${party.name}`,
++      subtitle: `${party.externalPartyId ? 'ID ' + party.externalPartyId + ' · ' : ''}${data.period === 'All time' ? 'All time' : `${formatDate(startDate)} to ${formatDate(endDate)}`}`,
++      columns,
++      sections: [{
++        rows: dataRows,
++        totalLabel: 'Closing balance',
++        totalLabelKey: 'details',
++        totalValues: { balance: party.closingBalance },
++      }],
++    });
++  };
++
++  const sideColor = party && party.side === 'payable' ? C.red : C.teal;
++
++  return (
++    <div style={{ maxWidth: 1050 }}>
++      <button onClick={() => navigate('/ledgers')} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: C.grey, cursor: 'pointer', fontSize: 13, padding: 0, marginBottom: 14 }}>
++        <FiArrowLeft size={14} /> All party ledgers
++      </button>
++
++      {error && <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#B91C1C', borderRadius: 10, padding: '12px 16px', fontSize: 14, marginBottom: 16 }}>{error}</div>}
++
++      {loading && !data ? (
++        <div style={{ padding: 40, color: C.grey }}>Loading statement…</div>
++      ) : party && (
++        <>
++          {/* Header */}
++          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
++            <div>
++              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
++                <h1 style={{ fontSize: 22, fontWeight: 800, color: C.navy, margin: 0 }}>{party.name}</h1>
++                <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: sideColor, background: `${sideColor}15`, padding: '3px 10px', borderRadius: 20 }}>
++                  {party.side === 'payable' ? 'We owe' : 'Owes us'}
++                </span>
++              </div>
++              <p style={{ fontSize: 13, color: C.grey, margin: '4px 0 0' }}>
++                {party.externalPartyId && <>ID <strong style={{ fontFamily: 'monospace' }}>{party.externalPartyId}</strong> · </>}
++                ledger <span style={{ fontFamily: 'monospace' }}>{party.code}</span> · closing balance <strong style={{ color: sideColor }}>{balTag(party.closingBalance)}</strong>
++              </p>
++            </div>
++            <ExportBar onPrint={() => printReport(document.getElementById('party-statement-print'), `Statement — ${party.name}`)} onExportExcel={handleExcel} />
++          </div>
++
++          {/* Date range */}
++          <div style={{ marginBottom: 16 }}>
++            <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} />
++          </div>
++
++          {/* Statement table */}
++          <div id="party-statement-print" style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, overflow: 'hidden' }}>
++            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
++              <thead>
++                <tr style={{ background: C.navy, color: '#fff' }}>
++                  <th style={{ width: 28 }} />
++                  <th style={{ textAlign: 'left', padding: '11px 14px', fontWeight: 600 }}>Details</th>
++                  <th style={{ textAlign: 'right', padding: '11px 14px', fontWeight: 600, width: 130 }}>Debit</th>
++                  <th style={{ textAlign: 'right', padding: '11px 14px', fontWeight: 600, width: 130 }}>Credit</th>
++                  <th style={{ textAlign: 'right', padding: '11px 16px', fontWeight: 600, width: 150 }}>Balance</th>
++                </tr>
++              </thead>
++              <tbody>
++                {/* Opening balance */}
++                <tr style={{ borderBottom: `1px solid ${C.border}`, background: '#F8FAFC' }}>
++                  <td />
++                  <td style={{ padding: '10px 14px', fontStyle: 'italic', color: C.grey }}>Opening balance</td>
++                  <td /><td />
++                  <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 600, color: C.grey }}>{balTag(party.openingBalance)}</td>
++                </tr>
++
++                {rows.length === 0 ? (
++                  <tr><td colSpan={5} style={{ padding: 30, textAlign: 'center', color: C.mute }}>No transactions in this period.</td></tr>
++                ) : rows.map((r, i) => {
++                  const isOpen = !!open[i];
++                  return (
++                    <Fragment key={i}>
++                      <tr
++                        onClick={() => setOpen((o) => ({ ...o, [i]: !o[i] }))}
++                        style={{ borderBottom: isOpen ? 'none' : `1px solid ${C.border}`, cursor: 'pointer' }}
++                        onMouseEnter={(e) => (e.currentTarget.style.background = '#F8FAFC')}
++                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
++                      >
++                        <td style={{ textAlign: 'center', color: C.mute }}>{isOpen ? <FiChevronDown size={14} /> : <FiChevronRight size={14} />}</td>
++                        <td style={{ padding: '11px 14px', color: C.navy }}>{r.description || <span style={{ color: C.mute }}>—</span>}</td>
++                        <td style={{ padding: '11px 14px', textAlign: 'right', color: r.debit > 0 ? C.navy : C.mute }}>{r.debit > 0 ? money(r.debit) : '—'}</td>
++                        <td style={{ padding: '11px 14px', textAlign: 'right', color: r.credit > 0 ? C.navy : C.mute }}>{r.credit > 0 ? money(r.credit) : '—'}</td>
++                        <td style={{ padding: '11px 16px', textAlign: 'right', fontWeight: 700, color: r.balance >= 0 ? C.teal : C.red }}>{balTag(r.balance)}</td>
++                      </tr>
++                      {isOpen && (
++                        <tr style={{ borderBottom: `1px solid ${C.border}`, background: '#FbFcFe' }}>
++                          <td />
++                          <td colSpan={4} style={{ padding: '4px 14px 12px' }}>
++                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 22px', fontSize: 12, color: C.grey }}>
++                              <span><strong style={{ color: C.navy }}>Date:</strong> {dateTime(r.date)}</span>
++                              <span><strong style={{ color: C.navy }}>Entry:</strong> {r.entryNumber}</span>
++                              {r.reference && <span><strong style={{ color: C.navy }}>Ref:</strong> {r.reference}</span>}
++                              {r.mode && <span><strong style={{ color: C.navy }}>Mode:</strong> {r.mode}</span>}
++                              {r.voucherType && <span><strong style={{ color: C.navy }}>Type:</strong> {r.voucherType}</span>}
++                            </div>
++                          </td>
++                        </tr>
++                      )}
++                    </Fragment>
++                  );
++                })}
++
++                {/* Closing balance */}
++                <tr style={{ background: '#F1F5F9', borderTop: `2px solid ${C.navy}` }}>
++                  <td />
++                  <td style={{ padding: '12px 14px', fontWeight: 800, color: C.navy }}>Closing balance</td>
++                  <td /><td />
++                  <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 800, color: party.closingBalance >= 0 ? C.teal : C.red }}>{balTag(party.closingBalance)}</td>
++                </tr>
++              </tbody>
++            </table>
++          </div>
++
++          <p style={{ fontSize: 11, color: C.mute, marginTop: 10 }}>
++            Dr = the party owes us (receivable) · Cr = we owe the party (payable). Click any row to see its date, time, entry, mode and reference.
++          </p>
++        </>
++      )}
++    </div>
++  );
++}

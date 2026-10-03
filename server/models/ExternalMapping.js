@@ -28,6 +28,7 @@ const FieldMapSchema = new Schema(
     reference:    { type: String, default: null },
     externalId:   { type: String, default: null }, // REQUIRED mapping — the source row's unique id
     partyName:    { type: String, default: null },
+    partyId:      { type: String, default: null }, // external PERSON/ledger id (sub-ledger key, distinct from the row's externalId)
     mode:         { type: String, default: null },
     debitAccount: { type: String, default: null }, // external field holding their debit account id
     creditAccount:{ type: String, default: null }, // external field holding their credit account id
@@ -51,6 +52,12 @@ const TypeMapEntrySchema = new Schema(
   {
     externalType: { type: String, required: true },  // e.g. "receipt", "payment", "1", "SALE"
     voucherType:  { type: String, required: true },  // one of our 9 types
+    // Per-person sub-ledger classification. When set, this transaction type
+    // posts the party's ledger on this side; the other leg stays the mapped
+    // contra account. 'debit' = party owes us more (advance); 'credit' = we
+    // settle/owe the party (gold received). null/absent = no party ledger
+    // (an ordinary two-account voucher).
+    partySide:    { type: String, enum: ['debit', 'credit', null], default: null },
   },
   { _id: false }
 );
@@ -84,6 +91,13 @@ const ExternalMappingSchema = new Schema(
     // set the Books branch code here. Used as the fallback when no per-record
     // branch is mapped. Leave null to require an explicit/mapped branch.
     fixedBranch: { type: String, default: null },
+
+    // Per-person sub-ledger settings. When a transaction type carries a
+    // partySide, the party's ledger is auto-provisioned under this control
+    // account with this code prefix (e.g. control 1100, prefix 'SL-' →
+    // account 'SL-<partyId>'). Defaults suit a single AR/AP control.
+    partyControlCode: { type: String, default: '1100' },
+    partyCodePrefix:  { type: String, default: 'SL-' },
 
     // Post vouchers immediately on import (vs. leaving as draft for review).
     autopost: { type: Boolean, default: true },

@@ -12,9 +12,11 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   LineChart, Line, RadialBarChart, RadialBar, PolarAngleAxis,
 } from 'recharts';
-import { FiRefreshCw, FiArrowRight } from 'react-icons/fi';
+import { FiRefreshCw, FiArrowRight, FiDownload } from 'react-icons/fi';
 import api from '../../services/api';
 import { formatCurrency } from '../../utils/formatters';
+import { useTenant } from '../../context/TenantContext';
+import { exportToExcelStyled } from '../reports/ReportShared';
 
 const C = {
   navy: '#1A3560', gold: '#C9A227', teal: '#0D9488', red: '#DC2626',
@@ -106,6 +108,7 @@ const tooltipStyle = { background: '#fff', border: `1px solid ${C.border}`, bord
 
 export default function FinancialDashboardPage() {
   const navigate = useNavigate();
+  const { companyName } = useTenant();
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [quarter, setQuarter] = useState('');
   const [data, setData] = useState(null);
@@ -140,6 +143,60 @@ export default function FinancialDashboardPage() {
   const s = data?.series || {};
   const sel = { padding: '8px 10px', borderRadius: 8, border: `1px solid #D1D5DB`, fontSize: 14, background: '#fff' };
 
+  // Export the dashboard figures to a styled .xlsx (same look as the reports).
+  // Money rows go out as numbers so Excel can sum/filter them; ratios and
+  // percentages go as display strings.
+  const exportExcel = async () => {
+    if (!data) return;
+    const n = (x) => Math.round((Number(x) || 0) * 100) / 100;
+    const period = data.period === 'All time'
+      ? 'All time'
+      : `Period ending ${new Date(data.period.end).toLocaleDateString('en-GB')}`;
+    const columns = [
+      { header: 'Item', key: 'item', width: 42 },
+      { header: 'Value', key: 'value', width: 24, money: true, align: 'right' },
+    ];
+    const sections = [
+      { label: 'Key Financial Indicators', rows: [
+        { item: 'Accounts Receivable', value: n(k.accountsReceivable) },
+        { item: 'Accounts Payable', value: n(k.accountsPayable) },
+        { item: 'Cash & Bank', value: n(k.cash) },
+        { item: 'Inventory', value: n(k.inventory) },
+        { item: 'Revenue (period)', value: n(k.revenue) },
+        { item: 'Gross Profit', value: n(k.grossProfit) },
+        { item: 'Net Income (period)', value: n(k.netIncome) },
+        { item: 'Working Capital', value: n(k.workingCapital) },
+        { item: 'Total Assets', value: n(k.totalAssets) },
+        { item: 'Total Liabilities', value: n(k.totalLiabilities) },
+        { item: 'Total Equity', value: n(k.totalEquity) },
+        { item: 'Burn Rate (avg monthly opex)', value: n(k.burnRate) },
+      ] },
+      { label: 'Ratios', rows: [
+        { item: 'Gross Profit Margin', value: pct(k.grossProfitMargin) },
+        { item: 'Equity Ratio', value: pct(k.equityRatio) },
+        { item: 'Current Ratio', value: ratio(k.currentRatio) },
+        { item: 'Quick Ratio', value: ratio(k.quickRatio) },
+        { item: 'AR Turnover', value: ratio(k.arTurnover) },
+        { item: 'AP Turnover', value: ratio(k.apTurnover) },
+      ] },
+    ];
+    if ((s.revenueByMonth || []).length)
+      sections.push({ label: 'Revenue by Month', rows: s.revenueByMonth.map((m) => ({ item: m.month, value: n(m.value) })) });
+    if ((s.inventoryTrend || []).length)
+      sections.push({ label: 'Inventory (month-end)', rows: s.inventoryTrend.map((m) => ({ item: m.month, value: n(m.value) })) });
+    if ((s.arApTurnover || []).length)
+      sections.push({ label: 'AR / AP Turnover by Month', rows: s.arApTurnover.map((m) => ({ item: m.month, value: `AR ${ratio(m.arTurnover)}  /  AP ${ratio(m.apTurnover)}` })) });
+
+    await exportToExcelStyled({
+      filename: 'financial_dashboard',
+      companyName,
+      title: 'Financial Management Dashboard',
+      subtitle: period,
+      columns,
+      sections,
+    });
+  };
+
   return (
     <div style={{ maxWidth: 1180 }}>
       {/* Header + filters */}
@@ -166,6 +223,11 @@ export default function FinancialDashboardPage() {
           <button onClick={load} title="Refresh" style={{ ...sel, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <FiRefreshCw size={14} /> Refresh
           </button>
+          <button onClick={exportExcel} title="Export to Excel" disabled={!data}
+            style={{ ...sel, cursor: data ? 'pointer' : 'not-allowed', display: 'inline-flex', alignItems: 'center', gap: 6,
+                     border: '1px solid #C9A227', color: '#B8860B', fontWeight: 600, opacity: data ? 1 : 0.5 }}>
+            <FiDownload size={14} /> Export Excel
+          </button>
         </div>
       </div>
 
@@ -178,8 +240,8 @@ export default function FinancialDashboardPage() {
         <>
           {/* KPI cards */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14, marginBottom: 16 }}>
-            <Stat label="Accounts Receivable" value={money(k.accountsReceivable)} accent={C.teal} sub="open balance" onClick={toLedger('1100')} />
-            <Stat label="Accounts Payable" value={money(k.accountsPayable)} accent={C.red} sub="open balance" onClick={toLedger('2000')} />
+            <Stat label="Accounts Receivable" value={money(k.accountsReceivable)} accent={C.teal} sub="per-person ledgers" onClick={() => navigate('/ledgers')} />
+            <Stat label="Accounts Payable" value={money(k.accountsPayable)} accent={C.red} sub="per-person ledgers" onClick={() => navigate('/ledgers')} />
             <Stat label="Revenue" value={money(k.revenue)} accent={C.green} sub="selected period" onClick={toPL} />
             <Stat label="Equity Ratio" value={pct(k.equityRatio)} accent={C.purple} sub="equity ÷ assets" onClick={toBS} />
             <Stat label="Current Ratio" value={ratio(k.currentRatio)} accent={C.navy} sub="CA ÷ CL" onClick={toBS} />

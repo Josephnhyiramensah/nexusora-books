@@ -236,14 +236,31 @@ async function createVoucherFromBooksPayload(req, payload) {
 
   const {
     voucherType, date, amount, narration, reference, externalId,
-    partyName, mode, paymentDetails, debitAccountCode, creditAccountCode,
+    partyName, mode, paymentDetails,
     branchCode,
+    partyId, partySide, partyControlCode, partyCodePrefix,
     autopost = true,
   } = payload;
+  let { debitAccountCode, creditAccountCode } = payload;
 
   const VALID_TYPES = ['payment','receipt','contra','transfer','journal','purchase','sales','debit_note','credit_note'];
   if (!voucherType || !VALID_TYPES.includes(voucherType)) return { status: 400, body: { success:false, message:'Valid voucherType is required.' } };
   if (!date || !amount || Number(amount) <= 0) return { status: 400, body: { success:false, message:'date and a positive amount are required.' } };
+
+  // Per-person sub-ledger: when the transaction type carries a partySide, the
+  // party's own ledger (auto-provisioned, keyed by external id) becomes that
+  // leg; the other leg stays the mapped contra account (Cash, Inventory, …).
+  let partyLedger = null;
+  if ((partySide === 'debit' || partySide === 'credit') && partyId != null && String(partyId).trim() !== '') {
+    const { getOrCreatePartyLedger } = require('../utils/subLedger');
+    partyLedger = await getOrCreatePartyLedger(Account, {
+      partyId, partyName, controlCode: partyControlCode, prefix: partyCodePrefix,
+    });
+    if (!partyLedger) return { status: 400, body: { success:false, message:'Could not provision the party ledger (missing partyId).' } };
+    if (partySide === 'debit') debitAccountCode = partyLedger.code;
+    else creditAccountCode = partyLedger.code;
+  }
+
   if (!debitAccountCode || !creditAccountCode) return { status: 400, body: { success:false, message:'debit/credit account codes are required.' } };
   if (debitAccountCode === creditAccountCode) return { status: 400, body: { success:false, message:'Debit and credit accounts must differ.' } };
   if (!externalId) return { status: 400, body: { success:false, message:'externalId is required (dedup).' } };
