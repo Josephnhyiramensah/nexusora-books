@@ -237,8 +237,8 @@ async function createVoucherFromBooksPayload(req, payload) {
   const {
     voucherType, date, amount, narration, reference, externalId,
     partyName, mode, paymentDetails,
-    branchCode,
-    partyId, partySide, partyControlCode, partyCodePrefix,
+    branchCode, legs,
+    partyId, partySide, partyControlCode, partyPayableControlCode, partyCodePrefix,
     autopost = true,
   } = payload;
   let { debitAccountCode, creditAccountCode } = payload;
@@ -247,13 +247,35 @@ async function createVoucherFromBooksPayload(req, payload) {
   if (!voucherType || !VALID_TYPES.includes(voucherType)) return { status: 400, body: { success:false, message:'Valid voucherType is required.' } };
   if (!date || !amount || Number(amount) <= 0) return { status: 400, body: { success:false, message:'date and a positive amount are required.' } };
 
-  // Per-person sub-ledger: when the transaction type carries a partySide, the
-  // party's own ledger (auto-provisioned, keyed by external id) becomes that
-  // leg; the other leg stays the mapped contra account (Cash, Inventory, …).
-  let partyLedger = null;
-  if ((partySide === 'debit' || partySide === 'credit') && partyId != null && String(partyId).trim() !== '') {
-    const { getOrCreatePartyLedger } = require('../utils/subLedger');
-    partyLedger = await getOrCreatePartyLedger(Account, {
+  const { getOrCreatePartyLedger } = require('../utils/subLedger');
+
+  if (legs && legs.debit && legs.credit) {
+    // Group-driven path: each leg is already classified. A party leg (its ledger
+    // group is a party group) becomes the person's auto-provisioned sub-ledger —
+    // under the payable control when its group is a payable group, else the
+    // receivable control; a GL leg uses its mapped Books code. The person's
+    // side follows whichever leg they sit on, so no partySide is needed.
+    const resolveLeg = async (leg, label) => {
+      if (leg.isParty) {
+        const control = leg.isPayable ? (partyPayableControlCode || '2000') : (partyControlCode || '1100');
+        const acct = await getOrCreatePartyLedger(Account, {
+          partyId: leg.externalLedger, partyName: leg.name || partyName, controlCode: control, prefix: partyCodePrefix,
+        });
+        if (!acct) return { error: `Could not provision the ${label} party ledger.` };
+        return { code: acct.code };
+      }
+      return { code: leg.booksCode };
+    };
+    const d = await resolveLeg(legs.debit, 'debit');
+    if (d.error) return { status: 400, body: { success:false, message: d.error } };
+    const c = await resolveLeg(legs.credit, 'credit');
+    if (c.error) return { status: 400, body: { success:false, message: c.error } };
+    debitAccountCode = d.code;
+    creditAccountCode = c.code;
+  } else if ((partySide === 'debit' || partySide === 'credit') && partyId != null && String(partyId).trim() !== '') {
+    // Legacy path: a single party flagged by partyId + partySide overrides that
+    // leg; the other leg stays the mapped contra account (Cash, Inventory, …).
+    const partyLedger = await getOrCreatePartyLedger(Account, {
       partyId, partyName, controlCode: partyControlCode, prefix: partyCodePrefix,
     });
     if (!partyLedger) return { status: 400, body: { success:false, message:'Could not provision the party ledger (missing partyId).' } };

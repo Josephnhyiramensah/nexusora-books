@@ -30,9 +30,18 @@ const FieldMapSchema = new Schema(
     partyName:    { type: String, default: null },
     partyId:      { type: String, default: null }, // external PERSON/ledger id (sub-ledger key, distinct from the row's externalId)
     mode:         { type: String, default: null },
-    debitAccount: { type: String, default: null }, // external field holding their debit account id
-    creditAccount:{ type: String, default: null }, // external field holding their credit account id
+    debitAccount: { type: String, default: null }, // external field holding their debit account/ledger id
+    creditAccount:{ type: String, default: null }, // external field holding their credit account/ledger id
     branch:       { type: String, default: null }, // external field holding their branch id (optional)
+    // Group-driven classification (preferred): the external field holding each
+    // leg's ledger GROUP id, and the ledger description used to name a party.
+    // When a leg's group is one of partyGroups, that leg becomes the person's
+    // sub-ledger automatically; any other group is looked up in accountMap.
+    debitGroup:   { type: String, default: null },
+    creditGroup:  { type: String, default: null },
+    debitName:    { type: String, default: null }, // ledger_desc of the debit leg
+    creditName:   { type: String, default: null }, // ledger_desc of the credit leg
+    companyId:    { type: String, default: null }, // external field holding the company id (for the guard)
   },
   { _id: false }
 );
@@ -96,8 +105,19 @@ const ExternalMappingSchema = new Schema(
     // partySide, the party's ledger is auto-provisioned under this control
     // account with this code prefix (e.g. control 1100, prefix 'SL-' →
     // account 'SL-<partyId>'). Defaults suit a single AR/AP control.
-    partyControlCode: { type: String, default: '1100' },
+    partyControlCode: { type: String, default: '1100' },        // receivable-side control (groups in partyGroups but not payable)
     partyCodePrefix:  { type: String, default: 'SL-' },
+    // Group-driven classification. partyGroups = the ledger-group ids that mean
+    // "a person/party ledger" (default 4 = Account Receivables, 7 = Account
+    // Payables). payableGroups = the subset of those that roll up under the
+    // payable control. Comma-separated ids.
+    partyGroups:             { type: String, default: '4,7' },
+    partyPayableGroups:      { type: String, default: '7' },
+    partyPayableControlCode: { type: String, default: '2000' }, // control for payable-group party ledgers
+    // Company guard: when set, an inbound record whose company field does not
+    // equal this value is rejected (keeps another company's data out of this
+    // tenant). Leave null to accept any company.
+    sourceCompanyId:         { type: String, default: null },
 
     // Post vouchers immediately on import (vs. leaving as draft for review).
     autopost: { type: Boolean, default: true },

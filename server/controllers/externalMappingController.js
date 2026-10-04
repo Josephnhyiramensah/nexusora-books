@@ -27,7 +27,7 @@ const getMapping = async (req, res) => {
 const saveMapping = async (req, res) => {
   try {
     const ExternalMapping = getModel(req.tenantDb, 'ExternalMapping');
-    const { _id, source, label, fieldMap, accountMap, typeMap, branchMap, fixedVoucherType, fixedBranch, autopost, active, partyControlCode, partyCodePrefix } = req.body;
+    const { _id, source, label, fieldMap, accountMap, typeMap, branchMap, fixedVoucherType, fixedBranch, autopost, active, partyControlCode, partyCodePrefix, partyGroups, partyPayableGroups, partyPayableControlCode, sourceCompanyId } = req.body;
     if (!source) return res.status(400).json({ success: false, message: 'source is required.' });
 
     let mapping;
@@ -53,6 +53,10 @@ const saveMapping = async (req, res) => {
     if (active !== undefined) mapping.active = active;
     if (partyControlCode !== undefined) mapping.partyControlCode = partyControlCode || '1100';
     if (partyCodePrefix !== undefined) mapping.partyCodePrefix = partyCodePrefix || 'SL-';
+    if (partyGroups !== undefined) mapping.partyGroups = partyGroups || '4,7';
+    if (partyPayableGroups !== undefined) mapping.partyPayableGroups = partyPayableGroups || '7';
+    if (partyPayableControlCode !== undefined) mapping.partyPayableControlCode = partyPayableControlCode || '2000';
+    if (sourceCompanyId !== undefined) mapping.sourceCompanyId = sourceCompanyId || null;
     await mapping.save();
 
     await logAudit(req.tenantDb, {

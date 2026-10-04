@@ -21,14 +21,20 @@ const FIELDS = [
   ['partyName', 'Party name', false],
   ['partyId', 'Person ID (ledger key)', false],
   ['mode', 'Payment mode', false],
-  ['debitAccount', 'Debit account', true],
-  ['creditAccount', 'Credit account', true],
+  ['debitAccount', 'Debit account / ledger', true],
+  ['creditAccount', 'Credit account / ledger', true],
+  ['debitGroup', 'Debit ledger group', false],
+  ['creditGroup', 'Credit ledger group', false],
+  ['debitName', 'Debit ledger name', false],
+  ['creditName', 'Credit ledger name', false],
+  ['companyId', 'Company id', false],
   ['branch', 'Branch', false],
 ];
 
 const blank = () => ({
   source: '', label: '', fixedVoucherType: '', fixedBranch: '', autopost: true, active: true,
   partyControlCode: '1100', partyCodePrefix: 'SL-',
+  partyGroups: '4,7', partyPayableGroups: '7', partyPayableControlCode: '2000', sourceCompanyId: '',
   fieldMap: {}, accountMap: [], typeMap: [], branchMap: [],
 });
 
@@ -252,6 +258,25 @@ export default function ExternalMappingPage() {
             <input style={{ ...input, width: 120, display: 'block', marginTop: 4 }} value={m.partyCodePrefix || ''} onChange={(e) => setM({ partyCodePrefix: e.target.value })} placeholder="SL-" />
           </label>
           <span style={{ fontSize: 11, color: '#9CA3AF', flex: 1, minWidth: 180 }}>Person ledgers are created as <code>{(m.partyCodePrefix || 'SL-')}&lt;id&gt;</code> under control {m.partyControlCode || '1100'}.</span>
+        </div>
+
+        {/* Group-driven classification (preferred). When the Debit/Credit ledger
+            group fields are mapped above, any leg whose group is in "Party groups"
+            becomes that person's ledger automatically — no Party side needed. */}
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', margin: '0 0 14px', paddingBottom: 12, borderBottom: '1px solid #EEF2F6' }}>
+          <label style={{ fontSize: 12, color: '#6B7280' }}>Party groups
+            <input style={{ ...input, width: 110, display: 'block', marginTop: 4 }} value={m.partyGroups || ''} onChange={(e) => setM({ partyGroups: e.target.value })} placeholder="4,7" />
+          </label>
+          <label style={{ fontSize: 12, color: '#6B7280' }}>Payable groups
+            <input style={{ ...input, width: 100, display: 'block', marginTop: 4 }} value={m.partyPayableGroups || ''} onChange={(e) => setM({ partyPayableGroups: e.target.value })} placeholder="7" />
+          </label>
+          <label style={{ fontSize: 12, color: '#6B7280' }}>Payable control a/c
+            <input style={{ ...input, width: 130, display: 'block', marginTop: 4 }} value={m.partyPayableControlCode || ''} onChange={(e) => setM({ partyPayableControlCode: e.target.value })} placeholder="2000" />
+          </label>
+          <label style={{ fontSize: 12, color: '#6B7280' }}>Only accept company id
+            <input style={{ ...input, width: 130, display: 'block', marginTop: 4 }} value={m.sourceCompanyId || ''} onChange={(e) => setM({ sourceCompanyId: e.target.value })} placeholder="e.g. 328 (blank = any)" />
+          </label>
+          <span style={{ fontSize: 11, color: '#9CA3AF', flex: 1, minWidth: 180 }}>Receivable groups → control {m.partyControlCode || '1100'}; payable groups → {m.partyPayableControlCode || '2000'}. Records from other companies are rejected when a company id is set.</span>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 36px', gap: 10, marginBottom: 6 }}>

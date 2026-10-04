@@ -37,6 +37,16 @@ function applyMapping(mapping, raw) {
     ? typeHit.partySide
     : null;
 
+  // 2c. Company guard. When the source is restricted to one company, reject any
+  //     record that belongs to a different one (keeps another company's data out
+  //     of this tenant's books).
+  const companyId = val('companyId');
+  const allowedCompany = mapping.sourceCompanyId != null && String(mapping.sourceCompanyId).trim() !== ''
+    ? String(mapping.sourceCompanyId).trim() : null;
+  if (allowedCompany && String(companyId == null ? '' : companyId) !== allowedCompany) {
+    return { ok: false, error: `Record company "${companyId}" is not the allowed company "${allowedCompany}" for this source.` };
+  }
+
   // 3. Translate external account ids -> Books account codes via accountMap.
   const mapAccount = (extVal) => {
     if (extVal == null || extVal === '') return null;
@@ -45,11 +55,56 @@ function applyMapping(mapping, raw) {
   };
   const extDebit = val('debitAccount');
   const extCredit = val('creditAccount');
-  const debitAccountCode = mapAccount(extDebit);
-  const creditAccountCode = mapAccount(extCredit);
 
-  if (debitAccountCode == null) return { ok: false, error: `No account mapping for external debit account "${extDebit}".` };
-  if (creditAccountCode == null) return { ok: false, error: `No account mapping for external credit account "${extCredit}".` };
+  // 3a. Group-driven classification (preferred). When the leg's GROUP fields are
+  //     mapped, each leg is classified by its ledger group: a group in
+  //     partyGroups is a person ledger (auto-created downstream), everything else
+  //     is a GL account looked up in accountMap. The person's side (receivable vs
+  //     payable) simply follows whichever leg they sit on.
+  const groupDriven = !!(fm.debitGroup || fm.creditGroup);
+  const toSet = (s, dflt) => new Set(String(s == null || s === '' ? dflt : s).split(',').map((x) => x.trim()).filter(Boolean));
+  const partyGroupSet = toSet(mapping.partyGroups, '4,7');
+  const payableGroupSet = toSet(mapping.partyPayableGroups, '7');
+
+  let legs = null;
+  let debitAccountCode = null;
+  let creditAccountCode = null;
+
+  if (groupDriven) {
+    const buildLeg = (side) => {
+      const extLedger = side === 'debit' ? extDebit : extCredit;
+      const grpRaw = side === 'debit' ? val('debitGroup') : val('creditGroup');
+      const nm = side === 'debit' ? val('debitName') : val('creditName');
+      const group = grpRaw == null || grpRaw === '' ? null : String(grpRaw);
+      const isParty = group != null && partyGroupSet.has(group);
+      const isPayable = isParty && payableGroupSet.has(group);
+      let booksCode = null;
+      if (!isParty) booksCode = mapAccount(extLedger);
+      return {
+        externalLedger: extLedger == null ? null : String(extLedger),
+        group, isParty, isPayable,
+        name: (nm == null ? '' : String(nm)) || (val('partyName') || ''),
+        booksCode,
+      };
+    };
+    const debit = buildLeg('debit');
+    const credit = buildLeg('credit');
+    for (const [side, leg] of [['debit', debit], ['credit', credit]]) {
+      if (leg.isParty) {
+        if (!leg.externalLedger) return { ok: false, error: `Missing ${side} ledger id for a party (group ${leg.group}) leg.` };
+      } else if (leg.booksCode == null) {
+        return { ok: false, error: `No account mapping for external ${side} ledger "${leg.externalLedger}" (group ${leg.group == null ? 'n/a' : leg.group}). Map it, or mark its group as a party group.` };
+      }
+    }
+    legs = { debit, credit };
+  } else {
+    // Legacy path: both legs come straight from accountMap; a party (if any) is
+    // flagged by partyId + typeMap.partySide and overridden downstream.
+    debitAccountCode = mapAccount(extDebit);
+    creditAccountCode = mapAccount(extCredit);
+    if (debitAccountCode == null) return { ok: false, error: `No account mapping for external debit account "${extDebit}".` };
+    if (creditAccountCode == null) return { ok: false, error: `No account mapping for external credit account "${extCredit}".` };
+  }
 
   // 3b. Translate external branch -> Books branch code via branchMap.
   //     If the record carries a branch value, it MUST map (an unmapped branch is
@@ -82,15 +137,19 @@ function applyMapping(mapping, raw) {
     externalId: String(externalId),
     partyName: val('partyName') || '',
     mode: val('mode') || 'other',
-    debitAccountCode: String(debitAccountCode),
-    creditAccountCode: String(creditAccountCode),
+    // Legacy path provides the two codes directly; group-driven path provides
+    // `legs` and the caller resolves each (provisioning party ledgers).
+    debitAccountCode: debitAccountCode == null ? null : String(debitAccountCode),
+    creditAccountCode: creditAccountCode == null ? null : String(creditAccountCode),
+    legs,
+    companyId: companyId == null ? null : String(companyId),
     branchCode: branchCode == null ? null : String(branchCode),
     autopost: mapping.autopost !== false,
-    // Per-person sub-ledger: the party id + which side its ledger takes. The
-    // caller auto-provisions the ledger and overrides that leg's account.
+    // Per-person sub-ledger config (used by both paths).
     partyId: (() => { const v = val('partyId'); return v == null || v === '' ? null : String(v); })(),
     partySide,
     partyControlCode: mapping.partyControlCode || '1100',
+    partyPayableControlCode: mapping.partyPayableControlCode || '2000',
     partyCodePrefix: mapping.partyCodePrefix || 'SL-',
   };
   return { ok: true, voucher };
