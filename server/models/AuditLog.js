@@ -14,6 +14,10 @@ const auditLogSchema = new mongoose.Schema(
         'create', 'read', 'update', 'delete',
         'login', 'logout',
         'post_journal', 'reverse_journal',
+        // Maker-checker approval actions. These were missing, so submit/approve/
+        // reject events failed to record in the audit trail.
+        'submit_for_approval', 'approve_journal', 'reject_journal',
+        'approve', 'reject',
         'approve_bill', 'approve_payroll',
         'reconcile_bank', 'export_report',
       ],

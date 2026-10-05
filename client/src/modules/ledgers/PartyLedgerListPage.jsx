@@ -180,7 +180,7 @@ export default function PartyLedgerListPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14, marginBottom: 18 }}>
             <SummaryCard label="Total Receivable" value={money(s.receivableTotal)} accent={C.teal} sub="people who owe us" />
             <SummaryCard label="Total Payable" value={money(s.payableTotal)} accent={C.red} sub="people we owe" />
-            <SummaryCard label="Net Position" value={money(s.net)} accent={s.net >= 0 ? C.green : C.red} sub={s.net >= 0 ? 'net receivable' : 'net payable'} />
+            <SummaryCard label="Net Position" value={money(s.net)} accent={s.net > 0 ? C.green : s.net < 0 ? C.red : C.mute} sub={s.net > 0 ? 'net receivable' : s.net < 0 ? 'net payable' : 'balanced'} />
             <SummaryCard label="Parties" value={String(s.count ?? 0)} accent={C.navy} sub="total ledgers" />
           </div>
 
