@@ -135,7 +135,16 @@ export default function ExternalMappingPage() {
     if (!m.source.trim()) { showToast('A source key is required', 'error'); return; }
     setSaving(true);
     try {
-      const { data } = await api.post('/external-mappings', m);
+      // Drop any half-filled rows so a blank "+ Add" line can't fail the whole
+      // save (the server requires both columns on every mapping row).
+      const nz = (v) => v != null && String(v).trim() !== '';
+      const payload = {
+        ...m,
+        accountMap: (m.accountMap || []).filter((r) => nz(r.externalAccount) && nz(r.booksCode)),
+        typeMap: (m.typeMap || []).filter((r) => nz(r.externalType) && nz(r.voucherType)),
+        branchMap: (m.branchMap || []).filter((r) => nz(r.externalBranch) && nz(r.booksBranchCode)),
+      };
+      const { data } = await api.post('/external-mappings', payload);
       if (data.success) { showToast('Integration saved', 'success'); await loadList(); setEditing(null); }
       else showToast(data.message || 'Save failed', 'error');
     } catch (err) { showToast(err.response?.data?.message || 'Save failed', 'error'); }
