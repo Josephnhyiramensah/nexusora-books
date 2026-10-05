@@ -44,6 +44,7 @@ export default function VoucherListPage() {
   const { showToast, ToastComponent } = useToast();
   const { user } = useAuth();
   const canReverse = ['super_admin', 'admin'].includes(user?.role);
+  const canApprove = ['super_admin', 'admin'].includes(user?.role);
 
     const { branches } = useBranch();
   const multiBranch = (branches || []).filter((b) => b.isActive).length > 1;
@@ -98,6 +99,25 @@ export default function VoucherListPage() {
     } catch (err) { showToast(err.response?.data?.message || 'Failed to reverse', 'error'); }
   };
 
+  const handleApprove = async (id) => {
+    if (!window.confirm('Approve and post this voucher? It will post to the ledger. (You cannot approve a voucher you created.)')) return;
+    try {
+      const result = await voucherService.approve(id);
+      if (result.success) { showToast(result.message); fetchVouchers(); }
+      else showToast(result.message || 'Approve failed', 'error');
+    } catch (err) { showToast(err.response?.data?.message || 'Failed to approve', 'error'); }
+  };
+
+  const handleReject = async (id) => {
+    const reason = window.prompt('Reject this voucher? It goes back to draft. Reason (optional):');
+    if (reason === null) return;
+    try {
+      const result = await voucherService.reject(id, reason);
+      if (result.success) { showToast(result.message); fetchVouchers(); }
+      else showToast(result.message || 'Reject failed', 'error');
+    } catch (err) { showToast(err.response?.data?.message || 'Failed to reject', 'error'); }
+  };
+
   const handlePrint = (id) => navigate(`/vouchers/${id}`);
 
   const handleDelete = async (id) => {
@@ -125,6 +145,7 @@ export default function VoucherListPage() {
             style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border, #D1D5DB)', fontSize: 13 }}>
             <option value="">All statuses</option>
             <option value="draft">Draft</option>
+            <option value="awaiting_approval">Awaiting Approval</option>
             <option value="posted">Posted</option>
             <option value="reversed">Reversed</option>
           </select>
@@ -163,6 +184,12 @@ export default function VoucherListPage() {
                   )}
                   {v.status === 'draft' && (
                     <button style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #DC2626', color: '#DC2626', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }} onClick={() => handleDelete(v._id)}>Delete</button>
+                  )}
+                  {v.status === 'awaiting_approval' && canApprove && (
+                    <button style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #065F46', color: '#065F46', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }} onClick={() => handleApprove(v._id)}>Approve</button>
+                  )}
+                  {v.status === 'awaiting_approval' && canApprove && (
+                    <button style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #DC2626', color: '#DC2626', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }} onClick={() => handleReject(v._id)}>Reject</button>
                   )}
                   {v.status === 'posted' && canReverse && (
                     <button style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #B45309', color: '#B45309', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }} onClick={() => handleReverse(v._id)}>Reverse</button>
@@ -208,9 +235,12 @@ export default function VoucherListPage() {
                       <VoucherActionsMenu
                         voucher={v}
                         canReverse={canReverse}
+                        canApprove={canApprove}
                         onView={() => navigate(`/vouchers/${v._id}`)}
                         onPrint={() => handlePrint(v._id)}
                         onPost={() => handlePost(v._id)}
+                        onApprove={() => handleApprove(v._id)}
+                        onReject={() => handleReject(v._id)}
                         onReverse={() => handleReverse(v._id)}
                         onDelete={() => handleDelete(v._id)}
                       />

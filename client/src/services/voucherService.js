@@ -24,6 +24,14 @@ const voucherService = {
     return data;
   },
 
+  approve: async (id) => {
+    const { data } = await api.post(`/vouchers/${id}/approve`);
+    return data;
+  },
+  reject: async (id, reason) => {
+    const { data } = await api.post(`/vouchers/${id}/reject`, { reason });
+    return data;
+  },
   post: async (id) => {
     const { data } = await api.post(`/vouchers/${id}/post`);
     return data;

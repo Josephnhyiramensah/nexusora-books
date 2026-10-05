@@ -88,6 +88,10 @@ export default function NotificationBell() {
       if (data.success && data.data.length > 0) items.push({ id: 'approve-journals', type: 'warning', title: `${data.data.length} journal${data.data.length > 1 ? 's' : ''} awaiting approval`, message: 'Review and approve pending journal entries', path: '/journals', time: 'Approve' });
     } catch {}
     try {
+      const { data } = await api.get('/vouchers?status=awaiting_approval&limit=50');
+      if (data.success && data.data.length > 0) items.push({ id: 'approve-vouchers', type: 'warning', title: `${data.data.length} voucher${data.data.length > 1 ? 's' : ''} awaiting approval`, message: 'Review and approve pending vouchers', path: '/vouchers', time: 'Approve' });
+    } catch {}
+    try {
       const { data } = await api.get('/invoices?status=awaiting_approval');
       if (data.success && data.data.length > 0) items.push({ id: 'approve-invoices', type: 'warning', title: `${data.data.length} invoice${data.data.length > 1 ? 's' : ''} awaiting approval`, message: 'Review and approve pending invoices', path: '/invoicing/invoices', time: 'Approve' });
     } catch {}

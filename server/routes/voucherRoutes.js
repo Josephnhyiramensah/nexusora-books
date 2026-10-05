@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { protect, authorise } = require('../middleware/authMiddleware');
 const {
-  getVouchers, getVoucher, createVoucher, postVoucher, reverseVoucher, deleteVoucher, addAttachment, removeAttachment } = require('../controllers/voucherController');
+  getVouchers, getVoucher, createVoucher, postVoucher, approveVoucher, rejectVoucher, reverseVoucher, deleteVoucher, addAttachment, removeAttachment } = require('../controllers/voucherController');
 
 router.use(protect);
 
@@ -13,6 +13,8 @@ router.get('/', getVouchers);
 router.get('/:id', getVoucher);
 router.post('/', authorise('super_admin', 'admin', 'accountant'), createVoucher);
 router.post('/:id/post', authorise('super_admin', 'admin', 'accountant'), postVoucher);
+router.post('/:id/approve', authorise('super_admin', 'admin'), approveVoucher);
+router.post('/:id/reject', authorise('super_admin', 'admin'), rejectVoucher);
 router.post('/:id/reverse', authorise('super_admin', 'admin'), reverseVoucher);
 router.delete('/:id', authorise('super_admin', 'admin', 'accountant'), deleteVoucher);
 

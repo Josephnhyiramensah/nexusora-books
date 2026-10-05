@@ -7,7 +7,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { FiMoreVertical, FiEye, FiPrinter, FiCheckCircle, FiCornerDownLeft, FiTrash2 } from 'react-icons/fi';
 
-export default function VoucherActionsMenu({ voucher, canReverse, onView, onPrint, onPost, onReverse, onDelete }) {
+export default function VoucherActionsMenu({ voucher, canReverse, canApprove, onView, onPrint, onPost, onApprove, onReject, onReverse, onDelete }) {
   const [open, setOpen] = useState(false);
   const [dropUp, setDropUp] = useState(false);
   const ref = useRef(null);
@@ -23,6 +23,7 @@ export default function VoucherActionsMenu({ voucher, canReverse, onView, onPrin
   const itemCount =
     2 + // View + Print always
     (voucher.status === 'draft' ? 2 : 0) + // Post + Delete
+    (voucher.status === 'awaiting_approval' && canApprove ? 2 : 0) + // Approve + Reject
     (voucher.status === 'posted' && canReverse ? 1 : 0); // Reverse
   const estMenuHeight = itemCount * 38 + 8; // ~38px per item + padding
 
@@ -67,6 +68,8 @@ export default function VoucherActionsMenu({ voucher, canReverse, onView, onPrin
           {item(<FiEye size={15} />, 'View', onView)}
           {item(<FiPrinter size={15} />, 'Print', onPrint)}
           {voucher.status === 'draft' && item(<FiCheckCircle size={15} />, 'Post', onPost, '#065F46')}
+          {voucher.status === 'awaiting_approval' && canApprove && item(<FiCheckCircle size={15} />, 'Approve', onApprove, '#065F46')}
+          {voucher.status === 'awaiting_approval' && canApprove && item(<FiTrash2 size={15} />, 'Reject', onReject, '#DC2626')}
           {voucher.status === 'posted' && canReverse && item(<FiCornerDownLeft size={15} />, 'Reverse', onReverse, '#B45309')}
           {voucher.status === 'draft' && item(<FiTrash2 size={15} />, 'Delete', onDelete, '#DC2626')}
         </div>

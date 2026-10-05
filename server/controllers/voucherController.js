@@ -381,11 +381,51 @@ const createVoucher = async (req, res) => {
   }
 };
 
+// ─── Shared: turn a ready voucher into a posted JournalEntry ─────────────────
+// Used by both the direct post (admin) and the approve step (maker-checker), so
+// the ledger work is identical either way.
+async function postVoucherToLedger(req, voucher) {
+  const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
+  const Account = getModel(req.tenantDb, 'Account');
+
+  const validation = validateDoubleEntry(voucher.lines);
+  if (!validation.valid) { const e = new Error(validation.error); e.status = 400; throw e; }
+
+  // The journal inherits the VOUCHER's branch (not the poster's), falling back
+  // to Head Office only for a legacy draft created before branches existed.
+  const branch = voucher.branch || await headOfficeId(req);
+  const entryNumber = await generateEntryNumber(JournalEntry);
+  const entry = await JournalEntry.create({
+    entryNumber,
+    date: voucher.date,
+    journalType: journalTypeForVoucher(voucher.voucherType),
+    description: voucher.narration || `${voucher.voucherType} voucher ${voucher.voucherNumber}`,
+    reference: voucher.voucherNumber,
+    lines: voucher.lines,
+    totalDebit: validation.totalDebit, totalCredit: validation.totalCredit,
+    status: 'posted', createdBy: voucher.createdBy || req.user._id,
+    branch,
+  });
+
+  // A credit note that names invoices settles them for real at POST time.
+  await moveCreditApplication(req, voucher, +1);
+
+  // Maintain account balances on post (same pattern as journal/bill/payment).
+  for (const _l of entry.lines) {
+    const _a = await Account.findById(_l.account);
+    if (_a) { _a.balance = Math.round((_a.balance + calculateBalanceChange(_a.normalBalance, _l.debit, _l.credit)) * 100) / 100; await _a.save(); }
+  }
+
+  voucher.status = 'posted';
+  voucher.journalEntry = entry._id;
+  await voucher.save();
+  return { entry, entryNumber };
+}
+
 // ─── Post (generates the JournalEntry) ───────────────────────────────────────
 const postVoucher = async (req, res) => {
   try {
     const Voucher = getModel(req.tenantDb, 'Voucher');
-    const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
 
     const voucher = await Voucher.findOne(scopedFilter(req, { _id: req.params.id }));
     if (!voucher) return res.status(404).json({ success: false, message: 'Voucher not found.' });
@@ -402,51 +442,84 @@ const postVoucher = async (req, res) => {
       return res.status(400).json({ success: false, message: validation.error });
     }
 
-    // The journal inherits the VOUCHER's branch (not the poster's), falling back
-    // to Head Office only for a legacy draft created before branches existed.
-    const branch = voucher.branch || await headOfficeId(req);
-
-    // Generate the balanced JournalEntry through the existing engine.
-    const entryNumber = await generateEntryNumber(JournalEntry);
-    const entry = await JournalEntry.create({
-      entryNumber,
-      date: voucher.date,
-      journalType: journalTypeForVoucher(voucher.voucherType),
-      description: voucher.narration || `${voucher.voucherType} voucher ${voucher.voucherNumber}`,
-      reference: voucher.voucherNumber,
-      lines: voucher.lines,
-      totalDebit: validation.totalDebit, totalCredit: validation.totalCredit,
-      status: 'posted', createdBy: req.user._id,
-      branch,
-    });
-
-    // A credit note that names invoices settles them for real at POST time —
-    // reducing each invoice's balance and the customer's outstanding, so the
-    // sub-ledger moves with the journal instead of drifting from it.
-    await moveCreditApplication(req, voucher, +1);
-
-    // Maintain account balances on post (same pattern as journal/bill/payment).
-    const Account = getModel(req.tenantDb, 'Account');
-    for (const _l of entry.lines) {
-      const _a = await Account.findById(_l.account);
-      if (_a) { _a.balance = Math.round((_a.balance + calculateBalanceChange(_a.normalBalance, _l.debit, _l.credit)) * 100) / 100; await _a.save(); }
+    // Maker-checker: an accountant's post goes to awaiting_approval when the
+    // tenant requires approval; admins post directly. (API imports have no
+    // accountant role, so they are unaffected and still post straight away.)
+    const needsApproval = req.tenant && req.tenant.settings && req.tenant.settings.requireApproval === true
+      && req.user && req.user.role === 'accountant';
+    if (needsApproval) {
+      voucher.status = 'awaiting_approval';
+      await voucher.save();
+      await logAudit(req.tenantDb, {
+        userId: req.user._id, action: 'submit_for_approval', module: 'journals',
+        entityId: voucher._id, entityType: 'Voucher',
+        description: `Submitted ${voucher.voucherType} voucher ${voucher.voucherNumber} for approval`,
+      }, req);
+      return res.json({ success: true, message: `Voucher ${voucher.voucherNumber} submitted for approval.`, data: voucher });
     }
 
-    voucher.status = 'posted';
-    voucher.journalEntry = entry._id;
-    await voucher.save();
-
+    const { entryNumber } = await postVoucherToLedger(req, voucher);
     await logAudit(req.tenantDb, {
       userId: req.user._id, action: 'post_journal', module: 'journals',
       entityId: voucher._id, entityType: 'Voucher',
       description: `Posted ${voucher.voucherType} voucher ${voucher.voucherNumber} → Journal ${entryNumber}`,
       newData: { voucherNumber: voucher.voucherNumber, entryNumber, amount: voucher.amount },
     }, req);
-
-    res.json({ success: true, message: `Voucher ${voucher.voucherNumber} posted. Journal ${entryNumber} created.`, data:voucher });
+    res.json({ success: true, message: `Voucher ${voucher.voucherNumber} posted. Journal ${entryNumber} created.`, data: voucher });
   } catch (error) {
     console.error('[Vouchers] Post error:', error.message);
-    res.status(500).json({ success: false, message: 'Failed to post voucher.' });
+    res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'Failed to post voucher.' });
+  }
+};
+
+// ─── Approve an awaiting_approval voucher: performs the ACTUAL posting ────────
+const approveVoucher = async (req, res) => {
+  try {
+    const Voucher = getModel(req.tenantDb, 'Voucher');
+    const voucher = await Voucher.findOne(scopedFilter(req, { _id: req.params.id }));
+    if (!voucher) return res.status(404).json({ success: false, message: 'Voucher not found.' });
+    if (voucher.status !== 'awaiting_approval') {
+      return res.status(400).json({ success: false, message: 'Only vouchers awaiting approval can be approved.' });
+    }
+    // Segregation of duties: the maker cannot approve their own voucher.
+    if (voucher.createdBy && String(voucher.createdBy) === String(req.user._id)) {
+      return res.status(403).json({ success: false, message: 'You cannot approve a voucher you created. A different admin must approve it.' });
+    }
+    voucher.approvedBy = req.user._id;
+    const { entryNumber } = await postVoucherToLedger(req, voucher);
+    await logAudit(req.tenantDb, {
+      userId: req.user._id, action: 'approve_journal', module: 'journals',
+      entityId: voucher._id, entityType: 'Voucher',
+      description: `Approved and posted ${voucher.voucherType} voucher ${voucher.voucherNumber} → Journal ${entryNumber}`,
+    }, req);
+    res.json({ success: true, message: `Voucher ${voucher.voucherNumber} approved and posted.`, data: voucher });
+  } catch (error) {
+    console.error('[Vouchers] Approve error:', error.message);
+    res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'Failed to approve voucher.' });
+  }
+};
+
+// ─── Reject an awaiting_approval voucher: back to draft, reason recorded ──────
+const rejectVoucher = async (req, res) => {
+  try {
+    const Voucher = getModel(req.tenantDb, 'Voucher');
+    const voucher = await Voucher.findOne(scopedFilter(req, { _id: req.params.id }));
+    if (!voucher) return res.status(404).json({ success: false, message: 'Voucher not found.' });
+    if (voucher.status !== 'awaiting_approval') {
+      return res.status(400).json({ success: false, message: 'Only vouchers awaiting approval can be rejected.' });
+    }
+    voucher.status = 'draft';
+    voucher.rejectionReason = (req.body.reason || '').trim() || 'No reason given';
+    await voucher.save();
+    await logAudit(req.tenantDb, {
+      userId: req.user._id, action: 'reject_journal', module: 'journals',
+      entityId: voucher._id, entityType: 'Voucher',
+      description: `Rejected ${voucher.voucherType} voucher ${voucher.voucherNumber}: ${voucher.rejectionReason}`,
+    }, req);
+    res.json({ success: true, message: `Voucher ${voucher.voucherNumber} rejected and returned to draft.`, data: voucher });
+  } catch (error) {
+    console.error('[Vouchers] Reject error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to reject voucher.' });
   }
 };
 
@@ -575,5 +648,5 @@ const removeAttachment = async (req, res) => {
 };
 
 module.exports = {
-  getVouchers, getVoucher, createVoucher, postVoucher, reverseVoucher, deleteVoucher,
+  getVouchers, getVoucher, createVoucher, postVoucher, approveVoucher, rejectVoucher, reverseVoucher, deleteVoucher,
   addAttachment, removeAttachment };
