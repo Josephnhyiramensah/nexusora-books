@@ -191,9 +191,6 @@ export default function PartyStatementPage() {
             </table>
           </div>
 
-          <p style={{ fontSize: 11, color: C.mute, marginTop: 10 }}>
-            Dr = the party owes us (receivable) · Cr = we owe the party (payable). Click any row to see its date, time, entry, mode and reference.
-          </p>
         </>
       )}
     </div>
