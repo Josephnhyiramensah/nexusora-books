@@ -1,0 +1,355 @@
+diff --git a/client/src/components/layout/NotificationBell.jsx b/client/src/components/layout/NotificationBell.jsx
+index f0f3777..aaa4a5d 100644
+--- a/client/src/components/layout/NotificationBell.jsx
++++ b/client/src/components/layout/NotificationBell.jsx
+@@ -87,6 +87,10 @@ export default function NotificationBell() {
+       const { data } = await api.get('/journals?status=awaiting_approval&limit=50');
+       if (data.success && data.data.length > 0) items.push({ id: 'approve-journals', type: 'warning', title: `${data.data.length} journal${data.data.length > 1 ? 's' : ''} awaiting approval`, message: 'Review and approve pending journal entries', path: '/journals', time: 'Approve' });
+     } catch {}
++    try {
++      const { data } = await api.get('/vouchers?status=awaiting_approval&limit=50');
++      if (data.success && data.data.length > 0) items.push({ id: 'approve-vouchers', type: 'warning', title: `${data.data.length} voucher${data.data.length > 1 ? 's' : ''} awaiting approval`, message: 'Review and approve pending vouchers', path: '/vouchers', time: 'Approve' });
++    } catch {}
+     try {
+       const { data } = await api.get('/invoices?status=awaiting_approval');
+       if (data.success && data.data.length > 0) items.push({ id: 'approve-invoices', type: 'warning', title: `${data.data.length} invoice${data.data.length > 1 ? 's' : ''} awaiting approval`, message: 'Review and approve pending invoices', path: '/invoicing/invoices', time: 'Approve' });
+diff --git a/client/src/modules/vouchers/VoucherActionsMenu.jsx b/client/src/modules/vouchers/VoucherActionsMenu.jsx
+index 0e7b70f..52d8eb3 100644
+--- a/client/src/modules/vouchers/VoucherActionsMenu.jsx
++++ b/client/src/modules/vouchers/VoucherActionsMenu.jsx
+@@ -7,7 +7,7 @@
+ import { useState, useRef, useEffect } from 'react';
+ import { FiMoreVertical, FiEye, FiPrinter, FiCheckCircle, FiCornerDownLeft, FiTrash2 } from 'react-icons/fi';
+ 
+-export default function VoucherActionsMenu({ voucher, canReverse, onView, onPrint, onPost, onReverse, onDelete }) {
++export default function VoucherActionsMenu({ voucher, canReverse, canApprove, onView, onPrint, onPost, onApprove, onReject, onReverse, onDelete }) {
+   const [open, setOpen] = useState(false);
+   const [dropUp, setDropUp] = useState(false);
+   const ref = useRef(null);
+@@ -23,6 +23,7 @@ export default function VoucherActionsMenu({ voucher, canReverse, onView, onPrin
+   const itemCount =
+     2 + // View + Print always
+     (voucher.status === 'draft' ? 2 : 0) + // Post + Delete
++    (voucher.status === 'awaiting_approval' && canApprove ? 2 : 0) + // Approve + Reject
+     (voucher.status === 'posted' && canReverse ? 1 : 0); // Reverse
+   const estMenuHeight = itemCount * 38 + 8; // ~38px per item + padding
+ 
+@@ -67,6 +68,8 @@ export default function VoucherActionsMenu({ voucher, canReverse, onView, onPrin
+           {item(<FiEye size={15} />, 'View', onView)}
+           {item(<FiPrinter size={15} />, 'Print', onPrint)}
+           {voucher.status === 'draft' && item(<FiCheckCircle size={15} />, 'Post', onPost, '#065F46')}
++          {voucher.status === 'awaiting_approval' && canApprove && item(<FiCheckCircle size={15} />, 'Approve', onApprove, '#065F46')}
++          {voucher.status === 'awaiting_approval' && canApprove && item(<FiTrash2 size={15} />, 'Reject', onReject, '#DC2626')}
+           {voucher.status === 'posted' && canReverse && item(<FiCornerDownLeft size={15} />, 'Reverse', onReverse, '#B45309')}
+           {voucher.status === 'draft' && item(<FiTrash2 size={15} />, 'Delete', onDelete, '#DC2626')}
+         </div>
+diff --git a/client/src/modules/vouchers/VoucherListPage.jsx b/client/src/modules/vouchers/VoucherListPage.jsx
+index 7d932fc..45f5dd9 100644
+--- a/client/src/modules/vouchers/VoucherListPage.jsx
++++ b/client/src/modules/vouchers/VoucherListPage.jsx
+@@ -44,6 +44,7 @@ export default function VoucherListPage() {
+   const { showToast, ToastComponent } = useToast();
+   const { user } = useAuth();
+   const canReverse = ['super_admin', 'admin'].includes(user?.role);
++  const canApprove = ['super_admin', 'admin'].includes(user?.role);
+ 
+     const { branches } = useBranch();
+   const multiBranch = (branches || []).filter((b) => b.isActive).length > 1;
+@@ -98,6 +99,25 @@ export default function VoucherListPage() {
+     } catch (err) { showToast(err.response?.data?.message || 'Failed to reverse', 'error'); }
+   };
+ 
++  const handleApprove = async (id) => {
++    if (!window.confirm('Approve and post this voucher? It will post to the ledger. (You cannot approve a voucher you created.)')) return;
++    try {
++      const result = await voucherService.approve(id);
++      if (result.success) { showToast(result.message); fetchVouchers(); }
++      else showToast(result.message || 'Approve failed', 'error');
++    } catch (err) { showToast(err.response?.data?.message || 'Failed to approve', 'error'); }
++  };
++
++  const handleReject = async (id) => {
++    const reason = window.prompt('Reject this voucher? It goes back to draft. Reason (optional):');
++    if (reason === null) return;
++    try {
++      const result = await voucherService.reject(id, reason);
++      if (result.success) { showToast(result.message); fetchVouchers(); }
++      else showToast(result.message || 'Reject failed', 'error');
++    } catch (err) { showToast(err.response?.data?.message || 'Failed to reject', 'error'); }
++  };
++
+   const handlePrint = (id) => navigate(`/vouchers/${id}`);
+ 
+   const handleDelete = async (id) => {
+@@ -125,6 +145,7 @@ export default function VoucherListPage() {
+             style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border, #D1D5DB)', fontSize: 13 }}>
+             <option value="">All statuses</option>
+             <option value="draft">Draft</option>
++            <option value="awaiting_approval">Awaiting Approval</option>
+             <option value="posted">Posted</option>
+             <option value="reversed">Reversed</option>
+           </select>
+@@ -164,6 +185,12 @@ export default function VoucherListPage() {
+                   {v.status === 'draft' && (
+                     <button style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #DC2626', color: '#DC2626', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }} onClick={() => handleDelete(v._id)}>Delete</button>
+                   )}
++                  {v.status === 'awaiting_approval' && canApprove && (
++                    <button style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #065F46', color: '#065F46', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }} onClick={() => handleApprove(v._id)}>Approve</button>
++                  )}
++                  {v.status === 'awaiting_approval' && canApprove && (
++                    <button style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #DC2626', color: '#DC2626', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }} onClick={() => handleReject(v._id)}>Reject</button>
++                  )}
+                   {v.status === 'posted' && canReverse && (
+                     <button style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #B45309', color: '#B45309', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }} onClick={() => handleReverse(v._id)}>Reverse</button>
+                   )}
+@@ -208,9 +235,12 @@ export default function VoucherListPage() {
+                       <VoucherActionsMenu
+                         voucher={v}
+                         canReverse={canReverse}
++                        canApprove={canApprove}
+                         onView={() => navigate(`/vouchers/${v._id}`)}
+                         onPrint={() => handlePrint(v._id)}
+                         onPost={() => handlePost(v._id)}
++                        onApprove={() => handleApprove(v._id)}
++                        onReject={() => handleReject(v._id)}
+                         onReverse={() => handleReverse(v._id)}
+                         onDelete={() => handleDelete(v._id)}
+                       />
+diff --git a/client/src/services/voucherService.js b/client/src/services/voucherService.js
+index b650351..48bd950 100644
+--- a/client/src/services/voucherService.js
++++ b/client/src/services/voucherService.js
+@@ -24,6 +24,14 @@ const voucherService = {
+     return data;
+   },
+ 
++  approve: async (id) => {
++    const { data } = await api.post(`/vouchers/${id}/approve`);
++    return data;
++  },
++  reject: async (id, reason) => {
++    const { data } = await api.post(`/vouchers/${id}/reject`, { reason });
++    return data;
++  },
+   post: async (id) => {
+     const { data } = await api.post(`/vouchers/${id}/post`);
+     return data;
+diff --git a/server/controllers/voucherController.js b/server/controllers/voucherController.js
+index 8e84e8a..7d300f9 100644
+--- a/server/controllers/voucherController.js
++++ b/server/controllers/voucherController.js
+@@ -381,11 +381,51 @@ const createVoucher = async (req, res) => {
+   }
+ };
+ 
++// ─── Shared: turn a ready voucher into a posted JournalEntry ─────────────────
++// Used by both the direct post (admin) and the approve step (maker-checker), so
++// the ledger work is identical either way.
++async function postVoucherToLedger(req, voucher) {
++  const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
++  const Account = getModel(req.tenantDb, 'Account');
++
++  const validation = validateDoubleEntry(voucher.lines);
++  if (!validation.valid) { const e = new Error(validation.error); e.status = 400; throw e; }
++
++  // The journal inherits the VOUCHER's branch (not the poster's), falling back
++  // to Head Office only for a legacy draft created before branches existed.
++  const branch = voucher.branch || await headOfficeId(req);
++  const entryNumber = await generateEntryNumber(JournalEntry);
++  const entry = await JournalEntry.create({
++    entryNumber,
++    date: voucher.date,
++    journalType: journalTypeForVoucher(voucher.voucherType),
++    description: voucher.narration || `${voucher.voucherType} voucher ${voucher.voucherNumber}`,
++    reference: voucher.voucherNumber,
++    lines: voucher.lines,
++    totalDebit: validation.totalDebit, totalCredit: validation.totalCredit,
++    status: 'posted', createdBy: voucher.createdBy || req.user._id,
++    branch,
++  });
++
++  // A credit note that names invoices settles them for real at POST time.
++  await moveCreditApplication(req, voucher, +1);
++
++  // Maintain account balances on post (same pattern as journal/bill/payment).
++  for (const _l of entry.lines) {
++    const _a = await Account.findById(_l.account);
++    if (_a) { _a.balance = Math.round((_a.balance + calculateBalanceChange(_a.normalBalance, _l.debit, _l.credit)) * 100) / 100; await _a.save(); }
++  }
++
++  voucher.status = 'posted';
++  voucher.journalEntry = entry._id;
++  await voucher.save();
++  return { entry, entryNumber };
++}
++
+ // ─── Post (generates the JournalEntry) ───────────────────────────────────────
+ const postVoucher = async (req, res) => {
+   try {
+     const Voucher = getModel(req.tenantDb, 'Voucher');
+-    const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
+ 
+     const voucher = await Voucher.findOne(scopedFilter(req, { _id: req.params.id }));
+     if (!voucher) return res.status(404).json({ success: false, message: 'Voucher not found.' });
+@@ -402,51 +442,84 @@ const postVoucher = async (req, res) => {
+       return res.status(400).json({ success: false, message: validation.error });
+     }
+ 
+-    // The journal inherits the VOUCHER's branch (not the poster's), falling back
+-    // to Head Office only for a legacy draft created before branches existed.
+-    const branch = voucher.branch || await headOfficeId(req);
+-
+-    // Generate the balanced JournalEntry through the existing engine.
+-    const entryNumber = await generateEntryNumber(JournalEntry);
+-    const entry = await JournalEntry.create({
+-      entryNumber,
+-      date: voucher.date,
+-      journalType: journalTypeForVoucher(voucher.voucherType),
+-      description: voucher.narration || `${voucher.voucherType} voucher ${voucher.voucherNumber}`,
+-      reference: voucher.voucherNumber,
+-      lines: voucher.lines,
+-      totalDebit: validation.totalDebit, totalCredit: validation.totalCredit,
+-      status: 'posted', createdBy: req.user._id,
+-      branch,
+-    });
+-
+-    // A credit note that names invoices settles them for real at POST time —
+-    // reducing each invoice's balance and the customer's outstanding, so the
+-    // sub-ledger moves with the journal instead of drifting from it.
+-    await moveCreditApplication(req, voucher, +1);
+-
+-    // Maintain account balances on post (same pattern as journal/bill/payment).
+-    const Account = getModel(req.tenantDb, 'Account');
+-    for (const _l of entry.lines) {
+-      const _a = await Account.findById(_l.account);
+-      if (_a) { _a.balance = Math.round((_a.balance + calculateBalanceChange(_a.normalBalance, _l.debit, _l.credit)) * 100) / 100; await _a.save(); }
++    // Maker-checker: an accountant's post goes to awaiting_approval when the
++    // tenant requires approval; admins post directly. (API imports have no
++    // accountant role, so they are unaffected and still post straight away.)
++    const needsApproval = req.tenant && req.tenant.settings && req.tenant.settings.requireApproval === true
++      && req.user && req.user.role === 'accountant';
++    if (needsApproval) {
++      voucher.status = 'awaiting_approval';
++      await voucher.save();
++      await logAudit(req.tenantDb, {
++        userId: req.user._id, action: 'submit_for_approval', module: 'journals',
++        entityId: voucher._id, entityType: 'Voucher',
++        description: `Submitted ${voucher.voucherType} voucher ${voucher.voucherNumber} for approval`,
++      }, req);
++      return res.json({ success: true, message: `Voucher ${voucher.voucherNumber} submitted for approval.`, data: voucher });
+     }
+ 
+-    voucher.status = 'posted';
+-    voucher.journalEntry = entry._id;
+-    await voucher.save();
+-
++    const { entryNumber } = await postVoucherToLedger(req, voucher);
+     await logAudit(req.tenantDb, {
+       userId: req.user._id, action: 'post_journal', module: 'journals',
+       entityId: voucher._id, entityType: 'Voucher',
+       description: `Posted ${voucher.voucherType} voucher ${voucher.voucherNumber} → Journal ${entryNumber}`,
+       newData: { voucherNumber: voucher.voucherNumber, entryNumber, amount: voucher.amount },
+     }, req);
+-
+-    res.json({ success: true, message: `Voucher ${voucher.voucherNumber} posted. Journal ${entryNumber} created.`, data:voucher });
++    res.json({ success: true, message: `Voucher ${voucher.voucherNumber} posted. Journal ${entryNumber} created.`, data: voucher });
+   } catch (error) {
+     console.error('[Vouchers] Post error:', error.message);
+-    res.status(500).json({ success: false, message: 'Failed to post voucher.' });
++    res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'Failed to post voucher.' });
++  }
++};
++
++// ─── Approve an awaiting_approval voucher: performs the ACTUAL posting ────────
++const approveVoucher = async (req, res) => {
++  try {
++    const Voucher = getModel(req.tenantDb, 'Voucher');
++    const voucher = await Voucher.findOne(scopedFilter(req, { _id: req.params.id }));
++    if (!voucher) return res.status(404).json({ success: false, message: 'Voucher not found.' });
++    if (voucher.status !== 'awaiting_approval') {
++      return res.status(400).json({ success: false, message: 'Only vouchers awaiting approval can be approved.' });
++    }
++    // Segregation of duties: the maker cannot approve their own voucher.
++    if (voucher.createdBy && String(voucher.createdBy) === String(req.user._id)) {
++      return res.status(403).json({ success: false, message: 'You cannot approve a voucher you created. A different admin must approve it.' });
++    }
++    voucher.approvedBy = req.user._id;
++    const { entryNumber } = await postVoucherToLedger(req, voucher);
++    await logAudit(req.tenantDb, {
++      userId: req.user._id, action: 'approve_journal', module: 'journals',
++      entityId: voucher._id, entityType: 'Voucher',
++      description: `Approved and posted ${voucher.voucherType} voucher ${voucher.voucherNumber} → Journal ${entryNumber}`,
++    }, req);
++    res.json({ success: true, message: `Voucher ${voucher.voucherNumber} approved and posted.`, data: voucher });
++  } catch (error) {
++    console.error('[Vouchers] Approve error:', error.message);
++    res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'Failed to approve voucher.' });
++  }
++};
++
++// ─── Reject an awaiting_approval voucher: back to draft, reason recorded ──────
++const rejectVoucher = async (req, res) => {
++  try {
++    const Voucher = getModel(req.tenantDb, 'Voucher');
++    const voucher = await Voucher.findOne(scopedFilter(req, { _id: req.params.id }));
++    if (!voucher) return res.status(404).json({ success: false, message: 'Voucher not found.' });
++    if (voucher.status !== 'awaiting_approval') {
++      return res.status(400).json({ success: false, message: 'Only vouchers awaiting approval can be rejected.' });
++    }
++    voucher.status = 'draft';
++    voucher.rejectionReason = (req.body.reason || '').trim() || 'No reason given';
++    await voucher.save();
++    await logAudit(req.tenantDb, {
++      userId: req.user._id, action: 'reject_journal', module: 'journals',
++      entityId: voucher._id, entityType: 'Voucher',
++      description: `Rejected ${voucher.voucherType} voucher ${voucher.voucherNumber}: ${voucher.rejectionReason}`,
++    }, req);
++    res.json({ success: true, message: `Voucher ${voucher.voucherNumber} rejected and returned to draft.`, data: voucher });
++  } catch (error) {
++    console.error('[Vouchers] Reject error:', error.message);
++    res.status(500).json({ success: false, message: 'Failed to reject voucher.' });
+   }
+ };
+ 
+@@ -575,5 +648,5 @@ const removeAttachment = async (req, res) => {
+ };
+ 
+ module.exports = {
+-  getVouchers, getVoucher, createVoucher, postVoucher, reverseVoucher, deleteVoucher,
++  getVouchers, getVoucher, createVoucher, postVoucher, approveVoucher, rejectVoucher, reverseVoucher, deleteVoucher,
+   addAttachment, removeAttachment };
+\ No newline at end of file
+diff --git a/server/models/Voucher.js b/server/models/Voucher.js
+index 5ad7c86..bd2c91e 100644
+--- a/server/models/Voucher.js
++++ b/server/models/Voucher.js
+@@ -147,6 +147,7 @@ const voucherSchema = new mongoose.Schema(
+ 
+     createdBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+     approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
++    rejectionReason: { type: String, default: '' },
+   },
+   { timestamps: true }
+ );
+diff --git a/server/routes/voucherRoutes.js b/server/routes/voucherRoutes.js
+index 7cbd7f0..b3a11fe 100644
+--- a/server/routes/voucherRoutes.js
++++ b/server/routes/voucherRoutes.js
+@@ -3,7 +3,7 @@ const express = require('express');
+ const router = express.Router();
+ const { protect, authorise } = require('../middleware/authMiddleware');
+ const {
+-  getVouchers, getVoucher, createVoucher, postVoucher, reverseVoucher, deleteVoucher, addAttachment, removeAttachment } = require('../controllers/voucherController');
++  getVouchers, getVoucher, createVoucher, postVoucher, approveVoucher, rejectVoucher, reverseVoucher, deleteVoucher, addAttachment, removeAttachment } = require('../controllers/voucherController');
+ 
+ router.use(protect);
+ 
+@@ -13,6 +13,8 @@ router.get('/', getVouchers);
+ router.get('/:id', getVoucher);
+ router.post('/', authorise('super_admin', 'admin', 'accountant'), createVoucher);
+ router.post('/:id/post', authorise('super_admin', 'admin', 'accountant'), postVoucher);
++router.post('/:id/approve', authorise('super_admin', 'admin'), approveVoucher);
++router.post('/:id/reject', authorise('super_admin', 'admin'), rejectVoucher);
+ router.post('/:id/reverse', authorise('super_admin', 'admin'), reverseVoucher);
+ router.delete('/:id', authorise('super_admin', 'admin', 'accountant'), deleteVoucher);
+ 

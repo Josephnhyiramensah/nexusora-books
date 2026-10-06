@@ -174,6 +174,12 @@ const receivePayment = async (req, res) => {
     const Account = getModel(req.tenantDb, 'Account');
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
 
+    // Maker-checker: cash movements are posted by an admin when approval is on.
+    // An accountant records it as a voucher (which goes through approval) instead.
+    if (req.tenant?.settings?.requireApproval === true && req.user?.role === 'accountant') {
+      return res.status(403).json({ success: false, message: 'Approval is enabled, so receipts/payments must be posted by an admin. Record it as a voucher (which goes through approval), or ask an admin to post this receipt.' });
+    }
+
     const { amount, date, method, reference, notes } = req.body;
     if (!date) return res.status(400).json({ success: false, message: 'Required: date.' });
 
@@ -323,6 +329,11 @@ const makePayment = async (req, res) => {
     const Vendor = getModel(req.tenantDb, 'Vendor');
     const Account = getModel(req.tenantDb, 'Account');
     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
+
+    // Maker-checker: cash movements are posted by an admin when approval is on.
+    if (req.tenant?.settings?.requireApproval === true && req.user?.role === 'accountant') {
+      return res.status(403).json({ success: false, message: 'Approval is enabled, so payments must be posted by an admin. Record it as a voucher (which goes through approval), or ask an admin to post this payment.' });
+    }
 
     const { amount, date, method, reference, notes } = req.body;
     if (!date) return res.status(400).json({ success: false, message: 'Required: date.' });

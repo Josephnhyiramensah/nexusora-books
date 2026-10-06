@@ -1,0 +1,287 @@
+diff --git a/client/src/modules/integrations/ExternalMappingPage.jsx b/client/src/modules/integrations/ExternalMappingPage.jsx
+index e7ee07e..fb7c0e0 100644
+--- a/client/src/modules/integrations/ExternalMappingPage.jsx
++++ b/client/src/modules/integrations/ExternalMappingPage.jsx
+@@ -21,14 +21,20 @@ const FIELDS = [
+   ['partyName', 'Party name', false],
+   ['partyId', 'Person ID (ledger key)', false],
+   ['mode', 'Payment mode', false],
+-  ['debitAccount', 'Debit account', true],
+-  ['creditAccount', 'Credit account', true],
++  ['debitAccount', 'Debit account / ledger', true],
++  ['creditAccount', 'Credit account / ledger', true],
++  ['debitGroup', 'Debit ledger group', false],
++  ['creditGroup', 'Credit ledger group', false],
++  ['debitName', 'Debit ledger name', false],
++  ['creditName', 'Credit ledger name', false],
++  ['companyId', 'Company id', false],
+   ['branch', 'Branch', false],
+ ];
+ 
+ const blank = () => ({
+   source: '', label: '', fixedVoucherType: '', fixedBranch: '', autopost: true, active: true,
+   partyControlCode: '1100', partyCodePrefix: 'SL-',
++  partyGroups: '4,7', partyPayableGroups: '7', partyPayableControlCode: '2000', sourceCompanyId: '',
+   fieldMap: {}, accountMap: [], typeMap: [], branchMap: [],
+ });
+ 
+@@ -254,6 +260,25 @@ export default function ExternalMappingPage() {
+           <span style={{ fontSize: 11, color: '#9CA3AF', flex: 1, minWidth: 180 }}>Person ledgers are created as <code>{(m.partyCodePrefix || 'SL-')}&lt;id&gt;</code> under control {m.partyControlCode || '1100'}.</span>
+         </div>
+ 
++        {/* Group-driven classification (preferred). When the Debit/Credit ledger
++            group fields are mapped above, any leg whose group is in "Party groups"
++            becomes that person's ledger automatically — no Party side needed. */}
++        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', margin: '0 0 14px', paddingBottom: 12, borderBottom: '1px solid #EEF2F6' }}>
++          <label style={{ fontSize: 12, color: '#6B7280' }}>Party groups
++            <input style={{ ...input, width: 110, display: 'block', marginTop: 4 }} value={m.partyGroups || ''} onChange={(e) => setM({ partyGroups: e.target.value })} placeholder="4,7" />
++          </label>
++          <label style={{ fontSize: 12, color: '#6B7280' }}>Payable groups
++            <input style={{ ...input, width: 100, display: 'block', marginTop: 4 }} value={m.partyPayableGroups || ''} onChange={(e) => setM({ partyPayableGroups: e.target.value })} placeholder="7" />
++          </label>
++          <label style={{ fontSize: 12, color: '#6B7280' }}>Payable control a/c
++            <input style={{ ...input, width: 130, display: 'block', marginTop: 4 }} value={m.partyPayableControlCode || ''} onChange={(e) => setM({ partyPayableControlCode: e.target.value })} placeholder="2000" />
++          </label>
++          <label style={{ fontSize: 12, color: '#6B7280' }}>Only accept company id
++            <input style={{ ...input, width: 130, display: 'block', marginTop: 4 }} value={m.sourceCompanyId || ''} onChange={(e) => setM({ sourceCompanyId: e.target.value })} placeholder="e.g. 328 (blank = any)" />
++          </label>
++          <span style={{ fontSize: 11, color: '#9CA3AF', flex: 1, minWidth: 180 }}>Receivable groups → control {m.partyControlCode || '1100'}; payable groups → {m.partyPayableControlCode || '2000'}. Records from other companies are rejected when a company id is set.</span>
++        </div>
++
+         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 36px', gap: 10, marginBottom: 6 }}>
+           <span style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 600 }}>External type</span>
+           <span style={{ fontSize: 11, color: '#9CA3AF', fontWeight: 600 }}>Books voucher type</span>
+diff --git a/server/controllers/externalMappingController.js b/server/controllers/externalMappingController.js
+index 854c1e0..f0344a8 100644
+--- a/server/controllers/externalMappingController.js
++++ b/server/controllers/externalMappingController.js
+@@ -27,7 +27,7 @@ const getMapping = async (req, res) => {
+ const saveMapping = async (req, res) => {
+   try {
+     const ExternalMapping = getModel(req.tenantDb, 'ExternalMapping');
+-    const { _id, source, label, fieldMap, accountMap, typeMap, branchMap, fixedVoucherType, fixedBranch, autopost, active, partyControlCode, partyCodePrefix } = req.body;
++    const { _id, source, label, fieldMap, accountMap, typeMap, branchMap, fixedVoucherType, fixedBranch, autopost, active, partyControlCode, partyCodePrefix, partyGroups, partyPayableGroups, partyPayableControlCode, sourceCompanyId } = req.body;
+     if (!source) return res.status(400).json({ success: false, message: 'source is required.' });
+ 
+     let mapping;
+@@ -53,6 +53,10 @@ const saveMapping = async (req, res) => {
+     if (active !== undefined) mapping.active = active;
+     if (partyControlCode !== undefined) mapping.partyControlCode = partyControlCode || '1100';
+     if (partyCodePrefix !== undefined) mapping.partyCodePrefix = partyCodePrefix || 'SL-';
++    if (partyGroups !== undefined) mapping.partyGroups = partyGroups || '4,7';
++    if (partyPayableGroups !== undefined) mapping.partyPayableGroups = partyPayableGroups || '7';
++    if (partyPayableControlCode !== undefined) mapping.partyPayableControlCode = partyPayableControlCode || '2000';
++    if (sourceCompanyId !== undefined) mapping.sourceCompanyId = sourceCompanyId || null;
+     await mapping.save();
+ 
+     await logAudit(req.tenantDb, {
+diff --git a/server/models/ExternalMapping.js b/server/models/ExternalMapping.js
+index b72d3c7..e109db5 100644
+--- a/server/models/ExternalMapping.js
++++ b/server/models/ExternalMapping.js
+@@ -30,9 +30,18 @@ const FieldMapSchema = new Schema(
+     partyName:    { type: String, default: null },
+     partyId:      { type: String, default: null }, // external PERSON/ledger id (sub-ledger key, distinct from the row's externalId)
+     mode:         { type: String, default: null },
+-    debitAccount: { type: String, default: null }, // external field holding their debit account id
+-    creditAccount:{ type: String, default: null }, // external field holding their credit account id
++    debitAccount: { type: String, default: null }, // external field holding their debit account/ledger id
++    creditAccount:{ type: String, default: null }, // external field holding their credit account/ledger id
+     branch:       { type: String, default: null }, // external field holding their branch id (optional)
++    // Group-driven classification (preferred): the external field holding each
++    // leg's ledger GROUP id, and the ledger description used to name a party.
++    // When a leg's group is one of partyGroups, that leg becomes the person's
++    // sub-ledger automatically; any other group is looked up in accountMap.
++    debitGroup:   { type: String, default: null },
++    creditGroup:  { type: String, default: null },
++    debitName:    { type: String, default: null }, // ledger_desc of the debit leg
++    creditName:   { type: String, default: null }, // ledger_desc of the credit leg
++    companyId:    { type: String, default: null }, // external field holding the company id (for the guard)
+   },
+   { _id: false }
+ );
+@@ -96,8 +105,19 @@ const ExternalMappingSchema = new Schema(
+     // partySide, the party's ledger is auto-provisioned under this control
+     // account with this code prefix (e.g. control 1100, prefix 'SL-' →
+     // account 'SL-<partyId>'). Defaults suit a single AR/AP control.
+-    partyControlCode: { type: String, default: '1100' },
++    partyControlCode: { type: String, default: '1100' },        // receivable-side control (groups in partyGroups but not payable)
+     partyCodePrefix:  { type: String, default: 'SL-' },
++    // Group-driven classification. partyGroups = the ledger-group ids that mean
++    // "a person/party ledger" (default 4 = Account Receivables, 7 = Account
++    // Payables). payableGroups = the subset of those that roll up under the
++    // payable control. Comma-separated ids.
++    partyGroups:             { type: String, default: '4,7' },
++    partyPayableGroups:      { type: String, default: '7' },
++    partyPayableControlCode: { type: String, default: '2000' }, // control for payable-group party ledgers
++    // Company guard: when set, an inbound record whose company field does not
++    // equal this value is rejected (keeps another company's data out of this
++    // tenant). Leave null to accept any company.
++    sourceCompanyId:         { type: String, default: null },
+ 
+     // Post vouchers immediately on import (vs. leaving as draft for review).
+     autopost: { type: Boolean, default: true },
+diff --git a/server/routes/externalApiRoutes.js b/server/routes/externalApiRoutes.js
+index c26e01e..6cfa089 100644
+--- a/server/routes/externalApiRoutes.js
++++ b/server/routes/externalApiRoutes.js
+@@ -237,8 +237,8 @@ async function createVoucherFromBooksPayload(req, payload) {
+   const {
+     voucherType, date, amount, narration, reference, externalId,
+     partyName, mode, paymentDetails,
+-    branchCode,
+-    partyId, partySide, partyControlCode, partyCodePrefix,
++    branchCode, legs,
++    partyId, partySide, partyControlCode, partyPayableControlCode, partyCodePrefix,
+     autopost = true,
+   } = payload;
+   let { debitAccountCode, creditAccountCode } = payload;
+@@ -247,13 +247,35 @@ async function createVoucherFromBooksPayload(req, payload) {
+   if (!voucherType || !VALID_TYPES.includes(voucherType)) return { status: 400, body: { success:false, message:'Valid voucherType is required.' } };
+   if (!date || !amount || Number(amount) <= 0) return { status: 400, body: { success:false, message:'date and a positive amount are required.' } };
+ 
+-  // Per-person sub-ledger: when the transaction type carries a partySide, the
+-  // party's own ledger (auto-provisioned, keyed by external id) becomes that
+-  // leg; the other leg stays the mapped contra account (Cash, Inventory, …).
+-  let partyLedger = null;
+-  if ((partySide === 'debit' || partySide === 'credit') && partyId != null && String(partyId).trim() !== '') {
+-    const { getOrCreatePartyLedger } = require('../utils/subLedger');
+-    partyLedger = await getOrCreatePartyLedger(Account, {
++  const { getOrCreatePartyLedger } = require('../utils/subLedger');
++
++  if (legs && legs.debit && legs.credit) {
++    // Group-driven path: each leg is already classified. A party leg (its ledger
++    // group is a party group) becomes the person's auto-provisioned sub-ledger —
++    // under the payable control when its group is a payable group, else the
++    // receivable control; a GL leg uses its mapped Books code. The person's
++    // side follows whichever leg they sit on, so no partySide is needed.
++    const resolveLeg = async (leg, label) => {
++      if (leg.isParty) {
++        const control = leg.isPayable ? (partyPayableControlCode || '2000') : (partyControlCode || '1100');
++        const acct = await getOrCreatePartyLedger(Account, {
++          partyId: leg.externalLedger, partyName: leg.name || partyName, controlCode: control, prefix: partyCodePrefix,
++        });
++        if (!acct) return { error: `Could not provision the ${label} party ledger.` };
++        return { code: acct.code };
++      }
++      return { code: leg.booksCode };
++    };
++    const d = await resolveLeg(legs.debit, 'debit');
++    if (d.error) return { status: 400, body: { success:false, message: d.error } };
++    const c = await resolveLeg(legs.credit, 'credit');
++    if (c.error) return { status: 400, body: { success:false, message: c.error } };
++    debitAccountCode = d.code;
++    creditAccountCode = c.code;
++  } else if ((partySide === 'debit' || partySide === 'credit') && partyId != null && String(partyId).trim() !== '') {
++    // Legacy path: a single party flagged by partyId + partySide overrides that
++    // leg; the other leg stays the mapped contra account (Cash, Inventory, …).
++    const partyLedger = await getOrCreatePartyLedger(Account, {
+       partyId, partyName, controlCode: partyControlCode, prefix: partyCodePrefix,
+     });
+     if (!partyLedger) return { status: 400, body: { success:false, message:'Could not provision the party ledger (missing partyId).' } };
+diff --git a/server/utils/externalMappingHelper.js b/server/utils/externalMappingHelper.js
+index ed9e42a..e33517f 100644
+--- a/server/utils/externalMappingHelper.js
++++ b/server/utils/externalMappingHelper.js
+@@ -37,6 +37,16 @@ function applyMapping(mapping, raw) {
+     ? typeHit.partySide
+     : null;
+ 
++  // 2c. Company guard. When the source is restricted to one company, reject any
++  //     record that belongs to a different one (keeps another company's data out
++  //     of this tenant's books).
++  const companyId = val('companyId');
++  const allowedCompany = mapping.sourceCompanyId != null && String(mapping.sourceCompanyId).trim() !== ''
++    ? String(mapping.sourceCompanyId).trim() : null;
++  if (allowedCompany && String(companyId == null ? '' : companyId) !== allowedCompany) {
++    return { ok: false, error: `Record company "${companyId}" is not the allowed company "${allowedCompany}" for this source.` };
++  }
++
+   // 3. Translate external account ids -> Books account codes via accountMap.
+   const mapAccount = (extVal) => {
+     if (extVal == null || extVal === '') return null;
+@@ -45,11 +55,56 @@ function applyMapping(mapping, raw) {
+   };
+   const extDebit = val('debitAccount');
+   const extCredit = val('creditAccount');
+-  const debitAccountCode = mapAccount(extDebit);
+-  const creditAccountCode = mapAccount(extCredit);
+ 
+-  if (debitAccountCode == null) return { ok: false, error: `No account mapping for external debit account "${extDebit}".` };
+-  if (creditAccountCode == null) return { ok: false, error: `No account mapping for external credit account "${extCredit}".` };
++  // 3a. Group-driven classification (preferred). When the leg's GROUP fields are
++  //     mapped, each leg is classified by its ledger group: a group in
++  //     partyGroups is a person ledger (auto-created downstream), everything else
++  //     is a GL account looked up in accountMap. The person's side (receivable vs
++  //     payable) simply follows whichever leg they sit on.
++  const groupDriven = !!(fm.debitGroup || fm.creditGroup);
++  const toSet = (s, dflt) => new Set(String(s == null || s === '' ? dflt : s).split(',').map((x) => x.trim()).filter(Boolean));
++  const partyGroupSet = toSet(mapping.partyGroups, '4,7');
++  const payableGroupSet = toSet(mapping.partyPayableGroups, '7');
++
++  let legs = null;
++  let debitAccountCode = null;
++  let creditAccountCode = null;
++
++  if (groupDriven) {
++    const buildLeg = (side) => {
++      const extLedger = side === 'debit' ? extDebit : extCredit;
++      const grpRaw = side === 'debit' ? val('debitGroup') : val('creditGroup');
++      const nm = side === 'debit' ? val('debitName') : val('creditName');
++      const group = grpRaw == null || grpRaw === '' ? null : String(grpRaw);
++      const isParty = group != null && partyGroupSet.has(group);
++      const isPayable = isParty && payableGroupSet.has(group);
++      let booksCode = null;
++      if (!isParty) booksCode = mapAccount(extLedger);
++      return {
++        externalLedger: extLedger == null ? null : String(extLedger),
++        group, isParty, isPayable,
++        name: (nm == null ? '' : String(nm)) || (val('partyName') || ''),
++        booksCode,
++      };
++    };
++    const debit = buildLeg('debit');
++    const credit = buildLeg('credit');
++    for (const [side, leg] of [['debit', debit], ['credit', credit]]) {
++      if (leg.isParty) {
++        if (!leg.externalLedger) return { ok: false, error: `Missing ${side} ledger id for a party (group ${leg.group}) leg.` };
++      } else if (leg.booksCode == null) {
++        return { ok: false, error: `No account mapping for external ${side} ledger "${leg.externalLedger}" (group ${leg.group == null ? 'n/a' : leg.group}). Map it, or mark its group as a party group.` };
++      }
++    }
++    legs = { debit, credit };
++  } else {
++    // Legacy path: both legs come straight from accountMap; a party (if any) is
++    // flagged by partyId + typeMap.partySide and overridden downstream.
++    debitAccountCode = mapAccount(extDebit);
++    creditAccountCode = mapAccount(extCredit);
++    if (debitAccountCode == null) return { ok: false, error: `No account mapping for external debit account "${extDebit}".` };
++    if (creditAccountCode == null) return { ok: false, error: `No account mapping for external credit account "${extCredit}".` };
++  }
+ 
+   // 3b. Translate external branch -> Books branch code via branchMap.
+   //     If the record carries a branch value, it MUST map (an unmapped branch is
+@@ -82,15 +137,19 @@ function applyMapping(mapping, raw) {
+     externalId: String(externalId),
+     partyName: val('partyName') || '',
+     mode: val('mode') || 'other',
+-    debitAccountCode: String(debitAccountCode),
+-    creditAccountCode: String(creditAccountCode),
++    // Legacy path provides the two codes directly; group-driven path provides
++    // `legs` and the caller resolves each (provisioning party ledgers).
++    debitAccountCode: debitAccountCode == null ? null : String(debitAccountCode),
++    creditAccountCode: creditAccountCode == null ? null : String(creditAccountCode),
++    legs,
++    companyId: companyId == null ? null : String(companyId),
+     branchCode: branchCode == null ? null : String(branchCode),
+     autopost: mapping.autopost !== false,
+-    // Per-person sub-ledger: the party id + which side its ledger takes. The
+-    // caller auto-provisions the ledger and overrides that leg's account.
++    // Per-person sub-ledger config (used by both paths).
+     partyId: (() => { const v = val('partyId'); return v == null || v === '' ? null : String(v); })(),
+     partySide,
+     partyControlCode: mapping.partyControlCode || '1100',
++    partyPayableControlCode: mapping.partyPayableControlCode || '2000',
+     partyCodePrefix: mapping.partyCodePrefix || 'SL-',
+   };
+   return { ok: true, voucher };

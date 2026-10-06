@@ -8,9 +8,11 @@
 // journals — they are never edited here.
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FiSearch, FiChevronRight, FiPlus, FiEdit2, FiSlash, FiCheckCircle, FiX } from 'react-icons/fi';
+import { FiSearch, FiChevronRight, FiPlus, FiEdit2, FiSlash, FiCheckCircle, FiX, FiDownload } from 'react-icons/fi';
 import api from '../../services/api';
 import { formatCurrency } from '../../utils/formatters';
+import { useTenant } from '../../context/TenantContext';
+import { exportToExcelStyled } from '../reports/ReportShared';
 
 const C = {
   navy: '#1A3560', gold: '#C9A227', teal: '#0D9488', red: '#DC2626',
@@ -91,6 +93,7 @@ const ghostBtn = { background: '#fff', color: C.grey, border: '1px solid #D1D5DB
 
 export default function PartyLedgerListPage() {
   const navigate = useNavigate();
+  const { companyName } = useTenant();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -127,6 +130,34 @@ export default function PartyLedgerListPage() {
 
   const open = (id) => navigate(`/ledgers/parties/${id}`);
   const s = data?.summary || {};
+
+  // Export every party ledger (all balances) to a styled .xlsx, grouped by side.
+  const exportAll = async () => {
+    const parties = data?.parties || [];
+    if (!parties.length) return;
+    const n = (x) => Math.round((Number(x) || 0) * 100) / 100;
+    const columns = [
+      { header: 'ID', key: 'id', width: 18 },
+      { header: 'Name', key: 'name', width: 34 },
+      { header: 'Balance', key: 'balance', width: 18, money: true, align: 'right' },
+    ];
+    const toRows = (list) => list.map((p) => ({ id: p.externalPartyId || p.code, name: p.name, balance: n(Math.abs(p.balance)) }));
+    const sections = [];
+    const rec = parties.filter((p) => p.balance > 0).sort((a, b) => b.balance - a.balance);
+    const pay = parties.filter((p) => p.balance < 0).sort((a, b) => a.balance - b.balance);
+    const set = parties.filter((p) => p.balance === 0);
+    if (rec.length) sections.push({ label: 'Receivables — they owe us', rows: toRows(rec), totalLabel: 'Total Receivable', totalLabelKey: 'name', totalValues: { balance: n(s.receivableTotal) } });
+    if (pay.length) sections.push({ label: 'Payables — we owe them', rows: toRows(pay), totalLabel: 'Total Payable', totalLabelKey: 'name', totalValues: { balance: n(s.payableTotal) } });
+    if (set.length) sections.push({ label: 'Settled — zero balance', rows: toRows(set) });
+    await exportToExcelStyled({
+      filename: 'party_ledgers',
+      companyName,
+      title: 'Party Ledgers',
+      subtitle: `${s.count ?? parties.length} ledgers · net ${formatCurrency(Math.abs(s.net || 0), 'GHS')} ${((s.net || 0) >= 0 ? 'receivable' : 'payable')}`,
+      columns,
+      sections,
+    });
+  };
 
   const submitCreate = async () => {
     setFormErr('');
@@ -166,9 +197,15 @@ export default function PartyLedgerListPage() {
             Statement of account for each person. A ledger moves between receivable and payable as its balance changes.
           </p>
         </div>
-        <button style={goldBtn} onClick={() => { setFormErr(''); setCreate({ name: '', partyId: '' }); }}>
-          <FiPlus size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> New Party Ledger
-        </button>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button onClick={exportAll} disabled={!(data?.parties || []).length} title="Export all ledgers"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 9, border: '1px solid #C9A227', color: '#B8860B', background: '#fff', fontSize: 14, fontWeight: 600, cursor: (data?.parties || []).length ? 'pointer' : 'not-allowed', opacity: (data?.parties || []).length ? 1 : 0.5 }}>
+            <FiDownload size={14} /> Export all
+          </button>
+          <button style={goldBtn} onClick={() => { setFormErr(''); setCreate({ name: '', partyId: '' }); }}>
+            <FiPlus size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> New Party Ledger
+          </button>
+        </div>
       </div>
 
       {error && <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#B91C1C', borderRadius: 10, padding: '12px 16px', fontSize: 14, marginBottom: 16 }}>{error}</div>}

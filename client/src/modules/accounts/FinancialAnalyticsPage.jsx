@@ -4,10 +4,12 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   PieChart, Pie, Cell, LineChart, Line, AreaChart, Area, Sector,
 } from 'recharts';
-import { FiTrendingUp, FiTrendingDown, FiDollarSign, FiAlertCircle, FiCheckCircle, FiInfo } from 'react-icons/fi';
+import { FiTrendingUp, FiTrendingDown, FiDollarSign, FiAlertCircle, FiCheckCircle, FiInfo, FiDownload } from 'react-icons/fi';
 import { useBreakpoint } from '../../hooks/useBreakpoint';
 import { formatCurrency } from '../../utils/formatters';
 import api from '../../services/api';
+import { useTenant } from '../../context/TenantContext';
+import { exportToExcelStyled } from '../reports/ReportShared';
 import FinancialDashboardPage from '../dashboard/FinancialDashboardPage';
 
 // ─── Color Palette ────────────────────────────────────────────────────────────
@@ -162,6 +164,48 @@ function AnalysisTab() {
   const [data, setData] = useState(null);
   const [activePieIndex, setActivePieIndex] = useState(0);
   const { isMobile } = useBreakpoint();
+  const { companyName } = useTenant();
+
+  // Export the analysis figures to a styled .xlsx (same look as the reports).
+  const exportExcel = async () => {
+    if (!data) return;
+    const columns = [
+      { header: 'Item', key: 'item', width: 40 },
+      { header: 'Value', key: 'value', width: 22, money: true, align: 'right' },
+    ];
+    const sections = [
+      { label: 'Profit & Loss', rows: [
+        { item: 'Total Revenue', value: data.totalRevenue },
+        { item: 'Total Expenses (incl. COGS)', value: data.totalExpenses },
+        { item: 'Net Income', value: data.netIncome },
+        { item: 'Profit Margin', value: `${data.profitMargin}%` },
+      ] },
+      { label: 'Balance Sheet', rows: [
+        { item: 'Total Assets', value: data.totalAssets },
+        { item: 'Total Liabilities', value: data.totalLiability },
+        { item: 'Total Equity', value: data.totalEquity },
+        { item: 'Debt-to-Asset Ratio', value: `${data.debtRatio}%` },
+      ] },
+      { label: 'Position', rows: [
+        { item: 'Cash Balance', value: data.cashBalance },
+        { item: 'Accounts Receivable', value: data.arBalance },
+        { item: 'Accounts Payable', value: data.apBalance },
+      ] },
+    ];
+    if ((data.cashFlowData || []).length)
+      sections.push({ label: 'Cash Flow (last 6 months)', rows: data.cashFlowData.map((m) => ({ item: m.name, value: m.net })) });
+    if ((data.topAccounts || []).length)
+      sections.push({ label: 'Top Accounts by Balance', rows: data.topAccounts.map((a) => ({ item: a.name, value: a.balance })) });
+
+    await exportToExcelStyled({
+      filename: 'financial_analysis',
+      companyName,
+      title: 'Financial Analysis',
+      subtitle: `${data.accountCount} accounts · ${data.transactionCount} posted transactions`,
+      columns,
+      sections,
+    });
+  };
 
   useEffect(() => { fetchData(); }, []);
 
@@ -366,13 +410,20 @@ function AnalysisTab() {
   return (
     <div>
       {/* Header */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 28 }}>
-        <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: isMobile ? 20 : 24, fontWeight: 700, color: '#1A3560', marginBottom: 4 }}>
-          Financial Analysis
-        </h1>
-        <p style={{ fontSize: 13, color: '#9CA3AF' }}>
-          {data.accountCount} accounts · {data.transactionCount} posted transactions · Live data
-        </p>
+      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+        style={{ marginBottom: 28, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: isMobile ? 20 : 24, fontWeight: 700, color: '#1A3560', marginBottom: 4 }}>
+            Financial Analysis
+          </h1>
+          <p style={{ fontSize: 13, color: '#9CA3AF' }}>
+            {data.accountCount} accounts · {data.transactionCount} posted transactions · Live data
+          </p>
+        </div>
+        <button onClick={exportExcel} title="Export to Excel"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, border: '1px solid #C9A227', color: '#B8860B', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          <FiDownload size={14} /> Export Excel
+        </button>
       </motion.div>
 
       {/* KPI Cards */}

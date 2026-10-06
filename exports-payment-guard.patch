@@ -1,0 +1,203 @@
+diff --git a/client/src/modules/accounts/FinancialAnalyticsPage.jsx b/client/src/modules/accounts/FinancialAnalyticsPage.jsx
+index f6bc3ac..8da484f 100644
+--- a/client/src/modules/accounts/FinancialAnalyticsPage.jsx
++++ b/client/src/modules/accounts/FinancialAnalyticsPage.jsx
+@@ -4,10 +4,12 @@ import {
+   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+   PieChart, Pie, Cell, LineChart, Line, AreaChart, Area, Sector,
+ } from 'recharts';
+-import { FiTrendingUp, FiTrendingDown, FiDollarSign, FiAlertCircle, FiCheckCircle, FiInfo } from 'react-icons/fi';
++import { FiTrendingUp, FiTrendingDown, FiDollarSign, FiAlertCircle, FiCheckCircle, FiInfo, FiDownload } from 'react-icons/fi';
+ import { useBreakpoint } from '../../hooks/useBreakpoint';
+ import { formatCurrency } from '../../utils/formatters';
+ import api from '../../services/api';
++import { useTenant } from '../../context/TenantContext';
++import { exportToExcelStyled } from '../reports/ReportShared';
+ import FinancialDashboardPage from '../dashboard/FinancialDashboardPage';
+ 
+ // ─── Color Palette ────────────────────────────────────────────────────────────
+@@ -162,6 +164,48 @@ function AnalysisTab() {
+   const [data, setData] = useState(null);
+   const [activePieIndex, setActivePieIndex] = useState(0);
+   const { isMobile } = useBreakpoint();
++  const { companyName } = useTenant();
++
++  // Export the analysis figures to a styled .xlsx (same look as the reports).
++  const exportExcel = async () => {
++    if (!data) return;
++    const columns = [
++      { header: 'Item', key: 'item', width: 40 },
++      { header: 'Value', key: 'value', width: 22, money: true, align: 'right' },
++    ];
++    const sections = [
++      { label: 'Profit & Loss', rows: [
++        { item: 'Total Revenue', value: data.totalRevenue },
++        { item: 'Total Expenses (incl. COGS)', value: data.totalExpenses },
++        { item: 'Net Income', value: data.netIncome },
++        { item: 'Profit Margin', value: `${data.profitMargin}%` },
++      ] },
++      { label: 'Balance Sheet', rows: [
++        { item: 'Total Assets', value: data.totalAssets },
++        { item: 'Total Liabilities', value: data.totalLiability },
++        { item: 'Total Equity', value: data.totalEquity },
++        { item: 'Debt-to-Asset Ratio', value: `${data.debtRatio}%` },
++      ] },
++      { label: 'Position', rows: [
++        { item: 'Cash Balance', value: data.cashBalance },
++        { item: 'Accounts Receivable', value: data.arBalance },
++        { item: 'Accounts Payable', value: data.apBalance },
++      ] },
++    ];
++    if ((data.cashFlowData || []).length)
++      sections.push({ label: 'Cash Flow (last 6 months)', rows: data.cashFlowData.map((m) => ({ item: m.name, value: m.net })) });
++    if ((data.topAccounts || []).length)
++      sections.push({ label: 'Top Accounts by Balance', rows: data.topAccounts.map((a) => ({ item: a.name, value: a.balance })) });
++
++    await exportToExcelStyled({
++      filename: 'financial_analysis',
++      companyName,
++      title: 'Financial Analysis',
++      subtitle: `${data.accountCount} accounts · ${data.transactionCount} posted transactions`,
++      columns,
++      sections,
++    });
++  };
+ 
+   useEffect(() => { fetchData(); }, []);
+ 
+@@ -366,13 +410,20 @@ function AnalysisTab() {
+   return (
+     <div>
+       {/* Header */}
+-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 28 }}>
+-        <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: isMobile ? 20 : 24, fontWeight: 700, color: '#1A3560', marginBottom: 4 }}>
+-          Financial Analysis
+-        </h1>
+-        <p style={{ fontSize: 13, color: '#9CA3AF' }}>
+-          {data.accountCount} accounts · {data.transactionCount} posted transactions · Live data
+-        </p>
++      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
++        style={{ marginBottom: 28, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
++        <div>
++          <h1 style={{ fontFamily: 'var(--font-heading)', fontSize: isMobile ? 20 : 24, fontWeight: 700, color: '#1A3560', marginBottom: 4 }}>
++            Financial Analysis
++          </h1>
++          <p style={{ fontSize: 13, color: '#9CA3AF' }}>
++            {data.accountCount} accounts · {data.transactionCount} posted transactions · Live data
++          </p>
++        </div>
++        <button onClick={exportExcel} title="Export to Excel"
++          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '9px 16px', borderRadius: 9, border: '1px solid #C9A227', color: '#B8860B', background: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
++          <FiDownload size={14} /> Export Excel
++        </button>
+       </motion.div>
+ 
+       {/* KPI Cards */}
+diff --git a/client/src/modules/ledgers/PartyLedgerListPage.jsx b/client/src/modules/ledgers/PartyLedgerListPage.jsx
+index 40285b5..46df1cb 100644
+--- a/client/src/modules/ledgers/PartyLedgerListPage.jsx
++++ b/client/src/modules/ledgers/PartyLedgerListPage.jsx
+@@ -8,9 +8,11 @@
+ // journals — they are never edited here.
+ import { useState, useEffect, useMemo, useCallback } from 'react';
+ import { useNavigate } from 'react-router-dom';
+-import { FiSearch, FiChevronRight, FiPlus, FiEdit2, FiSlash, FiCheckCircle, FiX } from 'react-icons/fi';
++import { FiSearch, FiChevronRight, FiPlus, FiEdit2, FiSlash, FiCheckCircle, FiX, FiDownload } from 'react-icons/fi';
+ import api from '../../services/api';
+ import { formatCurrency } from '../../utils/formatters';
++import { useTenant } from '../../context/TenantContext';
++import { exportToExcelStyled } from '../reports/ReportShared';
+ 
+ const C = {
+   navy: '#1A3560', gold: '#C9A227', teal: '#0D9488', red: '#DC2626',
+@@ -91,6 +93,7 @@ const ghostBtn = { background: '#fff', color: C.grey, border: '1px solid #D1D5DB
+ 
+ export default function PartyLedgerListPage() {
+   const navigate = useNavigate();
++  const { companyName } = useTenant();
+   const [data, setData] = useState(null);
+   const [loading, setLoading] = useState(true);
+   const [error, setError] = useState('');
+@@ -128,6 +131,34 @@ export default function PartyLedgerListPage() {
+   const open = (id) => navigate(`/ledgers/parties/${id}`);
+   const s = data?.summary || {};
+ 
++  // Export every party ledger (all balances) to a styled .xlsx, grouped by side.
++  const exportAll = async () => {
++    const parties = data?.parties || [];
++    if (!parties.length) return;
++    const n = (x) => Math.round((Number(x) || 0) * 100) / 100;
++    const columns = [
++      { header: 'ID', key: 'id', width: 18 },
++      { header: 'Name', key: 'name', width: 34 },
++      { header: 'Balance', key: 'balance', width: 18, money: true, align: 'right' },
++    ];
++    const toRows = (list) => list.map((p) => ({ id: p.externalPartyId || p.code, name: p.name, balance: n(Math.abs(p.balance)) }));
++    const sections = [];
++    const rec = parties.filter((p) => p.balance > 0).sort((a, b) => b.balance - a.balance);
++    const pay = parties.filter((p) => p.balance < 0).sort((a, b) => a.balance - b.balance);
++    const set = parties.filter((p) => p.balance === 0);
++    if (rec.length) sections.push({ label: 'Receivables — they owe us', rows: toRows(rec), totalLabel: 'Total Receivable', totalLabelKey: 'name', totalValues: { balance: n(s.receivableTotal) } });
++    if (pay.length) sections.push({ label: 'Payables — we owe them', rows: toRows(pay), totalLabel: 'Total Payable', totalLabelKey: 'name', totalValues: { balance: n(s.payableTotal) } });
++    if (set.length) sections.push({ label: 'Settled — zero balance', rows: toRows(set) });
++    await exportToExcelStyled({
++      filename: 'party_ledgers',
++      companyName,
++      title: 'Party Ledgers',
++      subtitle: `${s.count ?? parties.length} ledgers · net ${formatCurrency(Math.abs(s.net || 0), 'GHS')} ${((s.net || 0) >= 0 ? 'receivable' : 'payable')}`,
++      columns,
++      sections,
++    });
++  };
++
+   const submitCreate = async () => {
+     setFormErr('');
+     if (!create.name.trim() || !create.partyId.trim()) { setFormErr('Name and ID are both required.'); return; }
+@@ -166,9 +197,15 @@ export default function PartyLedgerListPage() {
+             Statement of account for each person. A ledger moves between receivable and payable as its balance changes.
+           </p>
+         </div>
+-        <button style={goldBtn} onClick={() => { setFormErr(''); setCreate({ name: '', partyId: '' }); }}>
+-          <FiPlus size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> New Party Ledger
+-        </button>
++        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
++          <button onClick={exportAll} disabled={!(data?.parties || []).length} title="Export all ledgers"
++            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 9, border: '1px solid #C9A227', color: '#B8860B', background: '#fff', fontSize: 14, fontWeight: 600, cursor: (data?.parties || []).length ? 'pointer' : 'not-allowed', opacity: (data?.parties || []).length ? 1 : 0.5 }}>
++            <FiDownload size={14} /> Export all
++          </button>
++          <button style={goldBtn} onClick={() => { setFormErr(''); setCreate({ name: '', partyId: '' }); }}>
++            <FiPlus size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} /> New Party Ledger
++          </button>
++        </div>
+       </div>
+ 
+       {error && <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', color: '#B91C1C', borderRadius: 10, padding: '12px 16px', fontSize: 14, marginBottom: 16 }}>{error}</div>}
+diff --git a/server/controllers/paymentController.js b/server/controllers/paymentController.js
+index 595ceaa..b5fb429 100644
+--- a/server/controllers/paymentController.js
++++ b/server/controllers/paymentController.js
+@@ -174,6 +174,12 @@ const receivePayment = async (req, res) => {
+     const Account = getModel(req.tenantDb, 'Account');
+     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
+ 
++    // Maker-checker: cash movements are posted by an admin when approval is on.
++    // An accountant records it as a voucher (which goes through approval) instead.
++    if (req.tenant?.settings?.requireApproval === true && req.user?.role === 'accountant') {
++      return res.status(403).json({ success: false, message: 'Approval is enabled, so receipts/payments must be posted by an admin. Record it as a voucher (which goes through approval), or ask an admin to post this receipt.' });
++    }
++
+     const { amount, date, method, reference, notes } = req.body;
+     if (!date) return res.status(400).json({ success: false, message: 'Required: date.' });
+ 
+@@ -324,6 +330,11 @@ const makePayment = async (req, res) => {
+     const Account = getModel(req.tenantDb, 'Account');
+     const JournalEntry = getModel(req.tenantDb, 'JournalEntry');
+ 
++    // Maker-checker: cash movements are posted by an admin when approval is on.
++    if (req.tenant?.settings?.requireApproval === true && req.user?.role === 'accountant') {
++      return res.status(403).json({ success: false, message: 'Approval is enabled, so payments must be posted by an admin. Record it as a voucher (which goes through approval), or ask an admin to post this payment.' });
++    }
++
+     const { amount, date, method, reference, notes } = req.body;
+     if (!date) return res.status(400).json({ success: false, message: 'Required: date.' });
+ 

@@ -1,0 +1,33 @@
+diff --git a/client/src/components/layout/NotificationBell.jsx b/client/src/components/layout/NotificationBell.jsx
+index e3ad898..f0f3777 100644
+--- a/client/src/components/layout/NotificationBell.jsx
++++ b/client/src/components/layout/NotificationBell.jsx
+@@ -82,6 +82,28 @@ export default function NotificationBell() {
+         if (overdue.length > 0) items.push({ id: 'overdue-tasks', type: 'warning', title: `${overdue.length} overdue task${overdue.length > 1 ? 's' : ''}`, message: 'Complete your overdue to-do items', path: '/todos', time: 'Overdue' });
+       }
+     } catch {}
++    // Awaiting approval (maker-checker). Admins approve these; others see them pending.
++    try {
++      const { data } = await api.get('/journals?status=awaiting_approval&limit=50');
++      if (data.success && data.data.length > 0) items.push({ id: 'approve-journals', type: 'warning', title: `${data.data.length} journal${data.data.length > 1 ? 's' : ''} awaiting approval`, message: 'Review and approve pending journal entries', path: '/journals', time: 'Approve' });
++    } catch {}
++    try {
++      const { data } = await api.get('/invoices?status=awaiting_approval');
++      if (data.success && data.data.length > 0) items.push({ id: 'approve-invoices', type: 'warning', title: `${data.data.length} invoice${data.data.length > 1 ? 's' : ''} awaiting approval`, message: 'Review and approve pending invoices', path: '/invoicing/invoices', time: 'Approve' });
++    } catch {}
++    try {
++      const { data } = await api.get('/bills?status=awaiting_approval');
++      if (data.success && data.data.length > 0) items.push({ id: 'approve-bills', type: 'warning', title: `${data.data.length} bill${data.data.length > 1 ? 's' : ''} awaiting approval`, message: 'Review and approve pending bills', path: '/bills/list', time: 'Approve' });
++    } catch {}
++    // New transactions imported from the connected external app (last 24h).
++    try {
++      const { data } = await api.get('/vouchers?limit=50');
++      if (data.success) {
++        const since = Date.now() - 24 * 60 * 60 * 1000;
++        const imported = data.data.filter((v) => v.createdViaApi && new Date(v.createdAt).getTime() >= since);
++        if (imported.length > 0) items.push({ id: 'external-imports', type: 'info', title: `${imported.length} new import${imported.length > 1 ? 's' : ''} from the integration`, message: 'Transactions arrived from the connected app', path: '/vouchers', time: 'New' });
++      }
++    } catch {}
+     setDerived(items.filter((n) => !dismissedRef.current.has(n.id)));
+   };
+ 
