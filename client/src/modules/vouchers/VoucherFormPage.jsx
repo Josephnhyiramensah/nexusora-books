@@ -1,6 +1,6 @@
 // client/src/modules/vouchers/VoucherFormPage.jsx
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { FiSave, FiArrowLeft, FiChevronDown, FiX } from 'react-icons/fi';
 import voucherService from '../../services/voucherService';
 import api from '../../services/api';
@@ -109,6 +109,8 @@ function AccountSelect({ accounts, value, onChange, placeholder }) {
 
 export default function VoucherFormPage() {
   const navigate = useNavigate();
+  const { id } = useParams();
+  const isEdit = !!id;        // /vouchers/:id/edit → editing an existing draft
   const { showToast, ToastComponent } = useToast();
   const isMobile = useIsMobile();
   const branchField = useBranchField();
@@ -118,6 +120,7 @@ export default function VoucherFormPage() {
   const [creditApplied, setCreditApplied] = useState({});   // invoiceId -> amount (string)
   const [creditCustomer, setCreditCustomer] = useState('');
   const [saving, setSaving] = useState(false);
+  const [loadingVoucher, setLoadingVoucher] = useState(isEdit);
   const [form, setForm] = useState({
     voucherType: 'payment',
     branch: '',
@@ -145,6 +148,75 @@ export default function VoucherFormPage() {
       if (r.success) setOpenInvoices(r.data.filter((i) => ['sent', 'partially_paid', 'overdue'].includes(i.status) && i.balance > 0));
     }).catch(() => {});
   }, []);
+
+  // Edit mode: load the existing draft and pre-fill the form. A posted (or
+  // awaiting-approval) voucher can't be edited — bounce back to the list with a
+  // note that it must be reversed and re-entered. The server enforces the same
+  // rule; this just keeps the UI from opening a form the save would reject.
+  useEffect(() => {
+    if (!isEdit) return;
+    (async () => {
+      try {
+        const r = await voucherService.getById(id);
+        if (!r.success || !r.data) { showToast('Voucher not found', 'error'); navigate('/vouchers'); return; }
+        const v = r.data;
+        if (v.status !== 'draft') {
+          showToast(
+            v.status === 'awaiting_approval'
+              ? 'This voucher is awaiting approval — reject it back to draft to edit.'
+              : 'A posted voucher cannot be edited. Reverse it and re-enter instead.',
+            'error',
+          );
+          navigate('/vouchers'); return;
+        }
+        // Reconstruct the single debit/credit + amount from the stored lines.
+        // The first debit line and the first credit line are the user's chosen
+        // accounts (a VAT entry adds a second credit line after them).
+        const debitLine = (v.lines || []).find((l) => Number(l.debit) > 0);
+        const creditLine = (v.lines || []).find((l) => Number(l.credit) > 0);
+        const jvLines = (v.lines || []).map((l) => ({
+          account: l.account ? String(l.account) : '',
+          description: l.description || '',
+          debit: Number(l.debit) > 0 ? l.debit : '',
+          credit: Number(l.credit) > 0 ? l.credit : '',
+        }));
+        setForm({
+          voucherType: v.voucherType || 'payment',
+          branch: v.branch ? String(v.branch?._id || v.branch) : '',
+          date: v.date ? new Date(v.date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+          dueDate: v.dueDate ? new Date(v.dueDate).toISOString().slice(0, 10) : '',
+          narration: v.narration || '', reference: v.reference || '',
+          partyName: v.partyName || '', terms: v.terms || '',
+          mode: v.mode || 'cash',
+          debitAccount: debitLine ? String(debitLine.account) : '',
+          creditAccount: creditLine ? String(creditLine.account) : '',
+          amount: v.isItemized ? '' : (v.amount != null ? String(v.amount) : ''),
+          paymentDetails: v.paymentDetails || {},
+          lineItems: (v.lineItems && v.lineItems.length)
+            ? v.lineItems.map((it) => ({ description: it.description || '', quantity: it.quantity || 1, unit: it.unit || '', unitPrice: it.unitPrice || 0 }))
+            : [{ description: '', quantity: 1, unit: '', unitPrice: 0 }],
+          discount: v.discount || 0,
+          isItemized: !!v.isItemized,
+          vatEnabled: !!v.vatEnabled, vatRate: v.vatRate || 15,
+          lines: v.voucherType === 'journal' && jvLines.length >= 2 ? jvLines : emptyJvLines(),
+        });
+        // A credit note applied to invoices: re-populate the applied amounts so
+        // the picker reflects what the draft already carries.
+        if (v.voucherType === 'credit_note' && Array.isArray(v.appliedTo) && v.appliedTo.length) {
+          const applied = {};
+          v.appliedTo.forEach((a) => { applied[String(a.invoice)] = String(a.amount); });
+          setCreditApplied(applied);
+          if (v.customer) setCreditCustomer(String(v.customer?._id || v.customer));
+        }
+      } catch {
+        showToast('Could not load this voucher', 'error');
+        navigate('/vouchers');
+      } finally {
+        setLoadingVoucher(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const setDetail = (k, v) => setForm((f) => ({ ...f, paymentDetails: { ...f.paymentDetails, [k]: v } }));
@@ -221,7 +293,7 @@ export default function VoucherFormPage() {
 
     setSaving(true);
     try {
-        const result = await voucherService.create({
+      const payload = {
         voucherType: 'journal',
         branch: form.branch || undefined,
         date: form.date,
@@ -235,7 +307,8 @@ export default function VoucherFormPage() {
         lineItems: [],
         discount: 0,
         vatEnabled: false, vatRate: 0,
-      });
+      };
+      const result = isEdit ? await voucherService.update(id, payload) : await voucherService.create(payload);
       if (!result.success) { showToast(result.message || 'Failed', 'error'); setSaving(false); return; }
       if (thenPost) {
         const posted = await voucherService.post(result.data._id);
@@ -265,7 +338,7 @@ export default function VoucherFormPage() {
     }
     setSaving(true);
     try {
-      const result = await voucherService.create({
+      const payload = {
         voucherType: form.voucherType, branch: form.branch || undefined, date: form.date, dueDate: form.dueDate || undefined,
         narration: form.narration, reference: form.reference, partyName: form.partyName, terms: form.terms,
         mode: form.mode, paymentDetails: form.paymentDetails,
@@ -281,7 +354,8 @@ export default function VoucherFormPage() {
             .filter((inv) => Number(creditApplied[inv._id]) > 0)
             .map((inv) => ({ invoice: inv._id, amount: Math.round(Number(creditApplied[inv._id]) * 100) / 100 }))
           : undefined,
-      });
+      };
+      const result = isEdit ? await voucherService.update(id, payload) : await voucherService.create(payload);
       if (!result.success) { showToast(result.message || 'Failed', 'error'); setSaving(false); return; }
       if (thenPost) {
         const posted = await voucherService.post(result.data._id);
@@ -337,7 +411,7 @@ export default function VoucherFormPage() {
         </button>
         <button onClick={() => handleSave(false)} disabled={saving}
           style={{ padding: '11px', borderRadius: 8, border: '1px solid var(--border, #D1D5DB)', background: 'transparent', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
-          Save as Draft
+          {isEdit ? 'Save Changes' : 'Save as Draft'}
         </button>
       </div>
     </div>
@@ -361,7 +435,7 @@ export default function VoucherFormPage() {
         </button>
         <button onClick={() => handleSave(false)} disabled={saving || !jvBalanced}
           style={{ padding: '11px', borderRadius: 8, border: '1px solid var(--border, #D1D5DB)', background: 'transparent', color: (saving || !jvBalanced) ? '#9CA3AF' : 'inherit', fontWeight: 600, fontSize: 14, cursor: (saving || !jvBalanced) ? 'not-allowed' : 'pointer' }}>
-          Save as Draft
+          {isEdit ? 'Save Changes' : 'Save as Draft'}
         </button>
         {!jvBalanced && (
           <p style={{ fontSize: 12, color: '#9CA3AF', margin: '2px 0 0', textAlign: 'center' }}>Debits and credits must balance before saving.</p>
@@ -575,6 +649,15 @@ export default function VoucherFormPage() {
 
   const activeSummary = isJournal ? jvSummary : summary;
 
+  if (loadingVoucher) {
+    return (
+      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+        {ToastComponent}
+        <div style={{ padding: 40, textAlign: 'center', color: '#9CA3AF' }}>Loading voucher…</div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto' }}>
       {ToastComponent}
@@ -582,7 +665,7 @@ export default function VoucherFormPage() {
         <button onClick={() => navigate('/vouchers')} style={{ ...input, width: 'auto', padding: '8px 14px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent' }}>
           <FiArrowLeft size={15} /> Back
         </button>
-        <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary, #012158)', margin: 0 }}>New Voucher</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary, #012158)', margin: 0 }}>{isEdit ? 'Edit Voucher' : 'New Voucher'}</h1>
       </div>
 
       {isMobile ? (

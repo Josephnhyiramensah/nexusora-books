@@ -180,6 +180,9 @@ export default function VoucherListPage() {
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid var(--border, #D1D5DB)', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }} onClick={() => navigate(`/vouchers/${v._id}`)}>View</button>
                   {v.status === 'draft' && (
+                    <button style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #1E40AF', color: '#1E40AF', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }} onClick={() => navigate(`/vouchers/${v._id}/edit`)}>Edit</button>
+                  )}
+                  {v.status === 'draft' && (
                     <button style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1px solid #065F46', color: '#065F46', background: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }} onClick={() => handlePost(v._id)}>Post</button>
                   )}
                   {v.status === 'draft' && (
@@ -238,6 +241,7 @@ export default function VoucherListPage() {
                         canApprove={canApprove}
                         onView={() => navigate(`/vouchers/${v._id}`)}
                         onPrint={() => handlePrint(v._id)}
+                        onEdit={() => navigate(`/vouchers/${v._id}/edit`)}
                         onPost={() => handlePost(v._id)}
                         onApprove={() => handleApprove(v._id)}
                         onReject={() => handleReject(v._id)}

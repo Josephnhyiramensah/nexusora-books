@@ -381,6 +381,188 @@ const createVoucher = async (req, res) => {
   }
 };
 
+// ─── Update (draft only) ─────────────────────────────────────────────────────
+//
+// A voucher can be corrected freely while it is a DRAFT — nothing has hit the
+// ledger yet, so editing it is just editing a form. Once it is posted the door
+// closes: a posted voucher is immutable and the ONLY way to change it is to
+// reverse it and re-enter (see reverseVoucher). This guard is the whole point —
+// it keeps the audit trail honest by never silently rewriting a posted entry.
+// awaiting_approval is also off-limits: it must be rejected back to draft first.
+const updateVoucher = async (req, res) => {
+  try {
+    const Voucher = getModel(req.tenantDb, 'Voucher');
+    const Account = getModel(req.tenantDb, 'Account');
+
+    const voucher = await Voucher.findOne(scopedFilter(req, { _id: req.params.id }));
+    if (!voucher) return res.status(404).json({ success: false, message: 'Voucher not found.' });
+    if (voucher.status !== 'draft') {
+      return res.status(400).json({
+        success: false,
+        message: voucher.status === 'awaiting_approval'
+          ? 'This voucher is awaiting approval. Reject it back to draft before editing.'
+          : 'Only draft vouchers can be edited. A posted voucher must be reversed and re-entered.',
+      });
+    }
+
+    const {
+      voucherType, date, narration, reference, partyName, customer, vendor,
+      mode, bankAccount, bankName, instrumentNo, paymentDetails,
+      lineItems, discount, isItemized,
+      dueDate, terms, vatEnabled, vatRate,
+      debitAccount, creditAccount, amount,
+      lines: rawLines,
+      appliedTo,
+    } = req.body;
+
+    if (!voucherType || !date) {
+      return res.status(400).json({ success: false, message: 'Required: voucherType and date.' });
+    }
+
+    // Branch can be corrected on a draft, validated against this user's access.
+    const branchChoice = await resolveWriteBranch(req, req.body.branch);
+    if (branchChoice.error) {
+      return res.status(branchChoice.status).json({ success: false, message: branchChoice.error });
+    }
+    const branch = branchChoice.branch;
+
+    // Credit note applied to invoices → the credit side is forced to Accounts
+    // Receivable, exactly as on create. Nothing is moved here: a draft edit has
+    // no ledger side effects; the invoices are only settled when it is posted.
+    let creditApplication = { rows: [], total: 0 };
+    let effectiveCreditAccount = creditAccount;
+    if (voucherType === 'credit_note' && Array.isArray(appliedTo) && appliedTo.length > 0) {
+      const arAccount = await getSpecialAccount(req, 'accountsReceivable', { required: false });
+      if (!arAccount) {
+        return res.status(400).json({
+          success: false,
+          message: `Accounts Receivable (code ${specialAccountCode(req, 'accountsReceivable')}) was not found, so this credit note cannot be applied to invoices. Map it under Settings → Special Accounts.`,
+        });
+      }
+      creditApplication = await validateCreditApplication(req, amount, appliedTo, branch);
+      if (creditApplication.error) {
+        return res.status(400).json({ success: false, message: creditApplication.error });
+      }
+      effectiveCreditAccount = String(arAccount._id);
+    }
+
+    // Resolve lines: either provided multi-line, or built from simple fields.
+    let lines;
+    if (Array.isArray(rawLines) && rawLines.length >= 2) {
+      lines = rawLines;
+    } else if (debitAccount && effectiveCreditAccount && amount) {
+      lines = simpleLines({ debitAccount, creditAccount: effectiveCreditAccount, amount, narration });
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Provide either 2+ lines, or debitAccount + creditAccount + amount.',
+      });
+    }
+
+    // VAT: rebuild as a 3-line entry when enabled (same rule as create).
+    let vatAmountComputed = 0;
+    if (vatEnabled && Number(vatRate) > 0 && debitAccount && creditAccount) {
+      let vatAcct;
+      try {
+        vatAcct = await getSpecialAccount(req, 'vatPayable');
+      } catch (e) {
+        if (e.code === 'SPECIAL_ACCOUNT_NOT_FOUND') {
+          return res.status(400).json({ success: false, message: e.message });
+        }
+        throw e;
+      }
+      const grand = Number(amount) || 0;
+      const rate = Number(vatRate) / 100;
+      const net = Math.round((grand / (1 + rate)) * 100) / 100;
+      vatAmountComputed = Math.round((grand - net) * 100) / 100;
+      if (vatAmountComputed > 0) {
+        lines = [
+          { account: debitAccount, debit: grand, credit: 0, description: narration || '' },
+          { account: creditAccount, debit: 0, credit: net, description: narration || '' },
+          { account: vatAcct._id, debit: 0, credit: vatAmountComputed, description: 'VAT @ ' + vatRate + '%' },
+        ];
+      }
+    }
+
+    // Validate balance (debits == credits).
+    const validation = validateDoubleEntry(lines);
+    if (!validation.valid) {
+      return res.status(400).json({ success: false, message: validation.error,
+        data: { totalDebit: validation.totalDebit, totalCredit: validation.totalCredit } });
+    }
+
+    // Enrich + validate accounts.
+    const { enriched, error } = await enrichLines(Account, lines);
+    if (error) return res.status(400).json({ success: false, message: error });
+
+    // Itemized subtotal / effective amount.
+    let itemizedTotal = null;
+    let cleanItems = [];
+    if (isItemized && Array.isArray(lineItems) && lineItems.length > 0) {
+      cleanItems = lineItems
+        .filter((it) => (Number(it.quantity) || 0) > 0 || (Number(it.unitPrice) || 0) > 0 || it.description)
+        .map((it) => {
+          const qty = Number(it.quantity) || 0;
+          const price = Number(it.unitPrice) || 0;
+          const amt = Math.round(qty * price * 100) / 100;
+          return { description: it.description || '', quantity: qty, unit: it.unit || '', unitPrice: price, amount: amt };
+        });
+      const sub = cleanItems.reduce((sM, it) => sM + it.amount, 0);
+      const disc = Number(discount) || 0;
+      itemizedTotal = Math.round((sub - disc) * 100) / 100;
+    }
+
+    const computedAmount = amount != null ? Number(amount) : validation.totalDebit;
+
+    // Apply the edited fields. voucherNumber, createdBy and status (draft) are
+    // deliberately NOT touched — this is a correction, not a new voucher.
+    voucher.voucherType = voucherType;
+    voucher.date = date;
+    voucher.narration = narration;
+    voucher.reference = reference;
+    voucher.partyName = partyName;
+    voucher.customer = customer || creditApplication.customer || undefined;
+    voucher.vendor = vendor || undefined;
+    voucher.mode = mode;
+    voucher.bankAccount = bankAccount || undefined;
+    voucher.bankName = bankName;
+    voucher.instrumentNo = instrumentNo;
+    voucher.paymentDetails = paymentDetails || {};
+    voucher.amount = itemizedTotal != null ? itemizedTotal : computedAmount;
+    voucher.lineItems = cleanItems;
+    voucher.subtotal = isItemized ? Math.round(cleanItems.reduce((sM, it) => sM + it.amount, 0) * 100) / 100 : 0;
+    voucher.discount = Number(discount) || 0;
+    voucher.isItemized = !!isItemized;
+    voucher.dueDate = dueDate || undefined;
+    voucher.terms = terms || '';
+    voucher.vatEnabled = !!vatEnabled;
+    voucher.vatRate = Number(vatRate) || 0;
+    voucher.vatAmount = vatAmountComputed;
+    voucher.lines = enriched;
+    voucher.totalDebit = validation.totalDebit;
+    voucher.totalCredit = validation.totalCredit;
+    voucher.branch = branch;
+    voucher.appliedTo = creditApplication.rows.map((r) => ({
+      invoice: r.invoice._id,
+      documentNumber: r.invoice.invoiceNumber,
+      amount: r.amount,
+    }));
+    await voucher.save();
+
+    await logAudit(req.tenantDb, {
+      userId: req.user._id, action: 'update', module: 'journals',
+      entityId: voucher._id, entityType: 'Voucher',
+      description: `Edited draft ${voucherType} voucher: ${voucher.voucherNumber}`,
+      newData: { voucherNumber: voucher.voucherNumber, voucherType, amount: computedAmount },
+    }, req);
+
+    res.json({ success: true, message: `Voucher ${voucher.voucherNumber} updated.`, data: voucher });
+  } catch (error) {
+    console.error('[Vouchers] Update error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to update voucher.' });
+  }
+};
+
 // ─── Shared: turn a ready voucher into a posted JournalEntry ─────────────────
 // Used by both the direct post (admin) and the approve step (maker-checker), so
 // the ledger work is identical either way.
@@ -648,5 +830,5 @@ const removeAttachment = async (req, res) => {
 };
 
 module.exports = {
-  getVouchers, getVoucher, createVoucher, postVoucher, approveVoucher, rejectVoucher, reverseVoucher, deleteVoucher,
+  getVouchers, getVoucher, createVoucher, updateVoucher, postVoucher, approveVoucher, rejectVoucher, reverseVoucher, deleteVoucher,
   addAttachment, removeAttachment };

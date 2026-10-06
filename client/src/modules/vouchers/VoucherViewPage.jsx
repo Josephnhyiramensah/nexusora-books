@@ -8,7 +8,7 @@
 // payment-mode strip + single-total block are hidden (a JV has neither).
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { FiArrowLeft, FiCheckCircle, FiCornerDownLeft, FiPrinter } from 'react-icons/fi';
+import { FiArrowLeft, FiCheckCircle, FiCornerDownLeft, FiPrinter, FiEdit2 } from 'react-icons/fi';
 import voucherService from '../../services/voucherService';
 import VoucherAttachments from './VoucherAttachments';
 import { formatCurrency, formatDate } from '../../utils/formatters';
@@ -124,6 +124,7 @@ export default function VoucherViewPage() {
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button onClick={handlePrint} style={{ ...ghost, borderColor: BLUE, color: BLUE }}><FiPrinter size={14} /> Print</button>
+          {voucher.status === 'draft' && <button onClick={() => navigate(`/vouchers/${id}/edit`)} style={{ ...ghost, color: '#1E40AF', borderColor: '#1E40AF' }}><FiEdit2 size={14} /> Edit</button>}
           {voucher.status === 'draft' && <button onClick={handlePost} style={{ ...ghost, color: '#065F46', borderColor: '#065F46' }}><FiCheckCircle size={14} /> Post</button>}
           {voucher.status === 'posted' && canReverse && <button onClick={handleReverse} style={{ ...ghost, color: '#B45309', borderColor: '#B45309' }}><FiCornerDownLeft size={14} /> Reverse</button>}
         </div>

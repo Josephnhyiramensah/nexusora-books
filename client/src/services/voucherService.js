@@ -24,6 +24,13 @@ const voucherService = {
     return data;
   },
 
+  // Edit a DRAFT voucher. The server refuses anything already posted —
+  // a posted voucher must be reversed and re-entered.
+  update: async (id, voucherData) => {
+    const { data } = await api.put(`/vouchers/${id}`, voucherData);
+    return data;
+  },
+
   approve: async (id) => {
     const { data } = await api.post(`/vouchers/${id}/approve`);
     return data;

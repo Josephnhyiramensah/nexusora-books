@@ -5,9 +5,9 @@
 // and upward when the button is near the bottom of the viewport (so it is never
 // clipped off-screen on the lower rows).
 import { useState, useRef, useEffect } from 'react';
-import { FiMoreVertical, FiEye, FiPrinter, FiCheckCircle, FiCornerDownLeft, FiTrash2 } from 'react-icons/fi';
+import { FiMoreVertical, FiEye, FiPrinter, FiEdit2, FiCheckCircle, FiCornerDownLeft, FiTrash2 } from 'react-icons/fi';
 
-export default function VoucherActionsMenu({ voucher, canReverse, canApprove, onView, onPrint, onPost, onApprove, onReject, onReverse, onDelete }) {
+export default function VoucherActionsMenu({ voucher, canReverse, canApprove, onView, onPrint, onEdit, onPost, onApprove, onReject, onReverse, onDelete }) {
   const [open, setOpen] = useState(false);
   const [dropUp, setDropUp] = useState(false);
   const ref = useRef(null);
@@ -22,7 +22,7 @@ export default function VoucherActionsMenu({ voucher, canReverse, canApprove, on
   // How many rows this menu will show, so we can estimate its height.
   const itemCount =
     2 + // View + Print always
-    (voucher.status === 'draft' ? 2 : 0) + // Post + Delete
+    (voucher.status === 'draft' ? 3 : 0) + // Edit + Post + Delete
     (voucher.status === 'awaiting_approval' && canApprove ? 2 : 0) + // Approve + Reject
     (voucher.status === 'posted' && canReverse ? 1 : 0); // Reverse
   const estMenuHeight = itemCount * 38 + 8; // ~38px per item + padding
@@ -67,6 +67,7 @@ export default function VoucherActionsMenu({ voucher, canReverse, canApprove, on
         <div style={{ position: 'absolute', right: 0, [dropUp ? 'bottom' : 'top']: '110%', zIndex: 40, background: '#fff', border: '1px solid var(--border, #E5E7EB)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', minWidth: 170, overflow: 'hidden', padding: '4px 0' }}>
           {item(<FiEye size={15} />, 'View', onView)}
           {item(<FiPrinter size={15} />, 'Print', onPrint)}
+          {voucher.status === 'draft' && onEdit && item(<FiEdit2 size={15} />, 'Edit', onEdit, '#1E40AF')}
           {voucher.status === 'draft' && item(<FiCheckCircle size={15} />, 'Post', onPost, '#065F46')}
           {voucher.status === 'awaiting_approval' && canApprove && item(<FiCheckCircle size={15} />, 'Approve', onApprove, '#065F46')}
           {voucher.status === 'awaiting_approval' && canApprove && item(<FiTrash2 size={15} />, 'Reject', onReject, '#DC2626')}

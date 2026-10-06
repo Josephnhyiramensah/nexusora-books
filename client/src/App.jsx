@@ -255,6 +255,7 @@ export default function App() {
               <Route path="/vouchers/purchase" element={<VoucherListPage />} />
               <Route path="/vouchers/sales"    element={<VoucherListPage />} />
               <Route path="/vouchers/new"      element={<VoucherFormPage />} />
+              <Route path="/vouchers/:id/edit" element={<VoucherFormPage />} />
               <Route path="/vouchers/:id"      element={<VoucherViewPage />} />
             </Route>
 
